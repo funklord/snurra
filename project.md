@@ -57,6 +57,57 @@ and everything above it knows nothing of SFTP or fuzznet.
 - **Video, or audio first.** The mplayer use is the test; the holder to
   say which comes first.
 
+## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
+
+The holder, 2026-11-11: copy Mixxx's structure for mixing, unless it is
+outdated and worth improving on. Read from Mixxx 2.5.0 as installed here
+(its binary's symbols and linked libraries), not from its source, which
+is not on this machine -- so the names are its, the reading of how they
+fit is from its design as published, to be checked against the source
+before building on it.
+
+**Kept, because it is still the right shape for real-time audio:**
+
+- **The engine graph:** a channel per source (`EngineChannel`,
+  `EngineDeck`), each with its buffer (`EngineBuffer`), into one mixer
+  (`EngineMixer`, `EngineMaster` before 2.4) that sums into the output.
+  For snurra: a deck per stream, one mixer, levels and crossfade there.
+- **The reader apart from the audio callback:** `CachingReader` serves
+  the engine from decoded chunks while `CachingReaderWorker` decodes on
+  its own thread and hands chunks over without locks; the callback never
+  waits on a disk or a decoder. This is exactly where snurra's
+  byte-source-still-arriving belongs: a missing range is a chunk the
+  worker cannot fill yet, and the deck plays silence or pauses instead of
+  stalling the callback -- fuzzypickles' stall contract, in Mixxx's
+  structure.
+- **`ReadAheadManager`:** reading ahead of the play position, which for a
+  network source is also what to ask for next (fuzznet's playhead).
+- **Tempo and pitch behind one interface** (`EngineBufferScale` with
+  linear, SoundTouch and RubberBand behind it): later, if at all, but
+  the seam is worth having from the start.
+
+**Improved on, because it has aged or does not fit:**
+
+- **The control layer.** Mixxx's `ControlObject`/`ControlProxy` is a
+  global bus keyed by strings (`[Channel1],play`), so that skins and
+  controller scripts can reach anything. It is untyped and global, and a
+  misspelt key fails silently. snurra's controls are typed members of
+  the deck and mixer, with atomics where the engine reads them; a string
+  map can be layered on later for scripting, from the typed ones.
+- **PortAudio** for output: snurra uses Qt's `QAudioSink`, which is on
+  Android as on the desktop, one dependency fewer, and what an embedding
+  Qt program already has.
+- **QML:** Mixxx links Qt Quick and is moving its interface there; this
+  workspace is Qt Widgets (harmonization.md), so the interface is
+  snurra's own.
+- **Size:** Mixxx is a DJ suite -- library, controllers, effects, sync,
+  recording, broadcasting. snurra takes the engine's shape and none of
+  the suite; each of those is a decision of its own, not a default.
+
+So the backend question in sec 3 leans further: Mixxx decodes with
+FFmpeg among others (`SoundSourceFFmpeg`) into its own engine, which is
+the second option there. QMediaPlayer cannot be a deck in a mixer.
+
 ## 4. State
 
 A skeleton, 2026-11-11: this file, the README, the copied style rules and
