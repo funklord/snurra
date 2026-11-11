@@ -351,6 +351,9 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 	case snurra_wire::RELEASE:
 		release(m.index, m.frame.topLeft());
 		break;
+	case snurra_wire::SHOW_CONTROLS:
+		if (m.index >= 0 && m.index < m_tiles.size()) m_tiles.at(m.index)->set_controls(m.time != 0);
+		break;
 	case snurra_wire::STATUS: {
 		snurra_wire::message status;
 		status.type = snurra_wire::STATUS_IS;

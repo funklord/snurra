@@ -37,6 +37,7 @@ enum type_t : quint8 {
 	RELEASE,       /* control: pull this tile out into a new process */
 	STATUS,        /* -> STATUS_IS: tiles and the last handover's times */
 	STATUS_IS,
+	SHOW_CONTROLS, /* control: pull out (index >= 0) or push in a tile's controls; time 1 or 0 */
 };
 
 /* Where the giver's tiles go relative to the taker's: a train continues to
@@ -66,6 +67,9 @@ QString runtime_directory();
 
 /* Every peer's socket path but `own`. */
 QStringList peer_sockets(const QString &own);
+
+/* Whether any peer answers: a socket a crashed process left does not. */
+bool any_peer_alive(const QString &own);
 
 }
 

@@ -22,6 +22,13 @@ struct snurra_tile_state {
 	int row = 0;               /* the place in a group: row is a lane (stack), */
 	int column = 0;            /* column the sequence (train) */
 
+	/*
+	 * Whether its controls are out (project.md sec 3c): the first tile
+	 * opens with them and plays; the rest open as a waveform alone,
+	 * paused, until their controls are pulled out.
+	 */
+	bool controls = true;
+
 	/* Where it is now, carried forward from the sample. */
 	qint64 position_now(qint64 now = QDateTime::currentMSecsSinceEpoch()) const {
 		if (!playing) return position_ms;
@@ -31,7 +38,8 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	return out << state.source << state.duration_ms << state.position_ms << state.sampled_at
-	           << state.playing << qint32(state.level) << qint32(state.row) << qint32(state.column);
+	           << state.playing << qint32(state.level) << qint32(state.row) << qint32(state.column)
+	           << state.controls;
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -39,7 +47,7 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 row = 0;
 	qint32 column = 0;
 	in >> state.source >> state.duration_ms >> state.position_ms >> state.sampled_at >> state.playing
-	   >> level >> row >> column;
+	   >> level >> row >> column >> state.controls;
 	state.level = level;
 	state.row = row;
 	state.column = column;

@@ -220,6 +220,26 @@ snapping into one window; (3) the train: sequence and crossfade; (4) the
 stack: simultaneous lanes and levels; (5) envelopes; (6) analysis and
 beat-snapping. Each layer is a decision to go on, not a default.
 
+## 3c. One set of controls, not one per tile
+
+The holder, 2026-11-11: **only the first window opens with its controls
+-- above or below its waveform -- and starts playing; the others open as
+a waveform alone**, paused, and their controls can be pulled out to play
+them at the same time if wanted. "This also solves the too many
+control panel / fx / config problem": a screen of tiles is a screen of
+waveforms, not of panels, and the controls a person sees are the ones
+they asked for.
+
+- **First** means no other snurra answers on its socket when this one
+  starts (a socket a crashed process left does not count); within one
+  launch of several files, the first file.
+- **Pulled out**, a tile's controls show below its waveform, and it can
+  be played alongside the others. **Pushed back in, it stops**: what
+  plays is what can be stopped from a tile.
+- A handover carries whether a tile's controls are out.
+- Effects and configuration are to follow the same rule when they come:
+  pulled out from the tile they apply to, never shown by default.
+
 ## 4. State
 
 **The handover base, built 2026-11-11, no audio yet** (the holder: "a
@@ -250,15 +270,21 @@ spikes", with dummy controls; each tile very compact but resizeable).
   tile dragged out of the window and let go is pulled out there. On
   Wayland the window move is the compositor's (`startSystemMove`) and
   snapping waits for drag-and-drop onto a tile (sec 3b).
-- **A tile:** a title that is the handle, close, play/pause, a position
-  a clock moves, a level; about 26 characters wide, 14 at least,
-  frameless with a size grip.
+- **A tile:** a title that is the handle, a handle for the controls,
+  close; a waveform (a stand-in drawn from the source's name, so a file
+  always looks the same, with the playhead, and a click seeks); the
+  controls, when out: play/pause, a position a clock moves, a level.
+  About 26 characters wide, 14 at least, frameless with a size grip.
 - **Measured** (`make test`, real processes over their sockets, offscreen):
   a merge is taken before it is let go and the moved tile's position
   carries on within 150 ms of the extrapolation; a tile pulled out plays
   on in a new process; a taker that never answers leaves the giver
-  playing. Sabotaged by hand: stopping the giver at OFFER fails the first
-  (a 1 ms gap was caught); never aborting fails the third.
+  playing; only the first opens with controls and plays, a later one as
+  a waveform, paused, controls pushed in stop a tile, and a handover
+  keeps each tile's controls as they were. Sabotaged by hand: stopping
+  the giver at OFFER (a 1 ms gap was caught), never aborting, every
+  launch taken as the first, and pushed-in controls left playing -- each
+  fails its test.
 - **Not yet:** audio (sec 3/3a), the crossfade in the overlap, Wayland's
   drag-and-drop merge, a snap preview while dragging, and the tile
   waveform.

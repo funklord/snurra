@@ -2,6 +2,7 @@
 
 #include <QDataStream>
 #include <QDir>
+#include <QLocalSocket>
 #include <QIODevice>
 #include <QStandardPaths>
 
@@ -64,6 +65,15 @@ QStringList peer_sockets(const QString &own) {
 		if (path != own) found << path;
 	}
 	return found;
+}
+
+bool any_peer_alive(const QString &own) {
+	for (const QString &path : peer_sockets(own)) {
+		QLocalSocket probe;
+		probe.connectToServer(path);
+		if (probe.waitForConnected(100)) return true;
+	}
+	return false;
 }
 
 }

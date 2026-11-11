@@ -21,6 +21,7 @@ class handover_test : public QObject {
 private slots:
 	void init();
 	void cleanup();
+	void only_the_first_opens_with_controls_and_plays();
 	void a_merge_is_taken_before_it_is_let_go();
 	void a_tile_pulled_out_plays_on_in_a_new_process();
 	void a_taker_that_never_answers_leaves_the_giver_playing();
@@ -132,11 +133,54 @@ static snurra_wire::message status_request() {
 	return m;
 }
 
-void handover_test::a_merge_is_taken_before_it_is_let_go() {
+void handover_test::only_the_first_opens_with_controls_and_plays() {
+	/*
+	 * project.md sec 3c: the first snurra opens with its controls out and
+	 * plays; one opened beside it is a waveform, paused, so a screen of
+	 * tiles is not a screen of control panels. Pulled out, its controls
+	 * show; pushed back in, a tile stops. A handover carries which.
+	 */
 	QProcess *a = start({ QStringLiteral("a.flac") });
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
 	QProcess *b = start({ QStringLiteral("b.flac") });
-	QVERIFY(a->waitForStarted() && b->waitForStarted());
-	QVERIFY(wait_for_socket(socket_of(a)) && wait_for_socket(socket_of(b)));
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+
+	const snurra_tile_state first = ask(socket_of(a), status_request()).states.value(0);
+	QVERIFY2(first.controls && first.playing, "the first did not open with controls, playing");
+	const snurra_tile_state second = ask(socket_of(b), status_request()).states.value(0);
+	QVERIFY2(!second.controls && !second.playing, "a second opened with controls or playing");
+
+	snurra_wire::message pull;
+	pull.type = snurra_wire::SHOW_CONTROLS;
+	pull.index = 0;
+	pull.time = 1;
+	tell(socket_of(b), pull);
+	QTRY_VERIFY_WITH_TIMEOUT(ask(socket_of(b), status_request()).states.value(0).controls, 3000);
+
+	snurra_wire::message push = pull;
+	push.time = 0;
+	tell(socket_of(a), push);
+	QTRY_VERIFY_WITH_TIMEOUT(!ask(socket_of(a), status_request()).states.value(0).controls, 3000);
+	QVERIFY2(!ask(socket_of(a), status_request()).states.value(0).playing, "controls pushed in, still playing");
+
+	/* Moved, each keeps its controls as they were. */
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = socket_of(a);
+	tell(socket_of(b), merge);
+	QVERIFY(b->waitForFinished(5000));
+	const QList<snurra_tile_state> both = ask(socket_of(a), status_request()).states;
+	QCOMPARE(both.size(), 2);
+	for (const snurra_tile_state &state : both)
+		QCOMPARE(state.controls, state.source.endsWith(QLatin1String("b.flac")));
+}
+
+void handover_test::a_merge_is_taken_before_it_is_let_go() {
+	/* The first plays; the second, a waveform, is where it goes. */
+	QProcess *a = start({ QStringLiteral("a.flac") });
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ QStringLiteral("b.flac") });
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
 	QTest::qWait(400);
 
 	const snurra_wire::message before = ask(socket_of(a), status_request());
@@ -180,7 +224,7 @@ void handover_test::a_tile_pulled_out_plays_on_in_a_new_process() {
 
 	snurra_wire::message release;
 	release.type = snurra_wire::RELEASE;
-	release.index = 1;
+	release.index = 0;   /* the first, the one playing */
 	release.frame = QRect(40, 40, 1, 1);
 	tell(group_socket, release);
 
@@ -200,7 +244,7 @@ void handover_test::a_tile_pulled_out_plays_on_in_a_new_process() {
 	QTRY_COMPARE_WITH_TIMEOUT(ask(group_socket, status_request()).states.size(), 1, 5000);
 
 	const snurra_wire::message taken = ask(adopted, status_request());
-	QCOMPARE(taken.states.first().source, QStringLiteral("two.flac"));
+	QCOMPARE(taken.states.first().source, QStringLiteral("one.flac"));
 	QVERIFY(taken.states.first().playing);
 	QVERIFY2(taken.started <= taken.stopped && taken.stopped > 0,
 	         qPrintable(QStringLiteral("started %1, stopped %2").arg(taken.started).arg(taken.stopped)));

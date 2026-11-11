@@ -1,7 +1,6 @@
 #ifndef SNURRA_TILE_H
 #define SNURRA_TILE_H
 
-#include <QElapsedTimer>
 #include <QWidget>
 
 #include "tile_state.h"
@@ -9,11 +8,15 @@
 class QLabel;
 class QSlider;
 class QToolButton;
+class snurra_waveform;
 
 /*
- * One tile (project.md sec 3b): compact, resizeable, its controls dummies
- * until there is audio -- play and pause, a position that a clock moves,
- * a level. Its title is the handle: dragged, it asks its window to move,
+ * One tile (project.md sec 3b, 3c): compact, resizeable, a waveform
+ * always, and its controls only when pulled out. The first tile opens
+ * with them and plays; the others open as a waveform alone, paused, so a
+ * screen of tiles is not a screen of control panels. The controls are
+ * dummies until there is audio: play and pause, a position a clock moves,
+ * a level. The title is the handle: dragged, it asks its window to move,
  * or, in a group, to be pulled out.
  */
 class snurra_tile : public QWidget {
@@ -27,6 +30,8 @@ public:
 
 	void set_playing(bool playing);
 	bool playing() const { return m_state.playing; }
+	void set_controls(bool out);
+	bool controls() const { return m_state.controls; }
 	int row() const { return m_state.row; }
 	int column() const { return m_state.column; }
 	void set_place(int row, int column);
@@ -44,10 +49,14 @@ protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-	void show_position();
+	void seek(qint64 position_ms);
+	void tick();
 
 	snurra_tile_state m_state;
 	QLabel *m_title;
+	snurra_waveform *m_waveform;
+	QToolButton *m_pull;
+	QWidget *m_controls;
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

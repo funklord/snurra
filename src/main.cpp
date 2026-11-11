@@ -4,6 +4,7 @@
 #include <QFileInfo>
 
 #include "node.h"
+#include "wire.h"
 
 /*
  * snurra: one tile per process (project.md sec 3b). Started with a file,
@@ -38,14 +39,22 @@ int main(int argc, char *argv[]) {
 		return app.exec();
 	}
 
+	/*
+	 * Only the first snurra opens with controls and plays (project.md sec
+	 * 3c); one opened while another runs is a waveform, paused, until its
+	 * controls are pulled out. Within one launch the first file is first.
+	 */
 	const QStringList files = parser.positionalArguments();
+	bool first = !snurra_wire::any_peer_alive(node.socket_path());
 	int column = 0;
 	for (const QString &file : files.isEmpty() ? QStringList{ QStringLiteral("untitled") } : files) {
 		snurra_tile_state state;
 		state.source = QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
 		state.duration_ms = 180000;   /* a dummy three minutes until there is audio */
 		state.sampled_at = QDateTime::currentMSecsSinceEpoch();
-		state.playing = !parser.isSet(paused);
+		state.controls = first;
+		state.playing = first && !parser.isSet(paused);
+		first = false;
 		state.column = column++;
 		node.add_tile(state);
 	}
