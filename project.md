@@ -94,9 +94,28 @@ before building on it.
   misspelt key fails silently. snurra's controls are typed members of
   the deck and mixer, with atomics where the engine reads them; a string
   map can be layered on later for scripting, from the typed ones.
-- **PortAudio** for output: snurra uses Qt's `QAudioSink`, which is on
-  Android as on the desktop, one dependency fewer, and what an embedding
-  Qt program already has.
+- **Output, revised the same day.** This said `QAudioSink` instead of
+  PortAudio; the holder then set two requirements that undo it: **snurra
+  must be low latency**, and **supporting many or all of a platform's
+  output types is never a bad idea for audio software**. `QAudioSink`
+  pushes into a buffer of its own through the system's sound server, so
+  its latency is not snurra's to set, and it reaches neither JACK nor raw
+  ALSA nor ASIO. So **output is an interface with several backends, the
+  engine run inside the device's callback** (pull, as Mixxx does): no
+  lock, no allocation and no I/O in the callback, the reader thread
+  keeping decoded audio ready ahead of it.
+  - **PortAudio on the desktop** -- Mixxx's choice kept, for its reach:
+    ALSA, JACK and OSS on Linux (PipeWire through its JACK and ALSA
+    faces), CoreAudio, WASAPI and ASIO on Windows.
+  - **AAudio on Android** (API 26 and up, below this workspace's floor),
+    in its low-latency performance mode; Oboe is Google's C++ wrapper
+    over it and OpenSL ES, worth weighing against a direct AAudio call.
+  - **`QAudioSink` as the plain fallback**, for an embedding program that
+    wants no further dependency and does not need low latency -- a media
+    tile playing a file, not a mix.
+  The latency to aim for, and how to measure it end to end, is the first
+  thing to settle when the engine exists; the device's period and the
+  reader's lead are the two numbers.
 - **QML:** Mixxx links Qt Quick and is moving its interface there; this
   workspace is Qt Widgets (harmonization.md), so the interface is
   snurra's own.
