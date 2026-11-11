@@ -1,0 +1,14 @@
+# Configuration for tool/style_gate.py -- see code-style.md.
+# Nothing here changes the rules; it says which files in THIS tree they
+# apply to.
+
+# Tabs from the first commit, so the workspace's usual width.
+indent_width = 4
+
+# A small tree; the floor guards against a filter collapsing the gated set.
+floor = 0.3
+
+exclude = ["build", "__pycache__", ".claude"]
+
+# ASCII outside string literals (code-style.md).
+ascii_only = true
