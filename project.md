@@ -116,6 +116,23 @@ before building on it.
   The latency to aim for, and how to measure it end to end, is the first
   thing to settle when the engine exists; the device's period and the
   reader's lead are the two numbers.
+- **Shared by default, exclusive by choice** (the holder, the same day:
+  "sometimes poor latency output is all we have on some systems so
+  let's keep those options open too, and something that works with a
+  normal alsa dmix setup (mixxx hogs the audio exclusively)"). So:
+  - **The default output shares the device**: ALSA's `default` (dmix
+    where that is the setup), PulseAudio or PipeWire, so other programs
+    go on sounding beside snurra. Mixxx opens its devices for itself and
+    silences everything else; snurra does not, unless asked.
+  - **Low latency is opt-in**: a `hw:` device, JACK, ASIO, AAudio's
+    exclusive mode -- chosen per output, said in the interface as the
+    trade it is.
+  - **Any latency must work, not only low.** A shared output's period
+    can be tens of milliseconds, and some systems offer nothing better;
+    the engine takes whatever period the device gives, the reader's lead
+    grows with it, and the position shown and the seek bar are corrected
+    by the latency the device reports, so a slow output plays late but
+    never stutters or shows the wrong place.
 - **QML:** Mixxx links Qt Quick and is moving its interface there; this
   workspace is Qt Widgets (harmonization.md), so the interface is
   snurra's own.
