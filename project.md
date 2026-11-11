@@ -144,6 +144,64 @@ So the backend question in sec 3 leans further: Mixxx decodes with
 FFmpeg among others (`SoundSourceFFmpeg`) into its own engine, which is
 the second option there. QMediaPlayer cannot be a deck in a mixer.
 
+## 3b. The tile, the train and the stack -- the feature snurra is for
+
+The holder, 2026-11-11, "the killer feature": snurra opens as a tiny,
+squarish player **right above the file** it was opened from in a file
+browser. Open a second and it appears above its own file; **tiles snap
+together side by side into a train -- one mix, played in sequence -- and
+one below another into multitrack**, with beat-snapping, envelopes "and
+such features".
+
+**One process, one engine, many tiles.** Mixing needs one engine and one
+output, and snapping needs one owner of the tiles' positions. So a second
+launch hands its file to the running snurra (a local socket, as the
+single-instance pattern) and exits; that snurra opens a tile for it.
+
+**Above the file: what each platform allows.**
+
+- **Embedded** (BeerSSH's file panel, fuzzypickles): exact -- the host
+  knows the item's rectangle and gives it.
+- **Launched from a file manager on X11** (TDE's Konqueror, and others):
+  a file manager tells the program it starts nothing about where the
+  file's icon is, but the pointer is on it at the double-click, so the
+  tile opens at the pointer, clamped to the screen. A good heuristic, not
+  a guarantee (Enter on a selected file opens it wherever the pointer is).
+- **Wayland:** a program can neither place its own window nor read the
+  pointer outside it; the compositor places the tile. Above-the-file is
+  out of reach there short of a protocol the compositors do not offer.
+
+**Snapping, and why it lives in one window on Wayland.** On X11 the tiles
+can be top-level windows that move and snap to each other's edges. On
+Wayland a program cannot learn or set its windows' positions, so tiles
+snap inside a snurra window instead: dragging a tile onto another's edge
+joins them into one window. To be decided with the first code whether
+X11 keeps free-floating tiles or uses the same one-window model
+everywhere (simpler, one code path).
+
+**What the shapes mean:**
+
+- **A train** (side by side) is a sequence on one timeline: each tile's
+  end overlaps the next's start, and the overlap is the crossfade. This
+  is a DJ mix, and Mixxx's engine shape (sec 3a) plays it: two decks and
+  a crossfader, scheduled.
+- **A stack** (one below another) is multitrack: tiles play at once, each
+  a lane, each with its own level -- an arranger, not a DJ.
+- **Beat-snapping:** a dragged tile's start or overlap snaps to the
+  other's beat grid, which needs tempo and beat analysis per file (Mixxx
+  analyses on load; aubio and the Queen Mary vamp plugins are the usual
+  libraries -- their licences are the holder's to weigh before one is
+  linked).
+- **Envelopes:** a level curve per tile, drawn on it; the crossfade of a
+  train is two of them.
+
+**"Tiny" kept honest by building in layers**, each usable before the
+next: (1) the tile -- one file, play/pause/seek, opened at the pointer,
+the shared default output; (2) single instance and several tiles,
+snapping into one window; (3) the train: sequence and crossfade; (4) the
+stack: simultaneous lanes and levels; (5) envelopes; (6) analysis and
+beat-snapping. Each layer is a decision to go on, not a default.
+
 ## 4. State
 
 A skeleton, 2026-11-11: this file, the README, the copied style rules and
