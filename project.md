@@ -153,10 +153,34 @@ together side by side into a train -- one mix, played in sequence -- and
 one below another into multitrack**, with beat-snapping, envelopes "and
 such features".
 
-**One process, one engine, many tiles.** Mixing needs one engine and one
-output, and snapping needs one owner of the tiles' positions. So a second
-launch hands its file to the running snurra (a local socket, as the
-single-instance pattern) and exits; that snurra opens a tile for it.
+**A process per tile, merged when snapped** (the holder, the same day:
+"just like beerssh these start as separate processes, but are merged
+into one when snapped together"). BeerSSH hands a live session from one
+process to another when panes are joined (its project.md sec 8.4); snurra
+does the same with a tile's playback:
+
+- **Opened, a tile is a process of its own**, playing on its own through
+  the shared default output -- which is why shared must be the default
+  (sec 3a): two tiles each holding an exclusive `hw:` device could not
+  both sound.
+- **Snapped, it merges**: the tile dropped onto another hands over what
+  it is playing -- the file or source, the position, playing or paused,
+  its level and envelope -- to the process it joined, which becomes the
+  one engine mixing both. The giver keeps playing until the taker sounds
+  the stream at the same position, then stops, so the merge is heard as
+  nothing; then it exits. A source still arriving (BeerSSH's SFTP,
+  fuzznet) moves as its address and offset, re-opened by the taker,
+  since a byte stream cannot be handed across mid-read.
+- **Pulled out**, a tile leaves the same way in reverse, into a new
+  process.
+- **The snap gesture between processes:** on X11 a tile can find the
+  others' windows and snap edge to edge as it is moved; on Wayland a
+  program cannot learn other windows' positions, so the gesture there
+  is dragging one tile onto another -- a drag and drop, which Wayland
+  carries between programs -- and the merged window is arranged inside.
+- **Why not one process from the start:** a tile that crashes on a bad
+  file takes only itself down, a lone tile stays a small program, and
+  the merge is needed only where mixing begins.
 
 **Above the file: what each platform allows.**
 
@@ -171,13 +195,7 @@ single-instance pattern) and exits; that snurra opens a tile for it.
   pointer outside it; the compositor places the tile. Above-the-file is
   out of reach there short of a protocol the compositors do not offer.
 
-**Snapping, and why it lives in one window on Wayland.** On X11 the tiles
-can be top-level windows that move and snap to each other's edges. On
-Wayland a program cannot learn or set its windows' positions, so tiles
-snap inside a snurra window instead: dragging a tile onto another's edge
-joins them into one window. To be decided with the first code whether
-X11 keeps free-floating tiles or uses the same one-window model
-everywhere (simpler, one code path).
+
 
 **What the shapes mean:**
 
