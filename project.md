@@ -222,9 +222,43 @@ beat-snapping. Each layer is a decision to go on, not a default.
 
 ## 4. State
 
-A skeleton, 2026-11-11: this file, the README, the copied style rules and
-gate, the commit-msg hook, and a Makefile with nothing to build yet.
+**The handover base, built 2026-11-11, no audio yet** (the holder: "a
+good base for the window connection/disconnection to make them as
+seamless handovers as possible so we avoid dropouts and performance
+spikes", with dummy controls; each tile very compact but resizeable).
 
-**A bare `make` builds nothing, and says so**, because there is no
-software yet; `all` gains the library and the player with the first code.
-That is the exception build-and-commit.md asks to be written down.
+- **A process per tile**, listening on `<runtime>/snurra/<pid>.sock`
+  (`$SNURRA_RUNTIME_DIR` overrides); peers are found by listing the
+  directory. Messages are length-framed QDataStream (`src/wire.*`).
+- **The handover overlaps by design:** OFFER (states, each position
+  stamped with when it was sampled) -> the taker builds the tiles,
+  starts them at the extrapolated position and answers READY -> only
+  then the giver stops, sends COMMIT with the time, and goes once
+  empty. Between READY and COMMIT both play: the window a crossfade
+  fills when there is audio. No READY within 2 s: ABORT, and the giver
+  plays on -- a failed handover costs nothing.
+- **Pulling a tile out** starts a new process with `--adopt`; it
+  connects back and asks for the tile by token, and the group plays it
+  until READY. 8 s for that, as a process has to start.
+- **No spikes:** a tile's states travel, not its widgets; the taker
+  inserts every tile and lays the grid out once with updates held; a
+  drag asks every peer where its window is as it starts, so the answers
+  are in by the release and nothing waits on a socket mid-gesture.
+- **Snapping (X11):** a lone tile dragged by its title moves the window;
+  let go within 24 px of another snurra's right edge it joins as the
+  next in a train, of its bottom edge as a lane below. In a group, a
+  tile dragged out of the window and let go is pulled out there. On
+  Wayland the window move is the compositor's (`startSystemMove`) and
+  snapping waits for drag-and-drop onto a tile (sec 3b).
+- **A tile:** a title that is the handle, close, play/pause, a position
+  a clock moves, a level; about 26 characters wide, 14 at least,
+  frameless with a size grip.
+- **Measured** (`make test`, real processes over their sockets, offscreen):
+  a merge is taken before it is let go and the moved tile's position
+  carries on within 150 ms of the extrapolation; a tile pulled out plays
+  on in a new process; a taker that never answers leaves the giver
+  playing. Sabotaged by hand: stopping the giver at OFFER fails the first
+  (a 1 ms gap was caught); never aborting fails the third.
+- **Not yet:** audio (sec 3/3a), the crossfade in the overlap, Wayland's
+  drag-and-drop merge, a snap preview while dragging, and the tile
+  waveform.

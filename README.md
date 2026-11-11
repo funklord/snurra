@@ -24,12 +24,15 @@ How it differs from its neighbours:
 - **Mixing** -- more than one stream and their levels -- is part of the
   player, not a separate DAW.
 
-Not built yet: this is the plan and a skeleton; `project.md` holds both.
+Not playing sound yet: tiles open, snap and hand over between processes
+with dummy controls; `project.md` holds the plan and the state.
 
 ## Building
 
-    make            # nothing to build yet
+    make            # the player, in build/
     fmake
+
+    make test       # the handover tests
 
     make style      # the style gate
 
