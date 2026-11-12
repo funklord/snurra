@@ -274,6 +274,20 @@ void snurra_node::place_tiles() {
 	m_grid->setRowStretch(3 * int(rows.size()), 1);
 	setUpdatesEnabled(true);
 	adjustSize();
+
+	/* Titled by what it plays -- the first tile's file, and how many
+	 * more -- so a taskbar or a window switcher tells windows apart. */
+	snurra_tile *first = nullptr;
+	for (snurra_tile *tile : m_tiles)
+		if (!first || tile->row() < first->row() || (tile->row() == first->row() && tile->column() < first->column()))
+			first = tile;
+	QString title = QStringLiteral("snurra");
+	if (first) {
+		const QString name = QFileInfo(first->state().source).fileName();
+		title = name.isEmpty() ? first->state().source : name;
+		if (m_tiles.size() > 1) title += QStringLiteral(" +%1").arg(m_tiles.size() - 1);
+	}
+	setWindowTitle(title);
 }
 
 /* The window as tall as what is open: a drawer opened adds its height, a

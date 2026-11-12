@@ -385,6 +385,8 @@ void embed_test::files_dropped_on_a_window_join_it() {
 	}
 	std::sort(places.begin(), places.end());
 	QCOMPARE(places, (QList<QPair<int, int>>{ { 0, 1 }, { 0, 2 }, { 1, 0 } }));
+	/* Titled by what it plays: the first tile's name, and how many more. */
+	QCOMPARE(node.windowTitle(), QStringLiteral("first +3"));
 }
 
 /*
