@@ -313,7 +313,57 @@ sec 3a's:
   wait for their platforms.
 - **The shared clock** (`src/clock.h`) is `steady_clock` in microseconds,
   one for every process on a machine and never stepped. Tile states carry
-  positions in microseconds, so a taker can be in step to a frame.
+  positions in microseconds, so a taker can be in step to a frame. Every
+  frame/microsecond conversion rounds, through `clock.h`; truncating ones
+  lost up to a frame each, the same way, and put two decks two frames
+  apart.
+
+**Seeking is to the sample** (the holder, 2026-11-12: "since we are a DJ
+program, our seeking api needs to be very precise"). A seek lands on the
+very frame playing through would reach, for every codec; a handover's
+taker hands on the giver's exact (frame, time) pair, never a moment
+re-sampled and rounded on each side. A deck plays whole frames, so two
+decks in step are within half a frame of each other and no closer --
+closer would need the taker resampled by a fraction, which nothing yet
+asks for.
+
+**Codecs keep time, measured** (`codec_test`, the holder 2026-11-12:
+every codec added gets tests of how it keeps time against other files,
+so timing faults are found and fixed before anything depends on them). A
+reference of chirps at known times is encoded by the `ffmpeg` program
+into WAV, FLAC, ALAC, MP3, AAC, Opus, Vorbis, MP2 and AC3, at 48 and
+44.1 kHz, decoded through `src/source.cpp`, and each chirp found by
+correlation to a fraction of a frame. Every codec must seek to within a
+quarter frame of played-through and report the length it plays; every
+codec that carries its priming and padding must also play as written,
+to a quarter frame and to the frame in length. A new codec is a new row
+in `every_codec_keeps_time_data`. What the first run found, all fixed in
+the source:
+
+- **Priming dropped twice.** FFmpeg 7.1's decoder drops MP3's encoder
+  delay and Opus's pre-skip from the first frame but leaves its pts on
+  the dropped start; read, they played 956 and 312 frames early. A first
+  frame at the first packet's pts, shorter than that packet, now counts
+  the difference.
+- **A resampler restarted off its grid.** After a seek a 44.1 kHz file
+  sat up to half a frame off played-through, since only every 147th
+  input sample lands on a whole 48 kHz frame; the restart now skips to
+  the next grid point.
+- **Vorbis at 48 kHz seeked 465 frames off** (the best-effort timestamp,
+  as above).
+- **Coarse raw timestamps.** Raw AC3 at 44.1 kHz counts 3134.69 ticks of
+  1/90000 a frame as 3134, so a seek lagged 50 frames by the fifth
+  second; a frame's index (pts / duration) is exact, and is used.
+- **Lengths from the last packets**, not the stream's duration: Opus's
+  counts its pre-skip, MP3's its padding, and AAC in MP4 played its
+  final frame's 768 padding samples. Ogg shortens the last packet by its
+  discard and names it too; MP3 does not shorten it; a last packet as
+  long as its predecessor is taken to still hold its padding.
+- **Raw MP2 and AC3 play late by their encoder's delay** (481 and 256
+  frames from FFmpeg's encoders): the format carries no word of it, so
+  every player hears it so, Mixxx included. Recorded, held constant (no
+  drift), and seeks still agree with played-through to the sample.
+  Correcting it would need a delay assumed per encoder.
 
 **A handover is a crossfade over one stretch of that clock.** The taker
 builds its tiles with their decks *held* silent and *anchored* to the
@@ -369,10 +419,13 @@ controls; each tile very compact but resizeable).
   the two gains sum to 1 within 0.0003 at every frame from 200 ms before
   the fade to 200 ms after, the two are at most 1 frame apart where both
   sound, and each plays its frames without a skip or a repeat.
-  Sabotaged by hand 2026-11-12, each failing its test: the giver cutting
-  at the fade's start (sum 0), the taker not anchored (919 frames apart,
-  and the position test), the giver's deck retired before its fade (sum
-  0). Earlier: stopping the giver at OFFER, never aborting, every launch
+  Within 0.48 frames over ten runs, the bar 0.55, and continuity is
+  checked on each capture's own frames (on a shared grid, two clocks
+  half a frame apart round onto one frame twice -- that was an
+  intermittent false failure, not a dropout). Sabotaged by hand
+  2026-11-12, each failing its test: the giver cutting at the fade's
+  start (sum 0), the taker not anchored (919 frames apart, and the
+  position test), the giver's deck retired before its fade (sum 0). Earlier: stopping the giver at OFFER, never aborting, every launch
   taken as the first, pushed-in controls left playing.
 - **ALSA on a real device clock:** `tone:440` to `plughw:Loopback,0,5`
   (this machine's `snd-aloop`; subdevice 0 was busy with someone else's
@@ -383,8 +436,9 @@ controls; each tile very compact but resizeable).
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
-- **Not yet:** codec timing (sec 5), Wayland's drag-and-drop merge, a
-  real waveform, and the train's and stack's own mixing (sec 3b).
+- **Not yet:** a source still arriving (fuzznet, SFTP) through the same
+  timing tests; Wayland's drag-and-drop merge; a real waveform; the
+  train's and stack's own mixing (sec 3b).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -398,12 +452,7 @@ Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
 over SSH as the other trees are. Open, the holder's: audio or video
 first; the analysis licences (sec 3e).
 
-**Next, from the holder (2026-11-12): codec timing tests.** Every codec
-added should be tested for how it keeps time against other files, so
-timing faults are found and fixed before anything depends on them. The
-crossfade test proves decks agree with each other only for the ramp
-source, which is exact by construction; real codecs bring encoder delay
-and padding (MP3, AAC, Opus pre-skip), resampler delay (44.1 kHz into
-48 kHz), and key-frame seeks, none of it measured yet. Then: the Wayland
-merge by drag and drop; a handover between two ALSA outputs measured
-through the loopback.
+Next: the Wayland merge by drag and drop; a handover between two ALSA
+outputs measured through the loopback, where latency is the device's
+rather than a counted clock's; the timing tests run over a source that
+arrives in pieces, once there is one.

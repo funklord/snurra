@@ -340,6 +340,10 @@ struct capture_t {
 	double gain(int i) const { return i >= 0 && i < right.size() ? right.at(i) : 0.0; }
 	double frame(int i) const { return double(left.at(i)) / right.at(i) * SNURRA_RAMP_SCALE; }
 
+	/* The frame being heard at exactly `when`, to a fraction: the ramp is
+	 * a straight line in time, so the nearest frame says where it is. */
+	double frame_at(int i, double when) const { return frame(i) + (when - us.at(i)) * 48000 / 1e6; }
+
 	/* The frame heard nearest `at`, or -1 outside the capture. */
 	int at(double when) const {
 		if (us.isEmpty() || when < us.first() - 11 || when > us.last() + 11) return -1;
@@ -401,9 +405,14 @@ void handover_test::check_crossover(qint64 giver_pid, qint64 taker_pid, const sn
 	double worst_sum = 1;
 	double worst_at = 0;
 	double worst_apart = 0;
-	double last_giver = -1;
-	double last_taker = -1;
-	for (double when = from; when <= to; when += 1e6 / 48000) {
+	/* A grid of times, each from the start rather than summed, compared
+	 * by nearest frame: good for gains and for where each side is, not for
+	 * whether frames follow one another -- two grids half a frame apart
+	 * can round onto one frame twice. That is checked below, on each
+	 * capture's own frames. */
+	const qint64 steps = qint64((to - from) * 48000 / 1e6);
+	for (qint64 step = 0; step <= steps; ++step) {
+		const double when = from + double(step) * 1e6 / 48000;
 		const int t = taker.at(when);
 		const int g = giver.at(when);
 		const double gain_taker = taker.gain(t);
@@ -414,34 +423,29 @@ void handover_test::check_crossover(qint64 giver_pid, qint64 taker_pid, const sn
 			worst_at = when - double(status.started);
 		}
 		++checked;
-
-		if (gain_taker > 0.001) {
-			const double frame = taker.frame(t);
-			if (last_taker >= 0)
-				QVERIFY2(qAbs(frame - last_taker - 1) < 0.5,
-				         qPrintable(QStringLiteral("the taker went from frame %1 to %2").arg(last_taker).arg(frame)));
-			last_taker = frame;
-		}
-		if (gain_giver > 0.001) {
-			const double frame = giver.frame(g);
-			last_giver = frame;
-		}
 		if (gain_taker > 0.01 && gain_giver > 0.01) {
 			++both;
-			worst_apart = qMax(worst_apart, qAbs(giver.frame(g) - taker.frame(t)));
+			worst_apart = qMax(worst_apart, qAbs(giver.frame_at(g, when) - taker.frame_at(t, when)));
 		}
 	}
-	/* The giver's own run, over the whole of its capture's sounding part. */
-	double previous = -1;
-	for (int g = 0; g < giver.us.size(); ++g) {
-		if (giver.gain(g) <= 0.001) continue;
-		const double frame = giver.frame(g);
-		if (previous >= 0)
-			QVERIFY2(qAbs(frame - previous - 1) < 0.5,
-			         qPrintable(QStringLiteral("the giver went from frame %1 to %2").arg(previous).arg(frame)));
-		previous = frame;
+	/* Each side's own run, over the whole of its capture's sounding part:
+	 * every frame the one after the last, no skip and no repeat. */
+	for (const capture_t *capture : { &giver, &taker }) {
+		const char *side = capture == &giver ? "giver" : "taker";
+		double previous = -1;
+		for (int i = 0; i < capture->us.size(); ++i) {
+			if (capture->gain(i) <= 0.001) continue;
+			const double frame = capture->frame(i);
+			if (previous >= 0)
+				QVERIFY2(qAbs(frame - previous - 1) < 0.5,
+				         qPrintable(QStringLiteral("the %1 went from frame %2 to %3 at %4 ms from the fade's start")
+				                            .arg(QLatin1String(side))
+				                            .arg(previous)
+				                            .arg(frame)
+				                            .arg((capture->us.at(i) - double(status.started)) / 1000, 0, 'f', 2)));
+			previous = frame;
+		}
 	}
-	Q_UNUSED(last_giver);
 
 	qInfo("crossover: %d frames checked, %d with both sounding, gains summed to %.4f at worst "
 	      "(%.1f ms from the fade's start), %.2f frames apart at worst",
@@ -451,7 +455,10 @@ void handover_test::check_crossover(qint64 giver_pid, qint64 taker_pid, const sn
 	         qPrintable(QStringLiteral("the gains summed to %1: a gap or a doubling").arg(worst_sum)));
 	QVERIFY2(both >= 48000 * (status.stopped - status.started) / 2000000,
 	         qPrintable(QStringLiteral("only %1 frames with both sounding: no real overlap").arg(both)));
-	QVERIFY2(worst_apart <= 2, qPrintable(QStringLiteral("the two were %1 frames apart").arg(worst_apart)));
+	/* A deck plays whole frames, so half a frame is the floor without
+	 * resampling the taker; a little over it is the clock's microsecond.
+	 * Measured over ten runs 2026-11-12: 0.48 at worst. */
+	QVERIFY2(worst_apart <= 0.55, qPrintable(QStringLiteral("the two were %1 frames apart").arg(worst_apart)));
 }
 
 void handover_test::a_merge_crosses_over_in_step_without_a_gap() {
@@ -507,5 +514,8 @@ void handover_test::a_tile_pulled_out_crosses_over_in_step_without_a_gap() {
 	check_crossover(group->processId(), QFileInfo(adopted).baseName().toLongLong(), status);
 }
 
-QTEST_GUILESS_MAIN(handover_test)
+int run_handover_tests(int argc, char **argv) {
+	handover_test test;
+	return QTest::qExec(&test, argc, argv);
+}
 #include "handover_test.moc"

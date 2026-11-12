@@ -2,7 +2,7 @@
 #
 # TARGETS
 #   make            the player, in $(BUILD_DIR)/snurra
-#   make test       build and run the handover tests (never built by plain make)
+#   make test       build and run the handover and codec tests (never built by plain make)
 #   make style      the style gate: its own suite, whitespace, indentation, the docs
 #   make hooks      install the commit-msg hook
 #   make help       this list

@@ -57,6 +57,12 @@ public:
 
 	/* The frame heard at `us`, from what the callback last rendered. */
 	int64_t position_at(int64_t us) const;
+
+	/* What the callback last rendered, exactly: `frame` is heard at `us`,
+	 * and it was moving (playing, and not starved). A handover passes this
+	 * pair on as it is, since any other moment would be rounded to a frame
+	 * once here and again by the taker. */
+	void last_rendered(int64_t &frame, int64_t &us, bool &moving) const;
 	int64_t length() const { return m_length.load(std::memory_order_relaxed); }
 	int rate() const { return m_rate; }
 

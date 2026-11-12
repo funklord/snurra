@@ -37,7 +37,7 @@ libasound2-dev`.
     make            # the player, in build/
     fmake
 
-    make test       # the handover tests
+    make test       # the handover and codec timing tests (codec ones need ffmpeg)
 
     make style      # the style gate
 

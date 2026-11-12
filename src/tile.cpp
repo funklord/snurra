@@ -147,18 +147,23 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 
 /* The deck's frames as the shared clock's microseconds, and back. */
 static qint64 frames_to_us(int64_t frames, int rate) {
-	return qint64(frames * 1000000 / rate);
+	return qint64(snurra_frames_to_us(frames, rate));
 }
 
 static int64_t us_to_frames(qint64 us, int rate) {
-	return int64_t(us) * rate / 1000000;
+	return snurra_us_to_frames(us, rate);
 }
 
 snurra_tile_state snurra_tile::state() const {
+	/* The deck's own exact pair rather than a moment of this one's
+	 * choosing, which would be rounded to a frame (deck.h). */
 	snurra_tile_state now = m_state;
-	const qint64 at = snurra_clock_us();
-	now.position_us = frames_to_us(m_deck->position_at(at), m_deck->rate());
-	now.sampled_at_us = at;
+	int64_t frame = 0;
+	int64_t at = 0;
+	bool moving = false;
+	m_deck->last_rendered(frame, at, moving);
+	now.position_us = frames_to_us(frame, m_deck->rate());
+	now.sampled_at_us = moving ? at : snurra_clock_us();
 	return now;
 }
 

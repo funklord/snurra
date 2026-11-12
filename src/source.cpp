@@ -4,6 +4,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <numeric>
 #include <cmath>
 #include <vector>
 
@@ -11,6 +12,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/intreadwrite.h>
 #include <libswresample/swresample.h>
 }
 
@@ -112,12 +114,16 @@ public:
 			m_length = av_rescale_q(stream->duration, stream->time_base, AVRational{ 1, m_rate });
 		else if (m_format->duration > 0)
 			m_length = av_rescale(m_format->duration, m_rate, AV_TIME_BASE);
+		find_end();
+		seek(0);
 		return true;
 	}
 
 	int read(float *out, int frames) override {
 		while (pending_frames() < size_t(frames) && !m_ended) decode_some();
-		const int n = int(std::min(pending_frames(), size_t(frames)));
+		int n = int(std::min(pending_frames(), size_t(frames)));
+		/* Not past the end the packets say: a codec's padding is not audio. */
+		if (m_exact_length) n = int(std::max<int64_t>(0, std::min<int64_t>(n, m_length - m_position)));
 		std::copy(m_pending.begin() + 2 * m_pending_from, m_pending.begin() + 2 * (m_pending_from + n), out);
 		m_pending_from += n;
 		m_position += n;
@@ -128,7 +134,9 @@ public:
 		return n;
 	}
 
-	bool at_end() const override { return m_ended && pending_frames() == 0; }
+	bool at_end() const override {
+		return (m_ended && pending_frames() == 0) || (m_exact_length && m_position >= m_length);
+	}
 
 	void seek(int64_t frame) override {
 		const AVStream *stream = m_format->streams[m_stream];
@@ -144,6 +152,7 @@ public:
 		m_position = frame;
 		m_trim_to = frame;
 		m_skip = 0;
+		m_front_pts = AV_NOPTS_VALUE;
 		m_place_next = true;
 	}
 
@@ -151,6 +160,51 @@ public:
 	int64_t length() const override { return m_length; }
 
 private:
+	/*
+	 * The length, from the last packets rather than the stream's duration:
+	 * Opus counts its pre-skip in the duration and MP3 its padding, and an
+	 * AAC file in MP4 ends its last packet early -- 256 of 1024 samples --
+	 * where the decoder still gives the whole frame. The end is the last
+	 * packet's pts and duration, less what its side data says to discard
+	 * -- unless the packet is already short by it: Ogg shortens the last
+	 * packet's duration and names the discard too (Opus 312 + 648 = 960),
+	 * MP3 keeps the full 1152 and names 47. So a last packet as long as the
+	 * one before it still holds its padding, and a shorter one does not.
+	 * The source plays to there and no further. Read from near the end, a
+	 * bounded number of packets; a file that will not seek keeps the
+	 * duration's guess.
+	 */
+	void find_end() {
+		const AVStream *stream = m_format->streams[m_stream];
+		const int64_t origin = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
+		int64_t guess = stream->duration > 0 ? stream->duration + origin
+		                                     : av_rescale_q(m_format->duration, AV_TIME_BASE_Q, stream->time_base);
+		if (guess <= 0) return;
+		const int64_t back = av_rescale_q(10 * AV_TIME_BASE, AV_TIME_BASE_Q, stream->time_base);
+		if (avformat_seek_file(m_format, m_stream, INT64_MIN, std::max<int64_t>(0, guess - back), INT64_MAX, 0) < 0)
+			return;
+		int64_t end = AV_NOPTS_VALUE;
+		int64_t previous = 0;
+		for (int packets = 0; packets < 100000 && av_read_frame(m_format, m_packet) >= 0; ++packets) {
+			if (m_packet->stream_index == m_stream && m_packet->pts != AV_NOPTS_VALUE && m_packet->duration > 0) {
+				int64_t here = m_packet->pts + m_packet->duration;
+				size_t size = 0;
+				const uint8_t *skip = av_packet_get_side_data(m_packet, AV_PKT_DATA_SKIP_SAMPLES, &size);
+				const bool whole = m_packet->duration >= previous;
+				previous = m_packet->duration;
+				if (whole && skip && size >= 8 && m_codec->sample_rate > 0) {
+					const int64_t trailing = int64_t(AV_RL32(skip + 4));
+					here -= av_rescale_q(trailing, AVRational{ 1, m_codec->sample_rate }, stream->time_base);
+				}
+				end = std::max(end, here);
+			}
+			av_packet_unref(m_packet);
+		}
+		if (end == AV_NOPTS_VALUE || end <= origin) return;
+		m_length = av_rescale_q(end - origin, stream->time_base, AVRational{ 1, m_rate });
+		m_exact_length = true;
+	}
+
 	size_t pending_frames() const { return m_pending.size() / 2 - m_pending_from; }
 
 	bool make_resampler() {
@@ -194,6 +248,11 @@ private:
 				return;
 			}
 			const bool ours = m_packet->stream_index == m_stream;
+			if (ours && m_place_next && m_front_pts == AV_NOPTS_VALUE) {
+				/* The first packet after a seek, to tell its first frame by. */
+				m_front_pts = m_packet->pts;
+				m_front_duration = m_packet->duration;
+			}
 			if (ours) avcodec_send_packet(m_codec, m_packet);
 			av_packet_unref(m_packet);
 			if (ours) return;
@@ -201,35 +260,110 @@ private:
 	}
 
 	void append(const AVFrame *frame) {
-		const int in = frame ? frame->nb_samples : 0;
-		const int room = swr_get_out_samples(m_swr, in);
-		if (room <= 0) return;
-		const size_t at = m_pending.size();
-		m_pending.resize(at + 2 * size_t(room));
-		uint8_t *out = reinterpret_cast<uint8_t *>(m_pending.data() + at);
-		const int made = swr_convert(m_swr, &out, room, frame ? frame->extended_data : nullptr, in);
-		m_pending.resize(at + 2 * size_t(std::max(0, made)));
-
-		/*
-		 * After a seek, the first frame decoded says where the samples
-		 * really are; everything before the frame asked for is dropped,
-		 * so the next read starts exactly there.
-		 */
+		int in = frame ? frame->nb_samples : 0;
+		const uint8_t *planes[AV_NUM_DATA_POINTERS] = {};
+		if (frame)
+			for (int i = 0; i < AV_NUM_DATA_POINTERS && i < frame->ch_layout.nb_channels; ++i)
+				planes[i] = frame->extended_data[i];
 		if (m_place_next && frame) {
 			m_place_next = false;
-			const AVStream *stream = m_format->streams[m_stream];
-			int64_t pts = frame->best_effort_timestamp;
-			if (pts != AV_NOPTS_VALUE) {
-				if (stream->start_time != AV_NOPTS_VALUE) pts -= stream->start_time;
-				const int64_t first = av_rescale_q(pts, stream->time_base, AVRational{ 1, m_rate });
-				m_skip = std::max<int64_t>(0, m_trim_to - first);
+			const int skip = place(frame);
+			if (skip > 0) {
+				/* Into the frame: the resampler starts on its grid. */
+				const int bytes = av_get_bytes_per_sample(AVSampleFormat(frame->format));
+				const bool planar = av_sample_fmt_is_planar(AVSampleFormat(frame->format));
+				const int channels = frame->ch_layout.nb_channels;
+				for (int i = 0; i < (planar ? channels : 1) && i < AV_NUM_DATA_POINTERS; ++i)
+					planes[i] += size_t(skip) * size_t(bytes) * size_t(planar ? 1 : channels);
+				in -= skip;
 			}
+		}
+		const int room = swr_get_out_samples(m_swr, in);
+		if (room > 0) {
+			const size_t at = m_pending.size();
+			m_pending.resize(at + 2 * size_t(room));
+			uint8_t *out = reinterpret_cast<uint8_t *>(m_pending.data() + at);
+			const int made = swr_convert(m_swr, &out, room, frame ? planes : nullptr, in);
+			m_pending.resize(at + 2 * size_t(std::max(0, made)));
 		}
 		/* The drop may span several decoded frames when the key frame is
 		 * far before the target. */
 		const size_t drop = size_t(std::min<int64_t>(m_skip, int64_t(pending_frames())));
 		m_pending_from += drop;
 		m_skip -= int64_t(drop);
+	}
+
+	/*
+	 * The first frame decoded after a seek says where its samples really
+	 * are. Its own pts, not best_effort_timestamp: when the decoder drops
+	 * a codec's priming (MP3's encoder delay, AAC's, Opus's pre-skip) it
+	 * moves the frame's pts past what it dropped, and the guessed
+	 * timestamp does not follow -- read, it drops the priming twice.
+	 *
+	 * From there, two corrections, so a seek lands on the frame played
+	 * through would have, to a fraction:
+	 *  - resampling, input sample a maps to output frame a * out / in, a
+	 *    whole frame only on a grid (every 147 input samples at 44.1 kHz
+	 *    into 48); a resampler restarted off the grid plays up to half a
+	 *    frame early or late, so it restarts on the next grid point;
+	 *  - what lies before the target is dropped, and if the data starts
+	 *    after it, silence fills the gap rather than the data being moved.
+	 * Returns how many input samples to skip in this frame.
+	 */
+	int place(const AVFrame *frame) {
+		const AVStream *stream = m_format->streams[m_stream];
+		int64_t pts = frame->pts != AV_NOPTS_VALUE ? frame->pts : frame->best_effort_timestamp;
+		if (pts == AV_NOPTS_VALUE) return 0;
+		if (stream->start_time != AV_NOPTS_VALUE) pts -= stream->start_time;
+		const int in_rate = frame->sample_rate > 0 ? frame->sample_rate : m_codec->sample_rate;
+		int64_t first_in = av_rescale_q(pts, stream->time_base, AVRational{ 1, in_rate });
+		/*
+		 * The decoder dropped the priming from the front of the first frame
+		 * without moving its pts past it -- FFmpeg 7.1 does so for MP3 (told
+		 * by the packet's side data) and Opus (by its header's pre-skip),
+		 * and shortens the frame's own duration for one and not the other.
+		 * So the packet decides: a frame at the first packet's pts that is
+		 * shorter than that packet had the difference dropped from its
+		 * front; a frame whose pts was moved does not match.
+		 */
+		const int64_t origin = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
+		const AVRational base = stream->time_base;
+		const bool first_packet = pts + origin == m_front_pts && m_front_duration > 0;
+		if (first_packet && (int64_t(frame->nb_samples) * base.den) % (int64_t(in_rate) * base.num) != 0
+		    && origin == 0 && m_front_pts % m_front_duration == 0) {
+			/*
+			 * A raw stream in a time base too coarse for its frames: AC3 at
+			 * 44.1 kHz in 1/90000, 3134.69 ticks a frame, counted as 3134.
+			 * Its timestamps are whole packet durations summed, so the pts
+			 * a seek lands on lags by 0.69 ticks a frame -- 50 frames by
+			 * the fifth second. The frame's index is exact, though, and so
+			 * is the position it gives.
+			 */
+			first_in = m_front_pts / m_front_duration * frame->nb_samples;
+		} else if (first_packet) {
+			const int64_t whole = av_rescale_q(m_front_duration, base, AVRational{ 1, in_rate });
+			if (whole > frame->nb_samples) first_in += whole - frame->nb_samples;
+		}
+
+		const int64_t common = std::gcd(int64_t(in_rate), int64_t(m_rate));
+		const int64_t per_in = in_rate / common;
+		const int64_t per_out = m_rate / common;
+		int64_t aligned_in = first_in;
+		if (per_in > 1) {
+			aligned_in = first_in >= 0 ? (first_in + per_in - 1) / per_in * per_in : -((-first_in) / per_in * per_in);
+			if (aligned_in - first_in >= frame->nb_samples) aligned_in = first_in;   /* no grid point here */
+		}
+		const int skip = int(aligned_in - first_in);
+		const int64_t first_out = aligned_in % per_in == 0 ? aligned_in / per_in * per_out
+		                                                    : av_rescale(aligned_in, m_rate, in_rate);
+		if (first_out > m_trim_to) {
+			const size_t gap = size_t(first_out - m_trim_to);
+			m_pending.insert(m_pending.begin() + 2 * m_pending_from, 2 * gap, 0.0f);
+			m_skip = 0;
+		} else {
+			m_skip = m_trim_to - first_out;
+		}
+		return skip;
 	}
 
 	int m_rate;
@@ -240,6 +374,7 @@ private:
 	AVFrame *m_frame = nullptr;
 	int m_stream = -1;
 	int64_t m_length = 0;
+	bool m_exact_length = false;
 	int64_t m_position = 0;
 	std::vector<float> m_pending;
 	size_t m_pending_from = 0;
@@ -248,6 +383,8 @@ private:
 	bool m_place_next = false;
 	int64_t m_trim_to = 0;
 	int64_t m_skip = 0;   /* frames still to drop to reach m_trim_to */
+	int64_t m_front_pts = AV_NOPTS_VALUE;   /* the first packet after a seek */
+	int64_t m_front_duration = 0;
 };
 
 }

@@ -112,8 +112,8 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	snurra_deck::start_t start;
 	start.source = state.source;
 	start.rate = m_engine->rate();
-	start.fallback_length = state.duration_us * start.rate / 1000000;
-	start.anchor_frame = state.position_now(state.sampled_at_us) * start.rate / 1000000;
+	start.fallback_length = snurra_us_to_frames(state.duration_us, start.rate);
+	start.anchor_frame = snurra_us_to_frames(state.position_now(state.sampled_at_us), start.rate);
 	start.anchor_us = state.sampled_at_us;
 	start.playing = state.playing;
 	start.level = float(state.level) / 100;
@@ -328,10 +328,9 @@ void snurra_node::take(QLocalSocket *socket, const snurra_wire::message &m) {
 	pending.since = now;
 	setUpdatesEnabled(false);
 	for (snurra_tile_state state : m.states) {
-		/* Carried across the handover's own time, so nothing is replayed;
-		 * a playing tile's deck is held silent until the crossfade. */
-		state.position_us = state.position_now(now);
-		state.sampled_at_us = now;
+		/* Anchored on the giver's own sample, as it came: re-sampled here
+		 * it would be rounded to a frame once more. A playing tile's deck
+		 * is held silent until the crossfade. */
 		if (!m_tiles.isEmpty()) {
 			if (m.side == snurra_wire::RIGHT) state.column += last_column + 1;
 			else state.row += last_row + 1;

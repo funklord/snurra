@@ -21,7 +21,7 @@ snurra_deck::snurra_deck(const start_t &start)
 	int64_t first = start.anchor_frame;
 	if (m_anchored) {
 		const int64_t ahead = snurra_clock_us() + start.lead_us - start.anchor_us;
-		first += ahead * m_rate / 1000000;
+		first += snurra_us_to_frames(ahead, m_rate);
 	}
 	first = std::max<int64_t>(0, first);
 	m_seek_target.store(first);
@@ -85,23 +85,29 @@ float snurra_deck::fade_gain(const fade_t &fade, int64_t us) const {
 	return fade.from + (fade.to - fade.from) * t;
 }
 
-int64_t snurra_deck::position_at(int64_t us) const {
-	int64_t frame = 0;
-	int64_t at = 0;
+void snurra_deck::last_rendered(int64_t &frame, int64_t &us, bool &moving) const {
 	int64_t advanced = 0;
 	for (;;) {
 		const uint32_t before = m_published_sequence.load(std::memory_order_acquire);
 		if (before & 1) continue;
 		frame = m_published_frame.load(std::memory_order_relaxed);
-		at = m_published_us.load(std::memory_order_relaxed);
+		us = m_published_us.load(std::memory_order_relaxed);
 		advanced = m_published_advanced.load(std::memory_order_relaxed);
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (m_published_sequence.load(std::memory_order_relaxed) == before) break;
 	}
+	moving = advanced > 0;
+}
+
+int64_t snurra_deck::position_at(int64_t us) const {
+	int64_t frame = 0;
+	int64_t at = 0;
+	bool moving = false;
+	last_rendered(frame, at, moving);
 	/* Carried along the clock, but never past what was rendered moving: a
 	 * paused or starved deck stays put. */
-	const int64_t along = (us - at) * m_rate / 1000000;
-	return std::max<int64_t>(0, frame + std::min(along, advanced));
+	const int64_t along = moving ? snurra_us_to_frames(us - at, m_rate) : 0;
+	return std::max<int64_t>(0, frame + along);
 }
 
 /* ---- the reader thread ----------------------------------------------- */
@@ -197,7 +203,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		m_free.push(head);
 	}
 
-	if (m_anchored) m_position = m_anchor_frame + (present_us - m_anchor_us) * m_rate / 1000000;
+	if (m_anchored) m_position = m_anchor_frame + snurra_us_to_frames(present_us - m_anchor_us, m_rate);
 
 	const fade_t fade = fade_snapshot();
 	const bool playing = m_playing.load(std::memory_order_relaxed);
