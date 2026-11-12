@@ -65,6 +65,17 @@ private:
 	double m_step;
 };
 
+class wrapped_ramp : public generated_source {
+public:
+	using generated_source::generated_source;
+
+protected:
+	void sample(int64_t frame, float *lr) const override {
+		lr[0] = float(double(frame % int64_t(SNURRA_WRAPPED_RAMP_SCALE)) / SNURRA_WRAPPED_RAMP_SCALE);
+		lr[1] = 1.0f;
+	}
+};
+
 class ramp : public generated_source {
 public:
 	using generated_source::generated_source;
@@ -392,6 +403,7 @@ private:
 std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length) {
 	if (name == QLatin1String("snurra-test:ramp"))
 		return std::make_unique<ramp>(std::min<int64_t>(fallback_length, int64_t(SNURRA_RAMP_SCALE) - 1));
+	if (name == QLatin1String("snurra-test:wrapped-ramp")) return std::make_unique<wrapped_ramp>(fallback_length);
 	if (name.startsWith(QLatin1String("tone:"))) {
 		const double hz = name.mid(5).toDouble();
 		if (hz > 0 && hz < rate / 2) return std::make_unique<tone>(hz, rate, fallback_length);

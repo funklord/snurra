@@ -40,6 +40,11 @@ public:
  *    frame's own index over 2^24 and the right is 1, so a capture of what
  *    was played says, sample by sample, which frame was heard and at
  *    what gain;
+ *  - `snurra-test:wrapped-ramp`, the same with the index taken modulo
+ *    2^16 over 2^16: a frame is 2^-16 of full scale rather than 2^-24, so
+ *    it survives an output that mixes at 24 bits -- ALSA's dmix shifts a
+ *    32-bit sample right by 8 -- to 1/128 of a frame, where the plain
+ *    ramp is resolved to two frames;
  *  - anything else: silence, `fallback_length` frames long, so a tile for
  *    something unplayable still behaves as a tile.
  */
@@ -47,5 +52,6 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 
 /* The ramp's scale: an index this size or more no longer fits a float. */
 constexpr double SNURRA_RAMP_SCALE = 16777216.0;
+constexpr double SNURRA_WRAPPED_RAMP_SCALE = 65536.0;
 
 #endif

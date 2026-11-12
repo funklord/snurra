@@ -427,11 +427,36 @@ controls; each tile very compact but resizeable).
   start (sum 0), the taker not anchored (919 frames apart, and the
   position test), the giver's deck retired before its fade (sum 0). Earlier: stopping the giver at OFFER, never aborting, every launch
   taken as the first, pushed-in controls left playing.
-- **ALSA on a real device clock:** `tone:440` to `plughw:Loopback,0,5`
-  (this machine's `snd-aloop`; subdevice 0 was busy with someone else's
-  use), recorded from `hw:Loopback,1,5`: 440.3 Hz at the 0.2 peak, no
-  quiet run inside it longer than a zero crossing. Not yet a handover
-  between two ALSA outputs, and not yet heard on a speaker.
+- **A merge between two ALSA outputs, heard** (2026-11-12,
+  `a_merge_between_two_alsa_outputs_is_heard_in_step`): both processes
+  write to one dmix -- the shared default's shape -- on a free snd-aloop
+  subdevice, defined in the test's own config through `ALSA_CONFIG_PATH`,
+  and arecord takes the other end. The mix describes itself (from
+  `snurra-test:wrapped-ramp`, the right channel is the gains summed, left
+  over right the frame heard), so no clocks are lined up. Twelve runs:
+  the gains sum to 1.0000 and the taker is on the giver's very frame,
+  every time. Skipped where there is no loopback, arecord or free
+  subdevice. What it took:
+  - **Placing frames by `snd_pcm_delay` put the two 48 to 110 frames
+    apart**: read at an arbitrary moment, it is up to a period stale.
+    `snd_pcm_htimestamp` gives the queue with the monotonic time it was
+    true, and brought it to 0-3 frames.
+  - **One reading per side jitters by two or three frames**, and a
+    handover takes one from each. The presentation time is now filtered
+    as JACK's DLL does: each period predicted one period after the last,
+    an eighth of a measurement's error taken; a reading two periods off
+    (a start, an underrun) is taken whole. Then 0 in twelve of twelve.
+  - **The instrument first**: dmix mixes 32-bit samples at 24 bits, so
+    the plain ramp read to two frames and showed a 3-5 frame "transient"
+    that was two truncations summed. The wrapped ramp (modulo 2^16)
+    reads to 1/128 of a frame.
+  - Underruns are counted and said on stderr when the output stops.
+  Sabotaged: `snd_pcm_delay` again (2.66 frames, caught), the giver
+  cutting at the fade (gains 0.0001). An 82-frame excursion inside one
+  fade, once, before the filter, was not seen again in 24 runs and left
+  no underrun; unexplained, and the test would fail on it.
+  Not yet heard on a speaker; `tone:440` through the loopback was a clean
+  440.3 Hz.
 - **The marker** (sec 3d): `the_marker_and_the_drop_agree_on_where_a_tile_lands`
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
@@ -452,7 +477,7 @@ Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
 over SSH as the other trees are. Open, the holder's: audio or video
 first; the analysis licences (sec 3e).
 
-Next: the Wayland merge by drag and drop; a handover between two ALSA
-outputs measured through the loopback, where latency is the device's
-rather than a counted clock's; the timing tests run over a source that
-arrives in pieces, once there is one.
+Next: the Wayland merge by drag and drop; the timing tests run over a
+source that arrives in pieces, once there is one; a handover between an
+ALSA output and a hw: one (two devices, two clocks -- drift, not only
+latency, then matters).

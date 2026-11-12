@@ -12,6 +12,9 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QProcess>
+#include <QStandardPaths>
+
+#include <cmath>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -32,9 +35,11 @@ private slots:
 	void a_taker_that_never_answers_leaves_the_giver_playing();
 	void a_merge_crosses_over_in_step_without_a_gap();
 	void a_tile_pulled_out_crosses_over_in_step_without_a_gap();
+	void a_merge_between_two_alsa_outputs_is_heard_in_step();
 
 private:
-	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"));
+	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"),
+	                const QProcessEnvironment &extra = {});
 	QString capture_dir() const { return m_dir->filePath(QStringLiteral("capture")); }
 	void check_crossover(qint64 giver, qint64 taker, const snurra_wire::message &status);
 	QString socket_of(QProcess *process) const;
@@ -74,13 +79,14 @@ void handover_test::cleanup() {
 	m_dir = nullptr;
 }
 
-QProcess *handover_test::start(const QStringList &args, const QString &output) {
+QProcess *handover_test::start(const QStringList &args, const QString &output, const QProcessEnvironment &extra) {
 	QProcess *process = new QProcess;
 	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
 	env.insert(QStringLiteral("SNURRA_RUNTIME_DIR"), m_dir->path());
 	env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
 	/* No sound card is touched: null, or a capture the test reads. */
 	env.insert(QStringLiteral("SNURRA_OUTPUT"), output);
+	for (const QString &key : extra.keys()) env.insert(key, extra.value(key));
 	process->setProcessEnvironment(env);
 	process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
 	process->start(QStringLiteral(SNURRA_BIN), args);
@@ -512,6 +518,169 @@ void handover_test::a_tile_pulled_out_crosses_over_in_step_without_a_gap() {
 	QTest::qWait(500);
 	status = ask(adopted, status_request());
 	check_crossover(group->processId(), QFileInfo(adopted).baseName().toLongLong(), status);
+}
+
+/*
+ * The same merge between two real ALSA outputs, as the default setup has
+ * them: two processes writing to one dmix, so the device's own clock and
+ * its own idea of latency place every frame. snd-aloop carries what the
+ * dmix plays to a capture, which arecord records. No clocks need lining
+ * up, because the mix describes itself: from the ramp source, the right
+ * channel is the two gains summed, and left over right the frame heard
+ * -- in step, the same frame from both. So: the right channel stays at 1
+ * from the first sound to the last (no gap, nothing doubled), and the
+ * frame heard less the sample's own index is one constant throughout
+ * (no skip, no repeat, and the taker where the giver was).
+ *
+ * Skipped where there is no loopback card, no arecord, or no subdevice
+ * free -- the machine's own default may be using one.
+ */
+void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
+	if (!QFile::exists(QStringLiteral("/proc/asound/Loopback"))) QSKIP("no snd-aloop card");
+	const QString arecord = QStandardPaths::findExecutable(QStringLiteral("arecord"));
+	if (arecord.isEmpty()) QSKIP("no arecord");
+	int sub = -1;
+	for (int k = 7; k >= 1 && sub < 0; --k) {
+		auto closed = [k](const char *side) {
+			QFile status(QStringLiteral("/proc/asound/Loopback/%1/sub%2/status").arg(QLatin1String(side)).arg(k));
+			return status.open(QIODevice::ReadOnly) && status.readAll().trimmed() == "closed";
+		};
+		if (closed("pcm0p") && closed("pcm1c") && closed("pcm1p") && closed("pcm0c")) sub = k;
+	}
+	if (sub < 0) QSKIP("no loopback subdevice free");
+
+	/* The system's configuration, and a shared device of this test's own. */
+	const QString config = m_dir->filePath(QStringLiteral("asound.conf"));
+	{
+		QFile file(config);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const int key = 0x5e000000 + int(QCoreApplication::applicationPid() & 0xffff);
+		file.write(QStringLiteral("</usr/share/alsa/alsa.conf>\n"
+		                          "pcm.snurra_test_mix {\n"
+		                          "\ttype dmix\n\tipc_key %1\n\tipc_perm 0600\n"
+		                          "\tslave { pcm \"hw:Loopback,0,%2\" format S32_LE rate 48000 channels 2 "
+		                          "period_size 256 buffer_size 2048 }\n}\n"
+		                          "pcm.snurra_test { type plug slave.pcm \"snurra_test_mix\" }\n")
+		                   .arg(key)
+		                   .arg(sub)
+		                   .toUtf8());
+	}
+	QProcessEnvironment extra;
+	extra.insert(QStringLiteral("ALSA_CONFIG_PATH"), config);
+	const QString output = QStringLiteral("alsa:snurra_test");
+
+	const QString recorded = m_dir->filePath(QStringLiteral("loop.raw"));
+	QProcess recorder;
+	recorder.start(arecord, { QStringLiteral("-q"), QStringLiteral("-D"), QStringLiteral("plughw:Loopback,1,%1").arg(sub),
+	                          QStringLiteral("-t"), QStringLiteral("raw"), QStringLiteral("-f"), QStringLiteral("S32_LE"),
+	                          QStringLiteral("-c"), QStringLiteral("2"), QStringLiteral("-r"), QStringLiteral("48000"),
+	                          QStringLiteral("-d"), QStringLiteral("4"), recorded });
+	QVERIFY(recorder.waitForStarted());
+	QTest::qWait(200);
+
+	QProcess *a = start({ QStringLiteral("snurra-test:wrapped-ramp") }, output, extra);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ QStringLiteral("b.flac") }, output, extra);
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	QTest::qWait(1000);
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = socket_of(b);
+	tell(socket_of(a), merge);
+	QVERIFY2(a->waitForFinished(5000), "the giver did not go once its fade was heard");
+	QVERIFY2(recorder.waitForFinished(8000), "arecord did not finish");
+	const snurra_wire::message status = ask(socket_of(b), status_request());
+	QCOMPARE(status.states.size(), 2);
+	b->kill();
+	b->waitForFinished(3000);
+
+	QFile file(recorded);
+	QVERIFY(file.open(QIODevice::ReadOnly));
+	/* In the dmix's own format: snd-aloop takes the format of whichever
+	 * end opens first, and a dmix needs an integer one. */
+	const QByteArray bytes = file.readAll();
+	const qsizetype frames = bytes.size() / 8;
+	QList<float> samples(2 * frames);
+	for (qsizetype i = 0; i < 2 * frames; ++i) {
+		qint32 v = 0;
+		memcpy(&v, bytes.constData() + 4 * i, 4);
+		samples[i] = float(double(v) / 2147483648.0);
+	}
+	/* From the first sound to a little before the recording or the taker
+	 * stopped -- what is checked is the stretch both ends of which sound. */
+	qsizetype first = -1;
+	qsizetype last = -1;
+	for (qsizetype i = 0; i < frames; ++i) {
+		if (samples[2 * i + 1] > 0.5f) {
+			if (first < 0) first = i;
+			last = i;
+		}
+	}
+	QVERIFY2(first >= 0 && last - first > 48000, "too little sound recorded");
+	first += 2400;   /* past the first period's start */
+	last -= 2400;
+
+	/*
+	 * The frame heard less the sample's index, from the wrapped ramp:
+	 * modulo 2^16, so each is taken as the nearest to the first, which
+	 * holds while the two sides are within half of 2^16 frames.
+	 */
+	double reference = std::nan("");
+	auto residual = [&](qsizetype i) {
+		const double wrap = SNURRA_WRAPPED_RAMP_SCALE;
+		double heard = double(samples[2 * i]) / samples[2 * i + 1] * wrap - double(i);
+		heard = std::fmod(heard, wrap);
+		if (std::isnan(reference)) reference = heard;
+		heard -= std::round((heard - reference) / wrap) * wrap;
+		return heard;
+	};
+
+	double worst_gain = 1;
+	double lowest = 1e18;
+	double highest = -1e18;
+	qsizetype lowest_at = 0;
+	qsizetype highest_at = 0;
+	for (qsizetype i = first; i <= last; ++i) {
+		const double gain = samples[2 * i + 1];
+		if (qAbs(gain - 1) > qAbs(worst_gain - 1)) worst_gain = gain;
+		if (gain < 0.5) continue;
+		const double heard = residual(i);
+		if (heard < lowest) {
+			lowest = heard;
+			lowest_at = i;
+		}
+		if (heard > highest) {
+			highest = heard;
+			highest_at = i;
+		}
+	}
+	/* Its shape: within the giver alone (the first half second), within
+	 * the taker alone (the last), and the step between them. */
+	auto spread = [&](qsizetype from, qsizetype to, double &low, double &high) {
+		low = 1e18;
+		high = -1e18;
+		for (qsizetype i = from; i <= to; ++i) {
+			if (samples[2 * i + 1] < 0.5f) continue;
+			const double heard = residual(i);
+			low = qMin(low, heard);
+			high = qMax(high, heard);
+		}
+	};
+	double giver_low, giver_high, taker_low, taker_high;
+	spread(first, first + 24000, giver_low, giver_high);
+	spread(last - 24000, last, taker_low, taker_high);
+	qInfo("alsa through the loopback (subdevice %d): %.2f s checked, gains summed to %.4f at worst, "
+	      "the frame heard moved by %.2f frames (lowest at %.3f s, highest at %.3f s); giver alone %.2f, "
+	      "taker alone %.2f, the step %+.2f",
+	      sub, double(last - first) / 48000, worst_gain, highest - lowest, double(lowest_at - first) / 48000,
+	      double(highest_at - first) / 48000, giver_high - giver_low, taker_high - taker_low,
+	      (taker_low + taker_high) / 2 - (giver_low + giver_high) / 2);
+	QVERIFY2(qAbs(worst_gain - 1) < 0.02,
+	         qPrintable(QStringLiteral("the gains summed to %1: a gap or a doubling").arg(worst_gain)));
+	/* Whole frames on each side: one apart is the floor's rounding.
+	 * Measured 2026-11-12, twelve runs: 0.02 frames every time. */
+	QVERIFY2(highest - lowest <= 1.05,
+	         qPrintable(QStringLiteral("the frame heard moved by %1 frames across the handover").arg(highest - lowest)));
 }
 
 int run_handover_tests(int argc, char **argv) {
