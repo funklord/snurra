@@ -1,4 +1,10 @@
 #include <QApplication>
+
+#include <cstdio>
+
+#ifndef SNURRA_VERSION_TEXT
+#define SNURRA_VERSION_TEXT "unknown"   /* built without VERSION's word */
+#endif
 #include <QCommandLineParser>
 #include <QCursor>
 #include <QFileInfo>
@@ -74,8 +80,15 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption layout(QStringLiteral("layout"),
 	                                QStringLiteral("The look: drawers (the normal one, where the window system can), or square."),
 	                                QStringLiteral("look"));
-	parser.addOptions({ adopt, token, index, at, paused, output, layout });
+	const QCommandLineOption version(QStringLiteral("version"), QStringLiteral("Say which snurra this is, and whose."));
+	parser.addOptions({ adopt, token, index, at, paused, output, layout, version });
 	parser.process(app);
+	/* The first line keeps its shape for whatever reads it; the copyright
+	 * holder on a line of their own. */
+	if (parser.isSet(version)) {
+		std::printf("snurra %s\nCopyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>\n", SNURRA_VERSION_TEXT);
+		return 0;
+	}
 	if (parser.isSet(layout)) qputenv("SNURRA_LAYOUT", parser.value(layout).toLocal8Bit());
 	/* As $SNURRA_OUTPUT, which the engine reads -- and which an app on
 	 * Android cannot be given, its arguments being all it has. A process

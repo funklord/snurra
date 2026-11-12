@@ -157,8 +157,8 @@ $(MK_BUILD_DIR)/moc_%.cpp: $(SNURRA_INCLUDE)/snurra/%.h
 	@mkdir -p $(MK_BUILD_DIR)
 	$(MOC) $< -o $@
 
-$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) $(SNURRA_HDRS)
-	$(CXX) $(MK_FLAGS) $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) -o $@ $(MK_LIBS)
+$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) $(SNURRA_HDRS) VERSION
+	$(CXX) $(MK_FLAGS) -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build
 	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) timeout $(TEST_TIMEOUT) ./$(TEST_BIN)

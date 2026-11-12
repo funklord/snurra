@@ -7,6 +7,9 @@ QMAKE_CXXFLAGS += -Os -ffunction-sections -fdata-sections
 QMAKE_LFLAGS += -Wl,--gc-sections
 include(snurra.pri)
 SOURCES += src/main.cpp
+# The version, from VERSION, the one place it lives: what --version says.
+SNURRA_VERSION_TEXT = $$cat($$PWD/VERSION)
+DEFINES += SNURRA_VERSION_TEXT=\\\"$$SNURRA_VERSION_TEXT\\\"
 
 android {
 	# Qt's own manifest template, changed in one place -- the package, the
