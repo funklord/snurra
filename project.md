@@ -925,7 +925,11 @@ controls; each tile very compact but resizeable).
   and grey. Anything else shows no picture yet. H.265 and AV1 at 10
   bits, QuickTime Animation and PNG in RGB, a paletted and a grey PNG
   and a GIF (FFmpeg decodes it to BGRA, not its palette) pass the frame
-  timing test below; without its case, each of the new layouts fails. Measured (`video_test`): H.264
+  timing test below; without its case, each of the new layouts fails.
+  A picture without sound plays (3c54730), but not yet: its length is
+  the stand-in silence's, three minutes, not the picture's -- a 3 s GIF
+  shows 0:03 / 3:00 and runs on silent past its last frame; the deck's
+  stand-in would need the picture's length. Measured (`video_test`): H.264
   with B-frames, the same with the picture 0.2 s late, MPEG-4 Part 2 and
   MJPEG in Matroska, VP9 with Opus in WebM, each frame grey at a level
   naming it: at 234 times forward, back and jumping, the frame shown is
