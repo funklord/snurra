@@ -800,7 +800,17 @@ controls; each tile very compact but resizeable).
   under A at A's width, C and the window move down by the drawer's
   height exactly, and closing it restores every number; with the drawers
   left inside the tiles, B's waveform falls 24 px below A's and it fails.
-  Not yet: seen on a compositing desktop.
+  **Seen** (2026-11-12) by running the player itself in a private Xvfb
+  and taking screenshots: square on a bare X server, and the drawers
+  look under xfwm4's own compositor (Xvfb with `+extension Composite`;
+  xfwm4 needs a session bus for its settings, and one started with
+  dbus-run-session was orphaned when the run was killed, so the bus is
+  started with its pid known and killed by name). The window is
+  transparent around its tiles and their open drawers, the video sticks
+  out upward and the controls down. The player says on start which look
+  it chose. The screenshots found two faults, fixed in 4741389: a
+  picture filling half its drawer, and the position slider squeezed to
+  nothing.
 - **Tempo and key lock, built 2026-11-12** (the holder: key lock next).
   A deck has a tempo -- track frames a frame out -- and key lock, both
   heard from the next period, since the stretch runs in the callback,

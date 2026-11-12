@@ -121,6 +121,7 @@ static bool look_with_drawers() {
 snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	m_drawers_look = look_with_drawers();
 	if (m_drawers_look) setAttribute(Qt::WA_TranslucentBackground);
+	qInfo("snurra: the %s look", m_drawers_look ? "drawers" : "square");
 	m_engine = new snurra_engine(this);
 	connect(m_engine, &snurra_engine::idle, this, &snurra_node::leave_if_empty);
 	setWindowFlag(Qt::FramelessWindowHint);
