@@ -9,9 +9,18 @@ one to the next, and stay out of the way.
 It is also a library. Programs that need to play something -- a terminal
 showing a file on an SSH host, a file-sharing tool playing what is still
 arriving -- link snurra rather than handing the file to another program.
-Its player reads from a byte source that may not be complete yet, pauses
-cleanly while bytes are missing, and offers to seek only where seeking
-cannot stall: the part every network-fed player gets wrong.
+Its player reads from a byte source that may not be complete yet: where
+the bytes stop it holds, silent, and goes on from the very next sample
+when they come; a seek into what has not arrived waits there and tells
+the transport what to fetch first. That is the part every network-fed
+player gets wrong.
+
+And it keeps time to the sample, because mixing is the point: a seek
+lands on the frame playing straight through would reach, whatever the
+codec; two windows snapped together hand their sound across in a
+crossfade with no gap and no doubling; and tiles side by side play as
+one mix, each starting on the exact frame the last one's overlap
+begins.
 
 How it differs from its neighbours:
 
@@ -24,9 +33,8 @@ How it differs from its neighbours:
 - **Mixing** -- more than one stream and their levels -- is part of the
   player, not a separate DAW.
 
-Not there yet: video, the train's and the stack's own mixing, Wayland's
-merge by drag and drop, and outputs beyond ALSA; `project.md` holds the
-plan and the state.
+Not there yet: video, the stack's simultaneous lanes, envelopes and beat
+matching; `project.md` holds the plan and the state.
 
 ## Building
 

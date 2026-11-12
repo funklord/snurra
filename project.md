@@ -53,10 +53,13 @@ and everything above it knows nothing of SFTP or fuzznet.
   since `QMediaPlayer` cannot be a deck in a mixer and libmpv is not
   small. What FFmpeg adds to an Android APK is still unmeasured, and is
   the number to take before the Android build.
-- **The source interface's shape.** fuzzypickles' contract (a
-  `QIODevice` whose reads return nothing while bytes are missing, and a
-  playable prefix) is the starting point; whether ranges rather than a
-  prefix are needed for seeking ahead is the first question for it.
+- ~~The source interface's shape.~~ **Settled 2026-11-12 by building it**
+  (`snurra_bytes`, sec 4): ranges, not a prefix -- a read at an offset
+  says how much is there, `has()` asks for a range, and `want()` tells the
+  transport where the reader goes next, so a seek ahead into what has not
+  arrived waits there and asks for it, which a playable prefix could not
+  express. fuzzypickles' rule of offering seeks only where they cannot
+  stall is not snurra's: a DJ cues anywhere, and the seek waits.
 - **Video, or audio first.** The mplayer use is the test; the holder to
   say which comes first.
 
