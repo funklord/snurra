@@ -167,7 +167,8 @@ private:
 	void show_envelope();
 	void show_jumps();
 	qint64 jump_us(bool large) const;
-	void read_video(bool open);
+	void read_video(bool open, std::shared_ptr<snurra_bytes> bytes = nullptr);
+	void read_beats(std::shared_ptr<snurra_bytes> bytes);
 	void build_video_drawer(bool open);
 	void fit_video_drawer();
 	void show_video_frame();

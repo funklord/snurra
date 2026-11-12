@@ -11,7 +11,10 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <thread>
+
+class snurra_bytes;
 
 /* A picture and the time on the track it is shown from, in microseconds. */
 struct snurra_video_frame {
@@ -37,6 +40,9 @@ struct snurra_video_frame {
 class snurra_video {
 public:
 	explicit snurra_video(const QString &path);
+	/* From a host's bytes, still arriving or not (embed.h), `name` hinting
+	 * at their kind: the picture waits where they stop. */
+	snurra_video(std::shared_ptr<snurra_bytes> bytes, const QString &name);
 	~snurra_video();
 
 	/* Known once the reader has opened the track (on its thread); until
@@ -52,7 +58,7 @@ public:
 	snurra_video_frame frame_at(int64_t us);
 
 private:
-	void run(const QString &path);
+	void run(const QString &path, std::shared_ptr<snurra_bytes> bytes);
 	bool want_seek(int64_t target) const;
 
 	std::thread m_thread;
@@ -64,6 +70,7 @@ private:
 	int64_t m_floor = INT64_MIN;    /* every frame for a time from here on is here, or coming */
 	int64_t m_newest = INT64_MIN;   /* the last frame decoded */
 	bool m_ended = false;
+	bool m_seeking = false;         /* decoding toward a seek's target, not there yet */
 	bool m_stop = false;
 	QSize m_size;
 	int64_t m_frame_us = 40000;     /* one frame's length, from the stream's rate */

@@ -876,8 +876,21 @@ controls; each tile very compact but resizeable).
   own start instead fails four of the five (Matroska's 3 ms, WebM's
   7 ms). In a window playing, 60 samples: 50 the frame heard, 10 one
   behind (the 16 ms), none ahead; shown 80 ms early, all 60 ahead and
-  it fails. Not yet: a picture from bytes (BeerSSH, fuzzypickles), and
-  seen on a real screen.
+  it fails. **From bytes too** (2026-11-12): the FFmpeg input over a
+  host's bytes is one piece now (`snurra_bytes_input`), which the sound,
+  the picture and the beats each open -- through the facade the host's
+  bytes feed all of them, embed.h allowing reads from several threads,
+  and the tile's going joins every reader. A picture from bytes is the
+  file's: at 227 times the same frame, picture for picture. Found on the
+  way, a livelock: a forward seek decodes from the key frame before its
+  target, x264's key frames are 250 frames apart, and a reader behind by
+  more than a second seeked again before arriving, from the key frame
+  again; a seek on its way is no longer started over by a later target
+  forward. That test also failed 4 times in its first 14 runs, twice
+  after the fix, stalling 3 to 6 s; 42 runs since, alone, polled two ways
+  and four at once under load, all passed. The cause is not established;
+  the test now says, if it stalls, at what time and what each reader
+  gave.
 - **Envelopes, built 2026-11-12** (sec 3b, step 5): `snurra_deck::
   set_envelope` takes up to 64 points over the deck's frames, read by
   the callback under a seqlock as the fade is, and multiplies level,

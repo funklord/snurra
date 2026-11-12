@@ -1,5 +1,7 @@
 #include "snurra/source.h"
 
+#include "snurra/bytes_input.h"
+
 #include <QFile>
 #include <QFileInfo>
 
@@ -106,8 +108,6 @@ public:
 		swr_free(&m_swr);
 		avcodec_free_context(&m_codec);
 		avformat_close_input(&m_format);
-		if (m_io) av_freep(&m_io->buffer);
-		avio_context_free(&m_io);
 		av_packet_free(&m_packet);
 		av_frame_free(&m_frame);
 	}
@@ -124,53 +124,9 @@ public:
 	 * after it stalls where the bytes stop.
 	 */
 	bool open(std::shared_ptr<snurra_bytes> bytes, const QString &name, std::function<bool()> interrupted) {
-		m_bytes = std::move(bytes);
-		m_interrupted = std::move(interrupted);
-		constexpr int BUFFER = 65536;
-		uint8_t *buffer = static_cast<uint8_t *>(av_malloc(BUFFER));
-		if (!buffer) return false;
-		m_io = avio_alloc_context(buffer, BUFFER, 0, this, &ffmpeg_source::read_bytes, nullptr, &ffmpeg_source::seek_bytes);
-		if (!m_io) {
-			av_free(buffer);
-			return false;
-		}
-		m_bytes->want(0);
-		/*
-		 * Bytes not all here are opened as a stream, unseekable: FFmpeg's WAV
-		 * reader, given a seekable input, seeks past the audio to look for
-		 * trailing chunks and waits there -- for the whole file, before
-		 * playing any of it. A format that cannot open so (MP4 with its index
-		 * at the end) is opened again seekable, and waits, which is honest:
-		 * it cannot play before that index arrives. Seeking is turned on once
-		 * open, for the seeks a person makes.
-		 */
-		const bool whole = m_bytes->size() > 0 && m_bytes->has(0, m_bytes->size());
-		for (bool seekable : { whole, true }) {
-			m_io->seekable = seekable ? AVIO_SEEKABLE_NORMAL : 0;
-			m_io_position = 0;
-			avio_seek(m_io, 0, SEEK_SET);
-			m_io->eof_reached = 0;
-			m_io->error = 0;
-			m_format = avformat_alloc_context();
-			if (!m_format) return false;
-			m_format->pb = m_io;
-			m_format->flags |= AVFMT_FLAG_CUSTOM_IO;
-			/* Not all here: the stream analysis reads up to five seconds of
-			 * audio to estimate what headers already say, and would wait
-			 * for them; a fifth of a second is enough to know the codec. */
-			if (!whole) {
-				m_format->max_analyze_duration = AV_TIME_BASE / 5;
-				m_format->probesize = 65536;
-			}
-			if (avformat_open_input(&m_format, QFile::encodeName(name).constData(), nullptr, nullptr) == 0
-			    && avformat_find_stream_info(m_format, nullptr) >= 0) {
-				m_io->seekable = AVIO_SEEKABLE_NORMAL;
-				return open_streams(false);
-			}
-			avformat_close_input(&m_format);
-			if (seekable || (m_interrupted && m_interrupted())) return false;
-		}
-		return false;
+		m_interrupted = interrupted;
+		m_format = m_input.open(std::move(bytes), name, std::move(interrupted));
+		return m_format && open_streams(false);
 	}
 
 	void set_interrupt(std::function<bool()> interrupted) override { m_interrupted = std::move(interrupted); }
@@ -218,8 +174,9 @@ public:
 			m_length = av_rescale(m_format->duration, m_rate, AV_TIME_BASE);
 		/* Only from bytes all here: read for its end, a file still
 		 * arriving would wait for its last bytes before playing its first. */
-		if (!m_bytes || (m_bytes->size() > 0 && m_bytes->has(std::max<int64_t>(0, m_bytes->size() - 262144),
-		                                                     std::min<int64_t>(m_bytes->size(), 262144))))
+		snurra_bytes *bytes = m_input.bytes();
+		if (!bytes || (bytes->size() > 0 && bytes->has(std::max<int64_t>(0, bytes->size() - 262144),
+		                                               std::min<int64_t>(bytes->size(), 262144))))
 			find_end();
 		seek(0);
 		return true;
@@ -496,51 +453,8 @@ private:
 
 	/* FFmpeg's reads, from bytes that may still be arriving: what is not
 	 * here yet is waited for, and the wait given up when interrupted. */
-	static int read_bytes(void *opaque, uint8_t *buffer, int size) {
-		ffmpeg_source *self = static_cast<ffmpeg_source *>(opaque);
-		for (;;) {
-			const int64_t n = self->m_bytes->read(self->m_io_position, buffer, size);
-			if (n > 0) {
-				self->m_io_position += n;
-				return int(n);
-			}
-			if (n < 0) return AVERROR_EOF;
-			if (self->m_interrupted && self->m_interrupted()) return AVERROR_EXIT;
-			/* Waiting, say where: FFmpeg reads through a short seek rather
-			 * than seeking, so a seek alone does not tell the transport. */
-			if (self->m_wanted != self->m_io_position) {
-				self->m_wanted = self->m_io_position;
-				self->m_bytes->want(self->m_io_position);
-			}
-			self->m_bytes->wait(20);
-		}
-	}
-
-	static int64_t seek_bytes(void *opaque, int64_t offset, int whence) {
-		ffmpeg_source *self = static_cast<ffmpeg_source *>(opaque);
-		const int64_t size = self->m_bytes->size();
-		whence &= ~AVSEEK_FORCE;
-		if (whence == AVSEEK_SIZE) return size >= 0 ? size : AVERROR(ENOSYS);
-		int64_t to = offset;
-		if (whence == SEEK_CUR) to = self->m_io_position + offset;
-		else if (whence == SEEK_END) {
-			if (size < 0) return AVERROR(ENOSYS);
-			to = size + offset;
-		} else if (whence != SEEK_SET) {
-			return AVERROR(EINVAL);
-		}
-		if (to < 0) return AVERROR(EINVAL);
-		self->m_io_position = to;
-		self->m_wanted = to;
-		self->m_bytes->want(to);
-		return to;
-	}
-
-	std::shared_ptr<snurra_bytes> m_bytes;
+	snurra_bytes_input m_input;   /* first, so it goes last: the format reads through it */
 	std::function<bool()> m_interrupted;
-	AVIOContext *m_io = nullptr;
-	int64_t m_io_position = 0;
-	int64_t m_wanted = -1;   /* the last offset told to the transport */
 	bool m_waiting = false;   /* the last read gave up a wait for bytes */
 
 	int m_rate;

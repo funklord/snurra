@@ -280,6 +280,17 @@ snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(c
 	});
 }
 
+snurra_beats::snurra_beats(std::shared_ptr<snurra_bytes> bytes, const QString &name, int rate,
+                           std::function<void(const snurra_beat_grid &)> done) {
+	m_thread = std::thread([this, bytes, name, rate, done] {
+		auto stopped = [this] { return m_stop.load(std::memory_order_relaxed); };
+		std::unique_ptr<snurra_source> reader = snurra_open_source(bytes, name, rate, stopped);
+		if (!reader || reader->length() <= 0) return;
+		const snurra_beat_grid grid = snurra_find_beats(*reader, rate, stopped);
+		if (!m_stop.load()) done(grid);
+	});
+}
+
 snurra_beats::~snurra_beats() {
 	m_stop.store(true);
 	if (m_thread.joinable()) m_thread.join();

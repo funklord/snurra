@@ -35,6 +35,7 @@ android {
 
 SOURCES += \
     $$SNURRA_ROOT/src/beats.cpp \
+    $$SNURRA_ROOT/src/bytes_input.cpp \
     $$SNURRA_ROOT/src/deck.cpp \
     $$SNURRA_ROOT/src/embed.cpp \
     $$SNURRA_ROOT/src/engine.cpp \
@@ -51,6 +52,7 @@ SOURCES += \
 
 HEADERS += \
     $$SNURRA_ROOT/include/snurra/beats.h \
+    $$SNURRA_ROOT/include/snurra/bytes_input.h \
     $$SNURRA_ROOT/include/snurra/clock.h \
     $$SNURRA_ROOT/include/snurra/deck.h \
     $$SNURRA_ROOT/include/snurra/embed.h \

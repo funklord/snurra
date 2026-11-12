@@ -1,5 +1,7 @@
 #include "snurra/video.h"
 
+#include "snurra/bytes_input.h"
+
 #include <QFile>
 
 #include <algorithm>
@@ -95,7 +97,11 @@ QImage to_rgb(const AVFrame *from) {
 }
 
 snurra_video::snurra_video(const QString &path) {
-	m_thread = std::thread([this, path] { run(path); });
+	m_thread = std::thread([this, path] { run(path, nullptr); });
+}
+
+snurra_video::snurra_video(std::shared_ptr<snurra_bytes> bytes, const QString &name) {
+	m_thread = std::thread([this, bytes, name] { run(name, bytes); });
 }
 
 snurra_video::~snurra_video() {
@@ -140,11 +146,17 @@ snurra_video_frame snurra_video::frame_at(int64_t us) {
 /* Under the lock. */
 bool snurra_video::want_seek(int64_t target) const {
 	if (target < m_floor) return true;
+	/* Forward only when not already on the way: a seek decodes from the
+	 * key frame before its target, and one far apart (250 frames, x264's
+	 * default) took longer than the target moved on -- each new seek began
+	 * again from the key frame, and the picture stalled for seconds. */
+	if (m_seeking) return false;
 	const int64_t reached = m_newest != INT64_MIN ? m_newest : m_floor;
 	return !m_ended && target > reached + JUMP_US;
 }
 
-void snurra_video::run(const QString &path) {
+void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes) {
+	snurra_bytes_input input;   /* before the format, so it goes after it */
 	AVFormatContext *format = nullptr;
 	AVCodecContext *codec = nullptr;
 	AVPacket *packet = av_packet_alloc();
@@ -165,8 +177,16 @@ void snurra_video::run(const QString &path) {
 	};
 
 	auto open = [&]() -> bool {
-		if (avformat_open_input(&format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
-		if (avformat_find_stream_info(format, nullptr) < 0) return false;
+		if (bytes) {
+			format = input.open(bytes, path, [this] {
+				std::lock_guard<std::mutex> lock(m_mutex);
+				return m_stop;
+			});
+			if (!format) return false;
+		} else {
+			if (avformat_open_input(&format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
+			if (avformat_find_stream_info(format, nullptr) < 0) return false;
+		}
 		const AVCodec *decoder = nullptr;
 		stream_index = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
 		/* A cover image is not a picture to play. */
@@ -201,7 +221,6 @@ void snurra_video::run(const QString &path) {
 		opened(false);
 	} else {
 		opened(true);
-		bool seeking = false;
 		int64_t seek_target = 0;
 		bool draining = false;
 		for (;;) {
@@ -217,7 +236,7 @@ void snurra_video::run(const QString &path) {
 					m_floor = seek_target;
 					m_newest = INT64_MIN;
 					m_ended = false;
-					seeking = true;
+					m_seeking = true;
 					draining = false;
 					lock.unlock();
 					av_frame_free(&pending);
@@ -245,6 +264,7 @@ void snurra_video::run(const QString &path) {
 					av_frame_free(&pending);
 					std::lock_guard<std::mutex> lock(m_mutex);
 					m_ended = true;
+					m_seeking = false;   /* at the end: nothing more to be on the way to */
 					break;
 				}
 				if (got < 0) break;   /* wants more input */
@@ -253,6 +273,11 @@ void snurra_video::run(const QString &path) {
 					continue;
 				}
 				const int64_t pts_us = av_rescale_q(frame->best_effort_timestamp, stream->time_base, MICROSECONDS) - origin_us;
+				bool seeking = false;
+				{
+					std::lock_guard<std::mutex> lock(m_mutex);
+					seeking = m_seeking;
+				}
 				if (seeking) {
 					/* Up to the target, only the last frame is kept: the one
 					 * a screen shows at the target. */
@@ -264,7 +289,8 @@ void snurra_video::run(const QString &path) {
 					}
 					if (pending) push(pending, av_rescale_q(pending->best_effort_timestamp, stream->time_base, MICROSECONDS) - origin_us);
 					av_frame_free(&pending);
-					seeking = false;
+					std::lock_guard<std::mutex> lock(m_mutex);
+					m_seeking = false;
 				}
 				push(frame, pts_us);
 				av_frame_unref(frame);

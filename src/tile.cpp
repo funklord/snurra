@@ -447,16 +447,25 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	read_peaks(nullptr);
 	if (QFileInfo(state.source).isFile()) {
 		read_video(state.controls);
-		QPointer<snurra_tile> self = this;
-		m_beats = std::make_unique<snurra_beats>(state.source, m_deck->rate(), [self](const snurra_beat_grid &grid) {
-			QMetaObject::invokeMethod(
-			        self, [self, grid] {
-				        if (self) self->set_beats(grid);
-			        },
-			        Qt::QueuedConnection);
-		});
+		read_beats(nullptr);
 	}
 	show_jumps();
+}
+
+/* The beat grid, read on a thread of its own from the file the state
+ * names, or from bytes a host allows a second read of (embed.h). */
+void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
+	QPointer<snurra_tile> self = this;
+	auto done = [self](const snurra_beat_grid &grid) {
+		QMetaObject::invokeMethod(
+		        self, [self, grid] {
+			        if (self) self->set_beats(grid);
+		        },
+		        Qt::QueuedConnection);
+	};
+	m_beats.reset();
+	if (bytes) m_beats = std::make_unique<snurra_beats>(std::move(bytes), m_state.source, m_deck->rate(), done);
+	else m_beats = std::make_unique<snurra_beats>(m_state.source, m_deck->rate(), done);
 }
 
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
@@ -520,8 +529,9 @@ void snurra_tile::show_jumps() {
  * frame shown is the one for the deck's heard position, the clock the
  * sound is placed by, looked at each 16 ms while it shows.
  */
-void snurra_tile::read_video(bool open) {
-	m_video = std::make_unique<snurra_video>(m_state.source);
+void snurra_tile::read_video(bool open, std::shared_ptr<snurra_bytes> bytes) {
+	m_video = bytes ? std::make_unique<snurra_video>(std::move(bytes), m_state.source)
+	                : std::make_unique<snurra_video>(m_state.source);
 	QPointer<snurra_tile> self = this;
 	m_video->set_on_open([self, open](bool has_video) {
 		if (!has_video) return;
@@ -673,7 +683,13 @@ snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_stat
 	start.level = float(state.level) / 100;
 	snurra_tile *tile = new snurra_tile(state, engine.add(start), parent);
 	tile->m_owner = &engine;
-	if (peak_bytes) tile->read_peaks(std::move(peak_bytes));
+	/* A second read the host allows: the waveform's, the picture's and
+	 * the beats', each on its own thread. */
+	if (peak_bytes) {
+		tile->read_peaks(peak_bytes);
+		tile->read_video(state.controls, peak_bytes);
+		tile->read_beats(peak_bytes);
+	}
 	return tile;
 }
 

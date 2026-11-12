@@ -23,6 +23,7 @@
 #include "snurra/node.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
+#include "test_bytes.h"
 
 namespace {
 
@@ -44,6 +45,7 @@ private slots:
 	void every_codec_shows_the_frame_of_its_time();
 	void a_track_without_a_picture_has_no_video();
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
+	void a_picture_from_bytes_is_the_files_picture();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -276,6 +278,39 @@ void video_test::the_video_drawer_opens_upward_and_shows_what_is_heard() {
 		                         return true;
 	                         }()),
 	                         2000);
+}
+
+/* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the
+ * file gives at a time, the bytes give too -- by time and by picture. */
+void video_test::a_picture_from_bytes_is_the_files_picture() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString name = QStringLiteral("bytes.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-bf"), QStringLiteral("3") }, 0));
+	QFile file(m_dir.filePath(name));
+	QVERIFY(file.open(QIODevice::ReadOnly));
+	auto bytes = std::make_shared<memory_bytes>(file.readAll());
+	bytes->arrive(0, bytes->size());
+	snurra_video from_file(m_dir.filePath(name));
+	snurra_video from_bytes(bytes, name);
+	QTRY_VERIFY_WITH_TIMEOUT(from_file.has_video() && from_bytes.has_video(), 5000);
+	int same = 0;
+	for (int64_t t = 0; t < 2950000; t += 13000) {
+		snurra_video_frame a;
+		snurra_video_frame b;
+		QElapsedTimer waited;
+		waited.start();
+		for (;;) {
+			a = from_file.frame_at(t);
+			b = from_bytes.frame_at(t);
+			if (a.valid() && b.valid() && a.pts_us == b.pts_us) break;
+			QVERIFY2(waited.elapsed() < 3000, qPrintable(QStringLiteral("at %1 us: the file gave %2, the bytes %3")
+			                                                     .arg(t).arg(a.pts_us).arg(b.pts_us)));
+			QTest::qWait(1);
+		}
+		QVERIFY2(a.image == b.image, qPrintable(QStringLiteral("at %1 us the pictures differ").arg(t)));
+		++same;
+	}
+	qInfo("bytes: %d times, the file's frame each time", same);
 }
 
 int run_video_tests(int argc, char **argv) {

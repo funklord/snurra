@@ -4,10 +4,12 @@
 #include <QString>
 
 #include <atomic>
+#include <memory>
 #include <cstdint>
 #include <functional>
 #include <thread>
 
+class snurra_bytes;
 class snurra_source;
 
 /*
@@ -43,6 +45,9 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 class snurra_beats {
 public:
 	snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done);
+	/* From a host's bytes (embed.h), `name` hinting at their kind. */
+	snurra_beats(std::shared_ptr<snurra_bytes> bytes, const QString &name, int rate,
+	             std::function<void(const snurra_beat_grid &)> done);
 	~snurra_beats();
 
 private:
