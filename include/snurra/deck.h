@@ -234,7 +234,15 @@ private:
 	int64_t m_pending_frame = 0;
 	int64_t m_pending_us = 0;
 	block *m_held = nullptr;
-	void switch_to_pending(int64_t us);
+	void switch_to_pending(int64_t us, int i);
+	/* A cut's tail: what the old place had next, faded out over 5 ms
+	 * while the new one slews in, so a seek heard is not a click. */
+	static constexpr int TAIL = 240;
+	float m_tail[2 * TAIL] = {};
+	int m_tail_len = 0;
+	int m_tail_at = 0;
+	int m_tail_from = 0;   /* the frame of this period it starts on */
+	void keep_tail(int from);
 	snurra_stretch m_stretch;
 	fade_t m_fade_last{ 0, 0, 1, 1, false };
 	envelope_snapshot m_envelope_last;

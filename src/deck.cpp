@@ -253,8 +253,9 @@ void snurra_deck::read_loop() {
 /* The pending seek's moment: its generation seen from here, its frame
  * placed on this moment, the old place's block let go and the new one's
  * first, held till now, taken up. */
-void snurra_deck::switch_to_pending(int64_t us) {
+void snurra_deck::switch_to_pending(int64_t us, int i) {
 	m_pending = false;
+	keep_tail(i);
 	m_seen_generation = m_pending_generation;
 	m_position = m_pending_frame;
 	m_anchored = true;
@@ -267,6 +268,26 @@ void snurra_deck::switch_to_pending(int64_t us) {
 	m_current = m_held;
 	m_held = nullptr;
 	m_offset = 0;
+}
+
+/*
+ * The old place's next frames, from the block it was playing, before that
+ * block is let go -- only where it was being heard: a paused seek or a
+ * tile not yet sounding has nothing to fade out. The tail is what is
+ * left of that block, up to 5 ms; the new place rises over exactly that
+ * length as the tail falls, so the two always sum whole -- a fixed 5 ms
+ * rise against a shorter tail dipped the sum to 0.67.
+ */
+void snurra_deck::keep_tail(int from) {
+	m_tail_len = m_tail_at = 0;
+	if (!m_sounded || !m_current) return;
+	const int n = std::min(TAIL, m_current->frames - m_offset);
+	for (int j = 0; j < n; ++j) {
+		m_tail[2 * j] = m_current->data[2 * (m_offset + j)];
+		m_tail[2 * j + 1] = m_current->data[2 * (m_offset + j) + 1];
+	}
+	m_tail_len = std::max(0, n);
+	m_tail_from = from;
 }
 
 bool snurra_deck::next_frame(float &left, float &right) {
@@ -334,6 +355,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_held = nullptr;
 		}
 		m_pending = false;
+		if (playing) keep_tail(0);
 		/* A seek: what was read for before it is stale. */
 		m_seen_generation = generation;
 		m_position = m_seek_target.load(std::memory_order_relaxed);
@@ -397,7 +419,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		float right = 0;
 		/* On the frame nearest the moment: within half a frame of it. */
 		if (m_pending && present_us + (int64_t(2 * i + 1) * 1000000) / (2 * m_rate) > m_pending_us)
-			switch_to_pending(present_us + int64_t(i) * 1000000 / m_rate);
+			switch_to_pending(present_us + int64_t(i) * 1000000 / m_rate, i);
 		const int64_t heard = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
 		/* A bend's share of this frame: a tenth at most, the last exact. */
 		const double bent = m_speed ? std::clamp(m_bend_left, -0.1, 0.1) : 0.0;
@@ -425,7 +447,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_locked.store(true, std::memory_order_release);
 		}
 		const int64_t us = present_us + int64_t(i) * 1000000 / m_rate;
-		const float gain = m_slew * fade_gain(fade, us) * envelope_gain(envelope, segment, heard);
+		float gain = m_slew * fade_gain(fade, us) * envelope_gain(envelope, segment, heard);
+		/* Rising over a cut's tail, as it falls (keep_tail). */
+		if (m_tail_at < m_tail_len && i >= m_tail_from)
+			gain *= std::min(1.0f, float(m_tail_at + (i - m_tail_from)) / float(m_tail_len));
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
 		if (!m_speed) ++m_position;   /* the stretch moved it as it read */
@@ -437,6 +462,17 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_stretch.reset(m_position);
 		}
 		++advanced;
+	}
+
+	/* A cut's tail, falling over 5 ms from where it began, whether or not
+	 * the new place has come yet. */
+	if (m_tail_at < m_tail_len) {
+		for (int i = m_tail_from; i < frames && m_tail_at < m_tail_len; ++i, ++m_tail_at) {
+			const float w = level * (1.0f - float(m_tail_at) / float(m_tail_len));
+			out[2 * i] += w * m_tail[2 * m_tail_at];
+			out[2 * i + 1] += w * m_tail[2 * m_tail_at + 1];
+		}
+		m_tail_from = 0;
 	}
 
 	m_published_sequence.fetch_add(1, std::memory_order_acq_rel);

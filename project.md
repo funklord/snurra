@@ -887,8 +887,17 @@ controls; each tile very compact but resizeable).
   while sounding, now plays the old place until then and switches on the
   frame nearest that moment, the new place's first block held till then.
   Measured on the ramp: no silent frame, one jump, onto the target, 7 us
-  from its moment. Not yet: a few milliseconds' crossfade over the cut,
-  which a hard switch between two places may click without.
+  from its moment. **And a cut is crossed over** (2026-11-12): any seek
+  seen while sounding -- a click on the waveform, a jump, a sync -- keeps
+  what the old place had next in the block it was playing, up to 5 ms,
+  and fades it out as the new place rises over exactly that length, so
+  the two sum whole. The new place still starts on its frame; only its
+  gain ramps. Measured on the ramp: the cut 7 us from its moment, a
+  crossover of 160 frames (the block's rest), the summed gain whole to
+  1e-4, halfway half of each; a fixed 5 ms rise against that shorter
+  tail had dipped the sum to 0.67. A seek while paused, or a tile not
+  yet sounding, keeps no tail; the stall rule -- no sound while not
+  moving -- holds from 5 ms after a seek, as before it.
 - **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
   in the drawer that opens upward). `snurra_video` decodes a file's
   picture on a thread of its own, six frames ahead, and gives the last

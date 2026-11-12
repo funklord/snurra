@@ -30,6 +30,8 @@
 namespace {
 
 constexpr int RATE = 48000;
+/* A cut's crossover, the deck's TAIL: 5 ms. */
+constexpr size_t deck_test_tail() { return 240; }
 constexpr int PERIOD = 480;
 
 
@@ -78,24 +80,34 @@ std::vector<rendered_t> play(snurra_deck &deck, int64_t &present, int limit, sto
 	return blocks;
 }
 
-/* Each block where the last left off, and what it played is the file. */
-QString check_continuous(const std::vector<rendered_t> &blocks, const std::vector<float> &reference, int64_t from) {
+/* Each block where the last left off, and what it played is the file. After
+ * a seek made while sounding, the first `crossover` frames out are a cut's
+ * crossover -- the old place's tail falling, the new place rising -- so
+ * their samples are not the file's, and may sound while the new place
+ * waits for its bytes; where each block begins is checked all the same. */
+QString check_continuous(const std::vector<rendered_t> &blocks, const std::vector<float> &reference, int64_t from,
+                         int64_t crossover = 0) {
 	int64_t next = from;
+	int64_t out = 0;   /* frames out so far */
 	for (const rendered_t &block : blocks) {
 		if (block.advanced == 0) {
-			for (float sample : block.samples)
-				if (sample != 0) return QStringLiteral("sound while not moving, at frame %1").arg(block.first);
+			for (size_t i = 0; i < block.samples.size(); ++i)
+				if (block.samples[i] != 0 && out + int64_t(i / 2) >= crossover)
+					return QStringLiteral("sound while not moving, at frame %1").arg(block.first);
 			if (block.first != next) return QStringLiteral("held at %1, not %2").arg(block.first).arg(next);
+			out += int64_t(block.samples.size() / 2);
 			continue;
 		}
 		if (block.first != next) return QStringLiteral("went on at frame %1, not %2").arg(block.first).arg(next);
 		for (int64_t i = 0; i < block.advanced; ++i) {
 			const size_t frame = size_t(block.first + i);
 			if (2 * frame + 1 >= reference.size()) return QStringLiteral("played past the end");
+			if (out + i < crossover) continue;
 			if (block.samples[2 * size_t(i)] != reference[2 * frame]
 			    || block.samples[2 * size_t(i) + 1] != reference[2 * frame + 1])
 				return QStringLiteral("frame %1 is not the file's").arg(frame);
 		}
+		out += int64_t(block.samples.size() / 2);
 		next = block.first + block.advanced;
 	}
 	return QString();
@@ -275,7 +287,7 @@ void deck_test::a_seek_into_bytes_not_here_waits_there_and_asks_for_them() {
 	std::vector<rendered_t> after
 	        = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE; });
 	QVERIFY2(advanced_by(after) > 0, "it did not play once the bytes came");
-	const QString fault = check_continuous(after, reference, target);
+	const QString fault = check_continuous(after, reference, target, int64_t(deck_test_tail()));
 	QVERIFY2(fault.isEmpty(), qPrintable(fault));
 }
 
@@ -297,7 +309,7 @@ void deck_test::a_seek_in_bytes_all_here_lands_as_in_a_file() {
 	deck.seek(target);
 	std::vector<rendered_t> after
 	        = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE; });
-	const QString fault = check_continuous(after, reference, target);
+	const QString fault = check_continuous(after, reference, target, int64_t(deck_test_tail()));
 	QVERIFY2(fault.isEmpty(), qPrintable(fault));
 }
 
@@ -567,8 +579,10 @@ void deck_test::a_nudge_bends_without_a_gap() {
 /*
  * A jump while playing (project.md sec 4), as a window makes one: the new
  * place from a moment 100 ms ahead. Until then the old place plays on,
- * frame after frame; from then, the new one -- no silent frame between,
- * and the switch on its moment to half a frame.
+ * frame after frame; from then, the new one, on its frames -- crossed over
+ * 5 ms, the old place's next frames falling as the new rise, so the cut
+ * is not a click: halfway, half of each. The ramp's right channel, the
+ * summed gain, stays whole throughout: never a silent frame, never a dip.
  */
 void deck_test::a_jump_while_playing_has_no_gap() {
 	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
@@ -580,33 +594,47 @@ void deck_test::a_jump_while_playing_has_no_gap() {
 	const int64_t at = present + 100000 + 7;
 	deck.start_at(target, at);
 	int64_t block_present = present;
-	std::vector<double> frames;
+	std::vector<double> left;
+	std::vector<double> gain;
 	std::vector<double> times;
-	int silent = 0;
 	const std::vector<rendered_t> blocks = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
 	for (const rendered_t &block : blocks) {
 		for (int i = 0; i < PERIOD; ++i) {
-			const float gain = block.samples[size_t(2 * i + 1)];
-			if (gain < 0.999f) ++silent;
-			else {
-				frames.push_back(double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE);
-				times.push_back(double(block_present) + i * 1e6 / RATE);
-			}
+			left.push_back(double(block.samples[size_t(2 * i)]) * SNURRA_RAMP_SCALE);
+			gain.push_back(block.samples[size_t(2 * i + 1)]);
+			times.push_back(double(block_present) + i * 1e6 / RATE);
 		}
 		block_present += snurra_frames_to_us(PERIOD, RATE);
 	}
-	int jumps = 0;
-	double switched_at = 0;
-	for (size_t i = 1; i < frames.size(); ++i)
-		if (frames[i] != frames[i - 1] + 1) {
-			++jumps;
-			switched_at = times[i];
-			QCOMPARE(frames[i], double(target));
-		}
-	qInfo("jump: %d silent frames, %d jumps, switched %.1f us from its moment", silent, jumps, switched_at - double(at));
-	QCOMPARE(silent, 0);
-	QCOMPARE(jumps, 1);
-	QVERIFY2(std::abs(switched_at - double(at)) <= 0.5e6 / RATE, "switched away from its moment");
+	/* The cut: read back from the new place's own frames, past any
+	 * crossover -- frame target + k sounds k frames after it. */
+	size_t settled = left.size() - 1;
+	const size_t cut = settled - size_t(left[settled] - double(target));
+	QVERIFY2(cut > 0 && cut < left.size(), "no cut");
+	double worst_before = 0;
+	for (size_t i = 1; i < cut; ++i) worst_before = std::max(worst_before, std::abs(left[i] - left[i - 1] - 1));
+	const double old_next = left[cut - 1] + 1;
+	double worst_gain = 0;
+	for (double g : gain) worst_gain = std::max(worst_gain, std::abs(g - 1));
+	/* The crossover's length is the old block's rest, 5 ms at most: find
+	 * where the line is the new place's alone. */
+	size_t alone = cut;
+	while (alone < left.size() && std::abs(left[alone] - double(target + int64_t(alone - cut))) > 0.5) ++alone;
+	const size_t length = alone - cut;
+	double worst_after = 0;
+	for (size_t i = alone; i < left.size(); ++i)
+		worst_after = std::max(worst_after, std::abs(left[i] - double(target + int64_t(i - cut))));
+	const size_t half = cut + length / 2;
+	const double w = length > 0 ? double(half - cut) / double(length) : 1;
+	const double expected_half = (1 - w) * (old_next + double(half - cut)) + w * double(target + int64_t(half - cut));
+	qInfo("jump: cut %.1f us from its moment, a crossover of %zu frames, gain off by %.4f at worst, halfway %.1f against %.1f",
+	      times[cut] - double(at), length, worst_gain, left[half], expected_half);
+	QVERIFY2(worst_before < 1e-6, "the old place did not play on to the cut");
+	QVERIFY2(std::abs(times[cut] - double(at)) <= 0.5e6 / RATE, "cut away from its moment");
+	QVERIFY2(length > 0 && length <= deck_test_tail(), "no crossover, or one longer than 5 ms");
+	QVERIFY2(worst_gain < 1e-3, "the summed gain dipped: a gap");
+	QVERIFY2(worst_after < 1e-6, "after the crossover, not the new place's frames");
+	QVERIFY2(length < 4 || std::abs(left[half] - expected_half) < 2, "no crossover: halfway is not half of each");
 }
 
 /*
