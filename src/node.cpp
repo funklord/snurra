@@ -154,6 +154,11 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 }
 
 snurra_node::~snurra_node() {
+	/* First: the sockets are children, deleted by QWidget's destructor after
+	 * this one has destroyed m_taking -- and a socket going says
+	 * disconnected, whose handler here read m_taking (ThreadSanitizer: a
+	 * use after free, at every exit with a take open). */
+	for (QLocalSocket *socket : findChildren<QLocalSocket *>()) socket->disconnect(this);
 	delete m_marker;
 	if (m_server) {
 		m_server->close();
