@@ -410,8 +410,8 @@ void deck_test::an_envelope_is_heard_on_the_tracks_own_frames() {
 		for (const rendered_t &block : blocks)
 			for (int64_t i = 0; i < block.advanced; ++i) {
 				const double gain = block.samples[size_t(2 * i + 1)];
-				const double frame = double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE;
 				if (gain < 1e-3) continue;   /* the frame cannot be read back where it is silent */
+				const double frame = double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE;
 				worst = qMax(worst, qAbs(gain - expected(frame)));
 				++checked;
 			}
@@ -549,7 +549,10 @@ void deck_test::a_nudge_bends_without_a_gap() {
 	for (const rendered_t &block : blocks)
 		for (int64_t i = 0; i < block.advanced; ++i) {
 			const float gain = block.samples[size_t(2 * i + 1)];
-			if (gain < 0.999f) ++silent;
+			if (gain < 0.999f) {
+				++silent;
+				continue;
+			}
 			frames.push_back(double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE);
 		}
 	double fastest = 0;
