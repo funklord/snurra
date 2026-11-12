@@ -9,6 +9,7 @@
  * forward, after a seek back and after a jump ahead.
  */
 #include <QElapsedTimer>
+#include <QSignalSpy>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -46,6 +47,7 @@ private slots:
 	void a_track_without_a_picture_has_no_video();
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
 	void a_picture_from_bytes_is_the_files_picture();
+	void a_picture_without_sound_is_not_a_failure();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -348,6 +350,37 @@ void video_test::a_picture_from_bytes_is_the_files_picture() {
 		++same;
 	}
 	qInfo("bytes: %d times, the file's frame each time", same);
+}
+
+/* A picture with no sound (a GIF, a screen recording): the sound gives up
+ * at once, but the file plays -- no failure said, the drawer open. And a
+ * file with neither still says it. */
+void video_test::a_picture_without_sound_is_not_a_failure() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QVERIFY(make(QStringLiteral("silent.gif"), { QStringLiteral("-c:v"), QStringLiteral("gif"), QStringLiteral("-an") }, 0));
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(QStringLiteral("silent.gif"));
+	state.playing = true;
+	state.controls = true;
+	state.duration_us = 3000000;
+	snurra_tile *tile = node.add_tile(state);
+	QSignalSpy failed(tile, &snurra_tile::failed);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QTest::qWait(500);
+	QCOMPARE(failed.count(), 0);
+
+	QFile junk(m_dir.filePath(QStringLiteral("notes.mp4")));
+	QVERIFY(junk.open(QIODevice::WriteOnly));
+	junk.write("not a picture, not a sound\n");
+	junk.close();
+	snurra_tile_state other = state;
+	other.source = junk.fileName();
+	other.column = 1;
+	snurra_tile *nothing = node.add_tile(other);
+	QSignalSpy said(nothing, &snurra_tile::failed);
+	QTRY_COMPARE_WITH_TIMEOUT(said.count(), 1, 5000);
 }
 
 int run_video_tests(int argc, char **argv) {

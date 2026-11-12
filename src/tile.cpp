@@ -490,6 +490,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		read_beats(nullptr);
 	}
 	show_jumps();
+	/* Decided on from the next tick: the constructor's ran before the
+	 * picture's reader existed -- and a host's tile gets its readers
+	 * only after construction (embedded) -- so a picture alone read as a
+	 * failure. */
+	QMetaObject::invokeMethod(this, [this] { m_settled = true; }, Qt::QueuedConnection);
 }
 
 /* The beat grid, read on a thread of its own from the file the state
@@ -900,7 +905,14 @@ void snurra_tile::tick() {
 		set_beats(m_grid);
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
-	if (!m_failed_said && m_deck->failed()) {
+	/* No sound, and only then a failure if no picture either: a GIF or a
+	 * screen recording has none, and was told it could not be played.
+	 * The picture's reader opens later than the sound gives up, so wait
+	 * for it to have looked. */
+	const bool picture_known = m_settled && (!m_video || m_video->opened());
+	const bool picture = m_video && m_video->has_video();
+	if (!m_failed_said && m_deck->failed() && picture_known && picture) m_failed_said = true;   /* a picture alone */
+	if (!m_failed_said && m_deck->failed() && picture_known) {
 		m_failed_said = true;
 		/* Said, not stopped: the stand-in silence still behaves as a tile.
 		 * From the event loop: a source that fails at once fails within

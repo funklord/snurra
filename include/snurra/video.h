@@ -48,6 +48,8 @@ public:
 	/* Known once the reader has opened the track (on its thread); until
 	 * then, and for a track without a picture, false. */
 	bool has_video() const { return m_has_video.load(std::memory_order_acquire); }
+	/* Whether the reader has looked, picture or none. */
+	bool opened() const { return m_opened.load(std::memory_order_acquire); }
 	QSize size() const;
 
 	/* Called on the reader's thread once it has opened, with or without a
@@ -76,6 +78,7 @@ private:
 	int64_t m_frame_us = 40000;     /* one frame's length, from the stream's rate */
 	std::function<void(bool)> m_on_open;
 	std::atomic<bool> m_has_video{ false };
+	std::atomic<bool> m_opened{ false };
 };
 
 #endif

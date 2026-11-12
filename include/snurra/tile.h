@@ -217,6 +217,7 @@ private:
 	QPointer<snurra_engine> m_owner;
 	bool m_grouped = false;
 	bool m_failed_said = false;
+	bool m_settled = false;   /* constructed, readers started: a failure can be judged */
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
 	QPoint m_press;
 	bool m_dragging = false;

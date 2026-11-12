@@ -246,6 +246,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 			on_open = m_on_open;
 		}
 		m_has_video.store(has_video, std::memory_order_release);
+		m_opened.store(true, std::memory_order_release);
 		if (on_open) on_open(has_video);
 	};
 
