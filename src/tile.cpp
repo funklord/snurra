@@ -14,6 +14,7 @@
 #include <QVBoxLayout>
 
 #include "snurra/deck.h"
+#include "snurra/engine.h"
 #include "snurra/peaks.h"
 
 /*
@@ -209,7 +210,26 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	        });
 }
 
-snurra_tile::~snurra_tile() = default;
+snurra_tile::~snurra_tile() {
+	m_peaks.reset();   /* before the deck can go: the waveform first */
+	if (m_owner) m_owner->retire(m_deck);
+}
+
+snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_state &state,
+                                   std::shared_ptr<snurra_bytes> bytes, QWidget *parent) {
+	snurra_deck::start_t start;
+	start.source = state.source;
+	start.bytes = std::move(bytes);
+	start.rate = engine.rate();
+	start.fallback_length = snurra_us_to_frames(state.duration_us, start.rate);
+	start.anchor_frame = snurra_us_to_frames(state.position_us, start.rate);
+	start.anchor_us = state.sampled_at_us;
+	start.playing = state.playing;
+	start.level = float(state.level) / 100;
+	snurra_tile *tile = new snurra_tile(state, engine.add(start), parent);
+	tile->m_owner = &engine;
+	return tile;
+}
 
 /* The deck's frames as the shared clock's microseconds, and back. */
 static qint64 frames_to_us(int64_t frames, int rate) {

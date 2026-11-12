@@ -1,9 +1,10 @@
 /* Every suite in one binary, so `make test` builds and runs one thing. */
-#include <QCoreApplication>
+#include <QApplication>
 
 int run_handover_tests(int argc, char **argv);
 int run_codec_tests(int argc, char **argv);
 int run_deck_tests(int argc, char **argv);
+int run_embed_tests(int argc, char **argv);
 
 int main(int argc, char **argv) {
 	/*
@@ -13,9 +14,12 @@ int main(int argc, char **argv) {
 	 * and re-attached 361 times in 281 s before an outer timeout ended it.
 	 */
 	qputenv("QTEST_DISABLE_STACK_DUMP", "1");
-	QCoreApplication app(argc, argv);
+	/* Widgets for the embedding tests, on no screen at all. */
+	if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+	QApplication app(argc, argv);
 	const int handover = run_handover_tests(argc, argv);
 	const int codec = run_codec_tests(argc, argv);
 	const int deck = run_deck_tests(argc, argv);
-	return handover || codec || deck ? 1 : 0;
+	const int embed = run_embed_tests(argc, argv);
+	return handover || codec || deck || embed ? 1 : 0;
 }

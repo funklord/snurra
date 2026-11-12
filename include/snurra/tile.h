@@ -1,6 +1,7 @@
 #ifndef SNURRA_TILE_H
 #define SNURRA_TILE_H
 
+#include <QPointer>
 #include <QWidget>
 
 #include <memory>
@@ -10,7 +11,9 @@
 class QLabel;
 class QSlider;
 class QToolButton;
+class snurra_bytes;
 class snurra_deck;
+class snurra_engine;
 class snurra_peaks;
 class snurra_waveform;
 
@@ -32,6 +35,17 @@ public:
 	 * fade is still sounding after the tile has gone. */
 	snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent = nullptr);
 	~snurra_tile() override;
+
+	/*
+	 * A tile in a program of its own (project.md sec 1: BeerSSH's tile,
+	 * fuzzypickles' player), playing `bytes` -- from its transport, still
+	 * arriving or not -- or, without them, what `state.source` names. It
+	 * owns its deck in `engine` and retires it when the tile goes, so a
+	 * closed tile never leaves a deck playing. No window of its own, no
+	 * socket: a widget to put in the consumer's layout.
+	 */
+	static snurra_tile *embedded(snurra_engine &engine, const snurra_tile_state &state,
+	                             std::shared_ptr<snurra_bytes> bytes, QWidget *parent = nullptr);
 	snurra_deck *deck() const { return m_deck; }
 
 	/* As it is now, sampled this moment, for a handover. */
@@ -80,6 +94,9 @@ private:
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
+	/* Set when the tile owns its deck. Guarded: an engine destroyed first
+	 * has deleted its decks already, and is not to be called. */
+	QPointer<snurra_engine> m_owner;
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
 	QPoint m_press;
 	bool m_dragging = false;

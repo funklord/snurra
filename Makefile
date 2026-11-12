@@ -36,7 +36,7 @@ $(BUILD_DIR)/Makefile: snurra.pro snurra.pri
 $(BIN): $(BUILD_DIR)/Makefile FORCE
 	$(MAKE) -C $(BUILD_DIR)
 
-$(TEST_BUILD_DIR)/Makefile: test/test.pro
+$(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri
 	mkdir -p $(TEST_BUILD_DIR)
 	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
 

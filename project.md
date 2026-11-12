@@ -544,6 +544,19 @@ controls; each tile very compact but resizeable).
   `desktop-file-validate`; installed into a scratch DESTDIR, the player
   ran from there, and uninstall left no file. The icon is the theme's
   generic `multimedia-audio-player` until snurra has one.
+- **A tile in a program of its own, in one call, 2026-11-12** (sec 1:
+  BeerSSH's tile): `snurra_tile::embedded(engine, state, bytes, parent)`
+  -- the consumer's engine, bytes from its transport -- gives a widget
+  for its layout with no window or socket of snurra's; the tile owns its
+  deck and retires it when it goes, through a guarded pointer, so an
+  engine destroyed first is not called. `embed_test`: it plays, holds
+  where a quarter of the bytes ends and goes on when the rest comes;
+  closing it retires its deck (without the retire, that fails); an
+  engine gone first leaves it safe to close -- shown not to crash, which
+  without a sanitizer is weaker than shown safe. The tests now take the
+  library through `snurra.pri`, as a consumer does, so the `.pri` is
+  under test too. A tile's waveform is read from files only: from bytes
+  it would fetch them twice, which over SFTP is not free.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
@@ -672,8 +685,7 @@ controls; each tile very compact but resizeable).
   buffer of 1920), its server reporting 128 ms against QAudioSink's 132.
   **Low latency is not shown**: that needs a phone. A stream AAudio
   closes underneath (a route change) stops; reopening it is not built.
-- **Not yet:** a tile for bytes (the window opens tiles by name; a
-  consumer embedding snurra hands a deck its bytes); the stack's own
+- **Not yet:** the stack's own
   mixing (sec 3b, layer 4: lanes at once, today a tile with its controls
   out plays alongside, which is most of it).
 
