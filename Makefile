@@ -47,6 +47,9 @@ $(BIN): $(BUILD_DIR)/Makefile FORCE
 $(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri
 	mkdir -p $(TEST_BUILD_DIR)
 	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	@# As the player's: a test built the old way passes against nothing.
+	$(MAKE) -C $(TEST_BUILD_DIR) clean
+	rm -f $(TEST_BIN)
 
 tests-build: $(TEST_BUILD_DIR)/Makefile FORCE
 	$(MAKE) -C $(TEST_BUILD_DIR)
