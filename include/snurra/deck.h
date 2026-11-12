@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <memory>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "snurra/spsc.h"
 
@@ -72,6 +74,18 @@ public:
 	 */
 	void fade(int64_t start_us, int64_t length_us, float from, float to, bool power = false);
 
+	/*
+	 * The envelope (project.md sec 3b, step 5): a level curve over the
+	 * deck's own frames, so it moves with the track wherever it is played
+	 * from. Points are (frame, gain), in order; between two the gain is a
+	 * straight line in amplitude, as Audacity's envelope; before the first
+	 * and after the last it holds. None: 1 throughout. At most
+	 * ENVELOPE_POINTS are kept. It multiplies the level and any fade.
+	 */
+	static constexpr int ENVELOPE_POINTS = 64;
+	using envelope_t = std::vector<std::pair<int64_t, float>>;
+	void set_envelope(const envelope_t &points);
+
 	/* The frame heard at `us`, from what the callback last rendered. */
 	int64_t position_at(int64_t us) const;
 
@@ -114,7 +128,15 @@ private:
 		bool power;
 	};
 
+	struct envelope_snapshot {
+		int count = 0;
+		int64_t frame[ENVELOPE_POINTS];
+		float gain[ENVELOPE_POINTS];
+	};
+
 	void read_loop();
+	const envelope_snapshot &envelope_now();
+	static float envelope_gain(const envelope_snapshot &envelope, int &segment, int64_t frame);
 	bool next_frame(float &left, float &right);
 	fade_t fade_snapshot();
 	float fade_gain(const fade_t &fade, int64_t us) const;
@@ -139,6 +161,10 @@ private:
 	std::atomic<float> m_fade_to{ 1 };
 	std::atomic<bool> m_fade_power{ false };
 	std::atomic<int64_t> m_seek_anchor_us{ INT64_MIN };   /* start_at's time; MIN for a plain seek */
+	std::atomic<uint32_t> m_envelope_sequence{ 0 };   /* a seqlock over the envelope */
+	std::atomic<int> m_envelope_count{ 0 };
+	std::atomic<int64_t> m_envelope_frame[ENVELOPE_POINTS];
+	std::atomic<float> m_envelope_gain[ENVELOPE_POINTS];
 
 	/* From the reader. */
 	std::atomic<int64_t> m_length{ 0 };
@@ -163,6 +189,7 @@ private:
 	int m_offset = 0;
 	float m_slew = 0;   /* play/pause and level, smoothed so neither clicks */
 	fade_t m_fade_last{ 0, 0, 1, 1, false };
+	envelope_snapshot m_envelope_last;
 };
 
 #endif

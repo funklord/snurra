@@ -82,6 +82,12 @@ public:
 	void set_level(int level);
 	void toggle_mute();
 
+	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
+	 * through the deck, and edited on the waveform while the envelope
+	 * control (in the controls, sec 3c) is on. */
+	void set_envelope(const QList<QPair<qint64, float>> &points);
+	QList<QPair<qint64, float>> envelope() const { return m_state.envelope; }
+
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
 
@@ -104,6 +110,7 @@ protected:
 private:
 	void seek(qint64 position_us);
 	void tick();
+	void show_envelope();
 
 	snurra_tile_state m_state;
 	snurra_deck *m_deck;
@@ -114,6 +121,7 @@ private:
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
+	QToolButton *m_shape;   /* the envelope control: the waveform edits it */
 	/* Set when the tile owns its deck. Guarded: an engine destroyed first
 	 * has deleted its decks already, and is not to be called. */
 	QPointer<snurra_engine> m_owner;

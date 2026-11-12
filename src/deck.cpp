@@ -85,6 +85,52 @@ void snurra_deck::fade(int64_t start_us, int64_t length_us, float from, float to
 	m_fade_sequence.fetch_add(1, std::memory_order_release);
 }
 
+void snurra_deck::set_envelope(const envelope_t &points) {
+	const int count = int(std::min<size_t>(points.size(), ENVELOPE_POINTS));
+	m_envelope_sequence.fetch_add(1, std::memory_order_acq_rel);
+	for (int i = 0; i < count; ++i) {
+		m_envelope_frame[i].store(points[size_t(i)].first, std::memory_order_relaxed);
+		m_envelope_gain[i].store(points[size_t(i)].second, std::memory_order_relaxed);
+	}
+	m_envelope_count.store(count, std::memory_order_relaxed);
+	m_envelope_sequence.fetch_add(1, std::memory_order_release);
+}
+
+const snurra_deck::envelope_snapshot &snurra_deck::envelope_now() {
+	/* As the fade: a few tries, and the last whole one otherwise. */
+	for (int attempt = 0; attempt < 4; ++attempt) {
+		const uint32_t before = m_envelope_sequence.load(std::memory_order_acquire);
+		if (before & 1) continue;
+		envelope_snapshot envelope;
+		envelope.count = std::clamp(m_envelope_count.load(std::memory_order_relaxed), 0, int(ENVELOPE_POINTS));
+		for (int i = 0; i < envelope.count; ++i) {
+			envelope.frame[i] = m_envelope_frame[i].load(std::memory_order_relaxed);
+			envelope.gain[i] = m_envelope_gain[i].load(std::memory_order_relaxed);
+		}
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (m_envelope_sequence.load(std::memory_order_relaxed) == before) {
+			m_envelope_last = envelope;
+			break;
+		}
+	}
+	return m_envelope_last;
+}
+
+/* `segment` is the caller's cursor, carried from frame to frame: frames
+ * mostly go forward, so it moves on rather than searching again. */
+float snurra_deck::envelope_gain(const envelope_snapshot &envelope, int &segment, int64_t frame) {
+	if (envelope.count == 0) return 1;
+	if (frame <= envelope.frame[0]) return envelope.gain[0];
+	const int last = envelope.count - 1;
+	if (frame >= envelope.frame[last]) return envelope.gain[last];
+	if (segment < 0 || segment >= last || frame < envelope.frame[segment]) segment = 0;
+	while (frame >= envelope.frame[segment + 1]) ++segment;
+	const int64_t from = envelope.frame[segment];
+	const int64_t span = envelope.frame[segment + 1] - from;
+	const float t = span > 0 ? float(double(frame - from) / double(span)) : 1.0f;
+	return envelope.gain[segment] + (envelope.gain[segment + 1] - envelope.gain[segment]) * t;
+}
+
 snurra_deck::fade_t snurra_deck::fade_snapshot() {
 	/* A few tries; a writer is a handful of stores away from done, and if
 	 * it is not, the last whole fade serves for one more period. */
@@ -244,6 +290,8 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	if (m_anchored) m_position = m_anchor_frame + snurra_us_to_frames(present_us - m_anchor_us, m_rate);
 
 	const fade_t fade = fade_snapshot();
+	const envelope_snapshot &envelope = envelope_now();
+	int segment = -1;
 	const float level = m_level.load(std::memory_order_relaxed);
 	const float target = playing ? level : 0.0f;
 	const float step = 1.0f / (0.005f * float(m_rate));   /* 5 ms from silence to full */
@@ -277,7 +325,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_locked.store(true, std::memory_order_release);
 		}
 		const int64_t us = present_us + int64_t(i) * 1000000 / m_rate;
-		const float gain = m_slew * fade_gain(fade, us);
+		const float gain = m_slew * fade_gain(fade, us) * envelope_gain(envelope, segment, m_position);
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
 		++m_position;

@@ -52,8 +52,62 @@ public:
 
 	std::function<void(double)> on_seek;
 
+	/*
+	 * The envelope, as fractions of the track (x) and gains (y), drawn
+	 * over the waveform whenever it has points. Editing, a press near a
+	 * point takes it and anywhere else adds one; dragging moves it between
+	 * its neighbours, and dragged out of the waveform it goes -- Audacity's
+	 * envelope tool. Each change ends with on_envelope.
+	 */
+	void set_envelope(const QList<QPointF> &points) {
+		m_envelope = points;
+		update();
+	}
+	void set_editing(bool editing) {
+		m_editing = editing;
+		setCursor(editing ? Qt::CrossCursor : Qt::IBeamCursor);
+		update();
+	}
+	std::function<void(const QList<QPointF> &)> on_envelope;
+
 protected:
-	void paintEvent(QPaintEvent *) override {
+	void paintEvent(QPaintEvent *event) override {
+		paint_waveform();
+		paint_envelope();
+		(void)event;
+	}
+
+	QPointF to_widget(const QPointF &point) const {
+		return QPointF(point.x() * width(), (1 - point.y()) * (height() - 1));
+	}
+
+	QPointF from_widget(const QPointF &at) const {
+		return QPointF(qBound(0.0, at.x() / qMax(1, width()), 1.0),
+		               qBound(0.0, 1 - at.y() / qMax(1, height() - 1), 1.0));
+	}
+
+	void paint_envelope() {
+		if (m_envelope.isEmpty() && !m_editing) return;
+		QPainter painter(this);
+		painter.setRenderHint(QPainter::Antialiasing);
+		QPen pen(palette().color(QPalette::Link));
+		pen.setWidthF(1.5);
+		painter.setPen(pen);
+		QPolygonF line;
+		if (m_envelope.isEmpty()) {
+			line << to_widget(QPointF(0, 1)) << to_widget(QPointF(1, 1));
+		} else {
+			line << to_widget(QPointF(0, m_envelope.first().y()));
+			for (const QPointF &point : m_envelope) line << to_widget(point);
+			line << to_widget(QPointF(1, m_envelope.last().y()));
+		}
+		painter.drawPolyline(line);
+		if (!m_editing) return;
+		painter.setBrush(palette().color(QPalette::Link));
+		for (const QPointF &point : m_envelope) painter.drawRect(QRectF(to_widget(point) - QPointF(3, 3), QSizeF(6, 6)));
+	}
+
+	void paint_waveform() {
 		QPainter painter(this);
 		const int h = height();
 		const QColor played = palette().color(QPalette::Highlight);
@@ -94,7 +148,46 @@ protected:
 	}
 
 	void mousePressEvent(QMouseEvent *event) override {
-		if (on_seek && width() > 0) on_seek(qBound(0.0, event->position().x() / width(), 1.0));
+		if (!m_editing) {
+			if (on_seek && width() > 0) on_seek(qBound(0.0, event->position().x() / width(), 1.0));
+			return;
+		}
+		if (event->button() != Qt::LeftButton) return;
+		const QPointF at = event->position();
+		m_grabbed = -1;
+		for (int i = 0; i < m_envelope.size(); ++i)
+			if (QLineF(to_widget(m_envelope.at(i)), at).length() <= GRAB)
+				m_grabbed = i;
+		if (m_grabbed < 0) {
+			const QPointF point = from_widget(at);
+			m_grabbed = 0;
+			while (m_grabbed < m_envelope.size() && m_envelope.at(m_grabbed).x() <= point.x()) ++m_grabbed;
+			m_envelope.insert(m_grabbed, point);
+		}
+		update();
+	}
+
+	void mouseMoveEvent(QMouseEvent *event) override {
+		if (!m_editing || m_grabbed < 0 || m_grabbed >= m_envelope.size()) return;
+		const QPointF at = event->position();
+		/* Out of the waveform by more than a grab's reach: it goes, shown
+		 * gone, and comes back if dragged in again before the release. */
+		m_outside = !rect().adjusted(-GRAB * 3, -GRAB * 3, GRAB * 3, GRAB * 3).contains(at.toPoint());
+		QPointF point = from_widget(at);
+		const double low = m_grabbed > 0 ? m_envelope.at(m_grabbed - 1).x() : 0.0;
+		const double high = m_grabbed + 1 < m_envelope.size() ? m_envelope.at(m_grabbed + 1).x() : 1.0;
+		point.setX(qBound(low, point.x(), high));
+		m_envelope[m_grabbed] = point;
+		update();
+	}
+
+	void mouseReleaseEvent(QMouseEvent *) override {
+		if (!m_editing || m_grabbed < 0) return;
+		if (m_outside && m_grabbed < m_envelope.size()) m_envelope.removeAt(m_grabbed);
+		m_grabbed = -1;
+		m_outside = false;
+		update();
+		if (on_envelope) on_envelope(m_envelope);
 	}
 
 private:
@@ -102,6 +195,11 @@ private:
 	std::vector<float> m_peaks;   /* -1: not read yet */
 	float m_loudest = 0;
 	double m_fraction = 0;
+	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
+	QList<QPointF> m_envelope;
+	bool m_editing = false;
+	int m_grabbed = -1;
+	bool m_outside = false;
 };
 
 snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent)
@@ -152,6 +250,17 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_play->setAutoRaise(true);
 	m_play->setCheckable(true);
 	transport->addWidget(m_play);
+	/* The envelope control: on, the waveform edits the level curve rather
+	 * than seeking (sec 3b, step 5) -- pulled out with the controls, never
+	 * shown by default (sec 3c). */
+	m_shape = new QToolButton(m_controls);
+	m_shape->setObjectName(QStringLiteral("snurra-envelope"));
+	m_shape->setAutoRaise(true);
+	m_shape->setCheckable(true);
+	m_shape->setText(QStringLiteral("~"));
+	m_shape->setAccessibleName(tr("Edit the envelope"));
+	m_shape->setToolTip(m_shape->accessibleName());
+	transport->addWidget(m_shape);
 	m_position = new QSlider(Qt::Horizontal, m_controls);
 	m_position->setAccessibleName(tr("Position"));
 	m_position->setRange(0, int(qMax<qint64>(1, state.duration_us / 100000)));
@@ -178,6 +287,13 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	connect(close, &QToolButton::clicked, this, [this] { emit close_requested(this); });
 	connect(m_pull, &QToolButton::toggled, this, &snurra_tile::set_controls);
 	connect(m_play, &QToolButton::toggled, this, &snurra_tile::request_playing);
+	connect(m_shape, &QToolButton::toggled, this, [this](bool on) { m_waveform->set_editing(on); });
+	m_waveform->on_envelope = [this](const QList<QPointF> &points) {
+		QList<QPair<qint64, float>> envelope;
+		for (const QPointF &point : points)
+			envelope << qMakePair(qint64(point.x() * double(m_state.duration_us)), float(point.y()));
+		set_envelope(envelope);
+	};
 	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
@@ -193,6 +309,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 
 	set_controls(state.controls);
 	set_playing(state.playing);
+	set_envelope(state.envelope);
 	tick();
 
 	/* The waveform's peaks, read from a source of their own and handed
@@ -298,6 +415,25 @@ void snurra_tile::hold_at(int64_t frame) {
 	tick();
 }
 
+void snurra_tile::set_envelope(const QList<QPair<qint64, float>> &points) {
+	m_state.envelope = points.mid(0, snurra_deck::ENVELOPE_POINTS);
+	snurra_deck::envelope_t frames;
+	for (const auto &point : m_state.envelope)
+		frames.emplace_back(us_to_frames(point.first, m_deck->rate()), qBound(0.0f, point.second, 1.0f));
+	m_deck->set_envelope(frames);
+	show_envelope();
+}
+
+/* On the waveform, as fractions of the track: again whenever its length
+ * becomes known, since a fraction of a length not yet said means nothing. */
+void snurra_tile::show_envelope() {
+	QList<QPointF> points;
+	if (m_state.duration_us > 0)
+		for (const auto &point : m_state.envelope)
+			points << QPointF(double(point.first) / double(m_state.duration_us), point.second);
+	m_waveform->set_envelope(points);
+}
+
 int64_t snurra_tile::frame_now() const {
 	return m_deck->position_at(snurra_clock_us());
 }
@@ -310,6 +446,7 @@ int64_t snurra_tile::length_frames() const {
 void snurra_tile::set_controls(bool out) {
 	m_state.controls = out;
 	m_controls->setVisible(out);
+	if (!out) m_shape->setChecked(false);   /* the envelope is edited only from its control */
 	m_pull->blockSignals(true);
 	m_pull->setChecked(out);
 	m_pull->blockSignals(false);
@@ -333,6 +470,7 @@ void snurra_tile::tick() {
 	if (length > 0 && frames_to_us(length, m_deck->rate()) != m_state.duration_us) {
 		m_state.duration_us = frames_to_us(length, m_deck->rate());
 		m_position->setRange(0, int(qMax<qint64>(1, m_state.duration_us / 100000)));
+		show_envelope();
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());

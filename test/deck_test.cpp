@@ -126,6 +126,7 @@ private slots:
 	void a_play_before_any_bytes_begins_at_the_beginning();
 	void a_deck_started_at_a_time_sounds_its_frame_then();
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
+	void an_envelope_is_heard_on_the_tracks_own_frames();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
 	void a_waveform_closed_while_reading_stops_at_once();
@@ -377,6 +378,50 @@ void deck_test::a_seek_just_after_a_pause_is_heard_as_nothing() {
 		for (float sample : block.samples) loudest = std::max(loudest, std::abs(sample));
 	QCOMPARE(loudest, 0.0f);
 	QCOMPARE(blocks.back().first, int64_t(RATE));
+}
+
+void deck_test::an_envelope_is_heard_on_the_tracks_own_frames() {
+	/*
+	 * An envelope (project.md sec 3b, step 5) down from 1 at frame 0 to 0
+	 * at frame 48000, then up to 1 at 96000. The ramp's right channel is 1,
+	 * so the capture reads the gain on each frame the left names: every
+	 * one on the line, from the start and again after a seek into the
+	 * middle -- the curve goes with the track, not with the clock.
+	 */
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	deck.set_envelope({ { 0, 1.0f }, { RATE, 0.0f }, { 2 * RATE, 1.0f } });
+	auto expected = [](double frame) {
+		if (frame <= RATE) return 1 - frame / RATE;
+		if (frame <= 2 * RATE) return (frame - RATE) / RATE;
+		return 1.0;
+	};
+	int64_t present = snurra_clock_us();
+	double worst = 0;
+	int64_t checked = 0;
+	auto check = [&](const std::vector<rendered_t> &blocks) {
+		for (const rendered_t &block : blocks)
+			for (int64_t i = 0; i < block.advanced; ++i) {
+				const double gain = block.samples[size_t(2 * i + 1)];
+				const double frame = double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE;
+				if (gain < 1e-3) continue;   /* the frame cannot be read back where it is silent */
+				worst = qMax(worst, qAbs(gain - expected(frame)));
+				++checked;
+			}
+	};
+	check(play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE * 3 / 2; }));
+	deck.seek(RATE / 2);
+	const std::vector<rendered_t> after
+	        = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 4; });
+	check(after);
+	int64_t first = -1;
+	for (const rendered_t &block : after)
+		if (block.advanced > 0 && first < 0) first = block.first;
+	qInfo("envelope: %lld frames checked, off the line by %.2g at worst", (long long)checked, worst);
+	QCOMPARE(first, int64_t(RATE / 2));
+	QVERIFY2(checked > RATE * 3 / 2, "too few frames were read back");
+	QVERIFY2(worst < 1e-5, qPrintable(QStringLiteral("a gain off its line by %1").arg(worst)));
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {

@@ -230,7 +230,18 @@ does the same with a tile's playback:
   libraries -- their licences are the holder's to weigh before one is
   linked).
 - **Envelopes:** a level curve per tile, drawn on it; the crossfade of a
-  train is two of them.
+  train is two of them. Settled with step 5 (2026-11-12): points of
+  (time into the track, gain 0 to 1), straight lines in amplitude
+  between them, holding before the first and after the last --
+  Audacity's envelope, the older and plainer of the editors weighed
+  (Ardour's gain line is the same shape in dB). In the track's own time,
+  so a curve goes with its track through seeks, handovers and trains.
+  Edited only from the controls (sec 3c): an envelope button turns the
+  waveform from seeking to editing, where a press adds a point or takes
+  the one under it, a drag moves it between its neighbours, and a drag
+  out of the waveform removes it -- Audacity's envelope tool again.
+  Not yet: a train's crossfade drawn as its two tiles' curves; it is
+  still the deck's equal-power fade, at the overlap above.
 
 **"Tiny" kept honest by building in steps**, each usable before the
 next: (1) the tile -- one file, play/pause/seek, opened at the pointer,
@@ -685,6 +696,19 @@ controls; each tile very compact but resizeable).
   of itself; straight lines (power 0.31 off) and starting B at once (a
   third of it lost) each fail. Not yet: beat-snapping the overlap
   (step 6).
+- **Envelopes, built 2026-11-12** (sec 3b, step 5): `snurra_deck::
+  set_envelope` takes up to 64 points over the deck's frames, read by
+  the callback under a seqlock as the fade is, and multiplies level,
+  slew and fade; the tile keeps them in its state (`envelope`, carried by
+  a handover), draws them over the waveform and edits them as sec 3b
+  says. Measured (`an_envelope_is_heard_on_the_tracks_own_frames`): a
+  ramp read back through a curve down to 0 at 1 s and up to 1 at 2 s,
+  84864 frames, every gain on its line to 1.1e-07, and after a seek to
+  0.5 s it goes on from that frame; laid on the frames played rather
+  than the track's own, the same test is off by 1. The mouse (offscreen,
+  `an_envelope_is_drawn_on_the_waveform`): off, a press seeks; on, a
+  press makes a point a quarter across and up where it was pressed, a
+  drag moves it to silence, and a drag out removes it.
 - **On Android, built 2026-11-12** (sec 1: BeerSSH's tile, Android first).
   `make android` (tool/android.mk, copied from the shared fragment, with
   a build rule after bbq-predictor's) builds the player for a Qt kit's ABI;
