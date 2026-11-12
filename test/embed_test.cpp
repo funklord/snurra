@@ -7,7 +7,10 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QToolButton>
+
+#include <cmath>
 #include <QtTest>
 
 #include <memory>
@@ -30,6 +33,9 @@ private slots:
 	void a_handover_carries_the_envelope();
 	void a_drawer_adds_room_and_leaves_every_waveform_as_it_was();
 	void the_look_is_drawers_or_square_as_asked();
+	void a_jump_is_the_tracks_step();
+	void a_jump_on_a_beat_is_whole_bars();
+	void a_nudge_moves_one_lane_and_stays();
 };
 
 static snurra_tile_state playing(const QString &name) {
@@ -231,6 +237,84 @@ void embed_test::the_look_is_drawers_or_square_as_asked() {
 	qunsetenv("SNURRA_LAYOUT");
 	snurra_node node;
 	QVERIFY(!node.drawers_look());
+}
+
+/* Paused, a tile's position after a jump; the window's transport moves it. */
+static qint64 jumped(snurra_tile *tile, int direction, bool large) {
+	tile->jump(direction, large);
+	QTest::qWait(100);
+	return tile->state().position_us;
+}
+
+/* The holder's steps (2026-11-12): under ten minutes 10 s and 60 s, from
+ * ten minutes 5 % and 20 %, each said on the buttons. */
+void embed_test::a_jump_is_the_tracks_step() {
+	snurra_node node;
+	snurra_tile_state song_state = placed(QStringLiteral("song"), 0, 0);
+	song_state.duration_us = 3 * 60 * qint64(1000000);
+	snurra_tile *song = node.add_tile(song_state);
+	snurra_tile_state long_one = placed(QStringLiteral("film"), 1, 0);
+	long_one.duration_us = 20 * 60 * qint64(1000000);
+	snurra_tile *film = node.add_tile(long_one);
+	QCOMPARE(song->jump_step(false), QStringLiteral("10 s"));
+	QCOMPARE(song->jump_step(true), QStringLiteral("60 s"));
+	QCOMPARE(film->jump_step(false), QStringLiteral("5 %"));
+	QCOMPARE(film->jump_step(true), QStringLiteral("20 %"));
+	QCOMPARE(jumped(song, 1, false), qint64(10000000));
+	QCOMPARE(jumped(song, 1, true), qint64(70000000));
+	QCOMPARE(jumped(song, -1, false), qint64(60000000));
+	QCOMPARE(jumped(film, 1, false), qint64(60000000 + 60000000));   /* the group moved it to 60 s; 5 % is a minute */
+	/* In a window the controls drawer is the window's to place: look there. */
+	QToolButton *forward = song->drawer_below()->findChild<QToolButton *>(QStringLiteral("snurra-forward"));
+	QVERIFY(forward);
+	QVERIFY(forward->text().contains(QStringLiteral("10 s")));
+}
+
+/* A kick at 120 BPM: once its grid is found, the step is bars, and a jump
+ * is exactly 16 beats -- 8 s, 384000 frames. */
+void embed_test::a_jump_on_a_beat_is_whole_bars() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("kick.wav"));
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav_of(48000 * 30, [](int i) {
+		const int in_beat = i % 24000;
+		const double t = in_beat / 48000.0;
+		return int(20000 * std::sin(2 * M_PI * 55 * t) * std::exp(-t / 0.09));
+	}));
+	file.close();
+	snurra_node node;
+	snurra_tile_state state = placed(path, 0, 0);
+	state.duration_us = 30000000;
+	snurra_tile *tile = node.add_tile(state);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->beats().valid(), 10000);
+	qInfo("found %.3f BPM", tile->beats().bpm());
+	QCOMPARE(tile->jump_step(false), QStringLiteral("4 bars"));
+	QCOMPARE(tile->jump_step(true), QStringLiteral("16 bars"));
+	QVERIFY2(qAbs(tile->beats().bpm() - 120) < 0.01, "not the tempo it was made at");
+	const qint64 from = tile->state().position_us;
+	const qint64 to = jumped(tile, 1, false);
+	const double beats = 16 * tile->beats().period / 48000 * 1e6;
+	QVERIFY2(qAbs(double(to - from) - beats) <= 21,
+	         qPrintable(QStringLiteral("jumped %1 us, not 16 of its beats, %2").arg(to - from).arg(beats)));
+}
+
+/* Two lanes held at one time; the lower nudged forward goes 10 ms ahead
+ * of the upper, and a seek of the group keeps it so. */
+void embed_test::a_nudge_moves_one_lane_and_stays() {
+	snurra_node node;
+	snurra_tile_state a = placed(QStringLiteral("a"), 0, 0);
+	snurra_tile_state b = placed(QStringLiteral("b"), 1, 0);
+	a.duration_us = b.duration_us = 60000000;
+	snurra_tile *upper = node.add_tile(a);
+	snurra_tile *lower = node.add_tile(b);
+	lower->nudge(1);
+	QTest::qWait(100);
+	QCOMPARE(lower->state().position_us - upper->state().position_us, qint64(10000));
+	upper->jump(1, false);
+	QTest::qWait(100);
+	QCOMPARE(upper->state().position_us, qint64(10000000));
+	QCOMPARE(lower->state().position_us, qint64(10010000));
 }
 
 int run_embed_tests(int argc, char **argv) {

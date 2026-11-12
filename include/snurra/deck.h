@@ -174,6 +174,7 @@ private:
 	/* From the callback: where it was, published under a seqlock. */
 	std::atomic<uint32_t> m_published_sequence{ 0 };
 	std::atomic<int64_t> m_published_frame{ 0 };
+	std::atomic<uint64_t> m_published_generation{ 1 };   /* the last seek rendered */
 	std::atomic<int64_t> m_published_us{ 0 };
 	std::atomic<int64_t> m_published_advanced{ 0 };
 	std::atomic<bool> m_locked{ false };

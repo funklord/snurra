@@ -69,18 +69,8 @@ private:
 	std::vector<int64_t> m_wanted;
 };
 
-/* A WAV whose every frame is different from its neighbours, so a sample
- * compared says which frame it is. */
-QByteArray make_wav(int frames) {
-	QByteArray pcm(frames * 4, Qt::Uninitialized);
-	for (int64_t i = 0; i < frames; ++i) {
-		/* 64-bit: in int these overflow past frame 271,000, and the
-		 * optimiser's reading of that undefined loop wrote past the buffer. */
-		const qint16 left = qint16((i * 7919) % 65536 - 32768);
-		const qint16 right = qint16((i * 104729) % 65536 - 32768);
-		std::memcpy(pcm.data() + 4 * i, &left, 2);
-		std::memcpy(pcm.data() + 4 * i + 2, &right, 2);
-	}
+/* 48 kHz stereo 16-bit PCM in a WAV header. */
+inline QByteArray wav_from(const QByteArray &pcm) {
 	QByteArray wav;
 	auto u32 = [&wav](quint32 v) { wav.append(reinterpret_cast<const char *>(&v), 4); };
 	auto u16 = [&wav](quint16 v) { wav.append(reinterpret_cast<const char *>(&v), 2); };
@@ -97,6 +87,33 @@ QByteArray make_wav(int frames) {
 	wav += "data";
 	u32(quint32(pcm.size()));
 	return wav + pcm;
+}
+
+/* A WAV whose every frame is different from its neighbours, so a sample
+ * compared says which frame it is. */
+inline QByteArray make_wav(int frames) {
+	QByteArray pcm(frames * 4, Qt::Uninitialized);
+	for (int64_t i = 0; i < frames; ++i) {
+		/* 64-bit: in int these overflow past frame 271,000, and the
+		 * optimiser's reading of that undefined loop wrote past the buffer. */
+		const qint16 left = qint16((i * 7919) % 65536 - 32768);
+		const qint16 right = qint16((i * 104729) % 65536 - 32768);
+		std::memcpy(pcm.data() + 4 * i, &left, 2);
+		std::memcpy(pcm.data() + 4 * i + 2, &right, 2);
+	}
+	return wav_from(pcm);
+}
+
+/* A WAV of `frames`, both channels at `level(i)` for frame i. */
+template <typename level_t>
+QByteArray make_wav_of(int frames, level_t level) {
+	QByteArray pcm(frames * 4, Qt::Uninitialized);
+	for (int i = 0; i < frames; ++i) {
+		const qint16 v = qint16(std::clamp(level(i), -32768, 32767));
+		std::memcpy(pcm.data() + 4 * int64_t(i), &v, 2);
+		std::memcpy(pcm.data() + 4 * int64_t(i) + 2, &v, 2);
+	}
+	return wav_from(pcm);
 }
 
 }

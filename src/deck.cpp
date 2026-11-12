@@ -161,6 +161,17 @@ float snurra_deck::fade_gain(const fade_t &fade, int64_t us) const {
 }
 
 void snurra_deck::last_rendered(int64_t &frame, int64_t &us, int64_t &advanced) const {
+	/* A seek asked and not yet rendered: where it was asked, held there --
+	 * so a second jump made before the output's next period goes on from
+	 * the first, not from where the deck was. */
+	const uint64_t asked = m_generation.load(std::memory_order_acquire);
+	if (asked != m_published_generation.load(std::memory_order_acquire)) {
+		frame = m_seek_target.load(std::memory_order_relaxed);
+		const int64_t anchor = m_seek_anchor_us.load(std::memory_order_relaxed);
+		us = anchor != INT64_MIN ? anchor : snurra_clock_us();
+		advanced = 0;
+		return;
+	}
 	for (;;) {
 		const uint32_t before = m_published_sequence.load(std::memory_order_acquire);
 		if (before & 1) continue;
@@ -337,4 +348,5 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	m_published_us.store(present_us, std::memory_order_relaxed);
 	m_published_advanced.store(advanced, std::memory_order_relaxed);
 	m_published_sequence.fetch_add(1, std::memory_order_release);
+	m_published_generation.store(m_seen_generation, std::memory_order_release);
 }

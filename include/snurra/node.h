@@ -121,6 +121,8 @@ private:
 	 * none past the lane's end. */
 	snurra_tile *lane_at(int row, int64_t time, int64_t &frame) const;
 	QList<int> rows() const;
+	int64_t time_of(snurra_tile *tile) const;
+	void nudge_lane(snurra_tile *tile, qint64 delta_us);
 
 	bool m_drawers_look = false;
 	bool m_fitting = false;   /* a re-fit is queued */

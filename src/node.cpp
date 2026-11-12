@@ -206,6 +206,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	tile->set_grouped(true);
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
 	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
+	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
 		/* What plays is what can be stopped (sec 3c): with no controls
@@ -425,7 +426,7 @@ void snurra_node::play_group(snurra_tile *from, bool playing) {
 			if (tile->playing()) tile->set_playing(false);
 		return;
 	}
-	start_group_at(lane_start(from) + from->frame_now());
+	start_group_at(time_of(from));
 }
 
 QList<int> snurra_node::rows() const {
@@ -446,7 +447,7 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
 		 * comes in on the track it goes to. A length not known yet is
 		 * taken as long enough. */
 		if (length <= 0 || time < start + own) {
-			frame = std::max<int64_t>(0, time - start);
+			frame = std::max<int64_t>(0, time - start + snurra_us_to_frames(tiles.at(i)->offset_us(), m_engine->rate()));
 			return tiles.at(i);
 		}
 		start += own;
@@ -455,7 +456,7 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
 }
 
 void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
-	const int64_t time = lane_start(from) + snurra_us_to_frames(position_us, m_engine->rate());
+	const int64_t time = lane_start(from) + snurra_us_to_frames(position_us - from->offset_us(), m_engine->rate());
 	for (snurra_tile *tile : m_tiles) {
 		if (tile->playing()) {
 			start_group_at(time);
@@ -480,6 +481,25 @@ void snurra_node::start_group_at(int64_t time) {
 			else if (tile->playing()) tile->set_playing(false);
 		}
 	}
+}
+
+/* The group's time where `tile` is now: its place in its lane, less how
+ * far a nudge put its track ahead of the lane. */
+int64_t snurra_node::time_of(snurra_tile *tile) const {
+	return lane_start(tile) + tile->frame_now() - snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+}
+
+/*
+ * A nudge (project.md sec 4): this tile's track moved by `delta_us` against
+ * its lane's time and every other lane, and remembered as its offset, so a
+ * group play or seek keeps the lanes as lined up by ear. Playing, it goes
+ * on from the moved frame at the next moment the output can take.
+ */
+void snurra_node::nudge_lane(snurra_tile *tile, qint64 delta_us) {
+	tile->set_offset_us(tile->offset_us() + delta_us);
+	const int64_t frame = std::max<int64_t>(0, tile->frame_now() + snurra_us_to_frames(delta_us, m_engine->rate()));
+	if (tile->playing()) tile->play_from(frame, snurra_clock_us() + m_engine->latency_us() + 20000);
+	else tile->hold_at(frame);
 }
 
 void snurra_node::leave_if_empty() {
@@ -936,8 +956,9 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
 
 /*
  * mplayer's keys, since snurra is to replace it (project.md sec 1): space
- * or p plays and pauses, the arrows seek 10 s and a minute, page up and
- * down ten minutes, 9 and 0 (and / and *) take the level down and up by
+ * or p plays and pauses, the arrows jump -- left and right the track's
+ * small step, down and up its large one (sec 4), Ctrl a nudge -- page up
+ * and down ten minutes, 9 and 0 (and / and *) take the level down and up by
  * mplayer's 3, m mutes, q and escape quit. On the tile last touched, or
  * the first with its controls out, or the first. A tile played from the
  * keyboard has its controls pulled out first: what plays is what can be
@@ -959,10 +980,17 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 		if (!tile->playing() && !tile->controls()) tile->set_controls(true);
 		tile->request_playing(!tile->playing());
 		break;
-	case Qt::Key_Left: tile->seek_by(-10 * SECOND); break;
-	case Qt::Key_Right: tile->seek_by(10 * SECOND); break;
-	case Qt::Key_Down: tile->seek_by(-60 * SECOND); break;
-	case Qt::Key_Up: tile->seek_by(60 * SECOND); break;
+	/* mplayer's two levels, at the track's step (sec 4): the arrows left
+	 * and right the small, down and up the large; with Ctrl, a nudge. */
+	case Qt::Key_Left:
+	case Qt::Key_Right: {
+		const int direction = event->key() == Qt::Key_Right ? 1 : -1;
+		if (event->modifiers() & Qt::ControlModifier) tile->nudge(direction);
+		else tile->jump(direction, false);
+		break;
+	}
+	case Qt::Key_Down: tile->jump(-1, true); break;
+	case Qt::Key_Up: tile->jump(1, true); break;
 	case Qt::Key_PageDown: tile->seek_by(-600 * SECOND); break;
 	case Qt::Key_PageUp: tile->seek_by(600 * SECOND); break;
 	case Qt::Key_9:

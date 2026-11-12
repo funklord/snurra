@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "snurra/beats.h"
 #include "snurra/tile_state.h"
 
 class QHBoxLayout;
@@ -94,6 +95,18 @@ public:
 	void set_level(int level);
 	void toggle_mute();
 
+	/* Jumps (project.md sec 4): back or forward by the track's step --
+	 * 4 or 16 bars where it has a beat, else 10 s or 60 s, or 5 % or
+	 * 20 % from ten minutes up -- and a 10 ms nudge of this tile alone. */
+	void jump(int direction, bool large);
+	void nudge(int direction);
+	QString jump_step(bool large) const;
+	snurra_beat_grid beats() const { return m_grid; }
+	void set_beats(const snurra_beat_grid &grid);
+	/* How far this tile's track is ahead of its lane's time: nudges. */
+	qint64 offset_us() const { return m_state.offset_us; }
+	void set_offset_us(qint64 offset) { m_state.offset_us = offset; }
+
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
 	 * through the deck, and edited on the waveform while the envelope
 	 * control (in the controls, sec 3c) is on. */
@@ -131,6 +144,7 @@ signals:
 	/* Grouped: what was asked of the tile, for the group to do. */
 	void play_requested(snurra_tile *tile, bool playing);
 	void seek_requested(snurra_tile *tile, qint64 position_us);
+	void nudge_requested(snurra_tile *tile, qint64 delta_us);
 	void controls_changed(snurra_tile *tile);
 	/* A drawer opened, closed or changed height: the window re-fits. */
 	void drawers_changed(snurra_tile *tile);
@@ -143,6 +157,8 @@ private:
 	void seek(qint64 position_us);
 	void tick();
 	void show_envelope();
+	void show_jumps();
+	qint64 jump_us(bool large) const;
 	void read_video(bool open);
 	void build_video_drawer(bool open);
 	void fit_video_drawer();
@@ -169,6 +185,10 @@ private:
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
+	QToolButton *m_back = nullptr;
+	QToolButton *m_forward = nullptr;
+	std::unique_ptr<snurra_beats> m_beats;
+	snurra_beat_grid m_grid;
 	QToolButton *m_shape;   /* the envelope control: the waveform edits it */
 	/* Set when the tile owns its deck. Guarded: an engine destroyed first
 	 * has deleted its decks already, and is not to be called. */

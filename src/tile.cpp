@@ -15,6 +15,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "snurra/beats.h"
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
@@ -57,6 +58,14 @@ public:
 
 	std::function<void(double)> on_seek;
 
+	/* The beat grid, as fractions of the track: a tick a beat along the
+	 * top, a longer one each fourth -- where a jump of bars lands. */
+	void set_beats(double first, double period) {
+		m_beat_first = first;
+		m_beat_period = period;
+		update();
+	}
+
 	/*
 	 * The envelope, as fractions of the track (x) and gains (y), drawn
 	 * over the waveform whenever it has points. Editing, a press near a
@@ -78,8 +87,20 @@ public:
 protected:
 	void paintEvent(QPaintEvent *event) override {
 		paint_waveform();
+		paint_beats();
 		paint_envelope();
 		(void)event;
+	}
+
+	void paint_beats() {
+		if (m_beat_period <= 0 || m_beat_period * width() < 3) return;   /* too dense to see */
+		QPainter painter(this);
+		painter.setPen(palette().color(QPalette::Text));
+		int k = 0;
+		for (double at = m_beat_first; at < 1; at += m_beat_period, ++k) {
+			const int x = int(at * width());
+			painter.drawLine(x, 0, x, k % 4 ? 2 : 5);
+		}
 	}
 
 	QPointF to_widget(const QPointF &point) const {
@@ -200,6 +221,8 @@ private:
 	std::vector<float> m_peaks;   /* -1: not read yet */
 	float m_loudest = 0;
 	double m_fraction = 0;
+	double m_beat_first = 0;
+	double m_beat_period = 0;   /* fractions of the track; 0: no grid */
 	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
 	QList<QPointF> m_envelope;
 	bool m_editing = false;
@@ -311,6 +334,25 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_play->setAutoRaise(true);
 	m_play->setCheckable(true);
 	transport->addWidget(m_play);
+	/* Jumps (the holder, 2026-11-12): one pair, whose step is the track's
+	 * -- bars where it has a beat, else time or a share of it -- and says
+	 * so on its face. Held, they go on; with Ctrl, they nudge. */
+	m_back = new QToolButton(m_controls);
+	m_forward = new QToolButton(m_controls);
+	for (QToolButton *jumper : { m_back, m_forward }) {
+		jumper->setAutoRaise(true);
+		jumper->setAutoRepeat(true);
+		jumper->setAutoRepeatDelay(400);
+		jumper->setAutoRepeatInterval(150);
+		transport->addWidget(jumper);
+		connect(jumper, &QToolButton::clicked, this, [this, jumper] {
+			const int direction = jumper == m_forward ? 1 : -1;
+			if (QGuiApplication::keyboardModifiers() & Qt::ControlModifier) nudge(direction);
+			else jump(direction, false);
+		});
+	}
+	m_back->setObjectName(QStringLiteral("snurra-back"));
+	m_forward->setObjectName(QStringLiteral("snurra-forward"));
 	/* The envelope control: on, the waveform edits the level curve rather
 	 * than seeking (sec 3b, step 5) -- pulled out with the controls, never
 	 * shown by default (sec 3c). */
@@ -374,7 +416,70 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	tick();
 
 	read_peaks(nullptr);
-	if (QFileInfo(state.source).isFile()) read_video(state.controls);
+	if (QFileInfo(state.source).isFile()) {
+		read_video(state.controls);
+		QPointer<snurra_tile> self = this;
+		m_beats = std::make_unique<snurra_beats>(state.source, m_deck->rate(), [self](const snurra_beat_grid &grid) {
+			QMetaObject::invokeMethod(
+			        self, [self, grid] {
+				        if (self) self->set_beats(grid);
+			        },
+			        Qt::QueuedConnection);
+		});
+	}
+	show_jumps();
+}
+
+void snurra_tile::set_beats(const snurra_beat_grid &grid) {
+	m_grid = grid;
+	const double length = double(length_frames());
+	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
+	else m_waveform->set_beats(0, 0);
+	show_jumps();
+}
+
+/*
+ * The step, the holder's (2026-11-12): on a track with a beat, 4 bars, or
+ * 16 large -- a bar four beats, so a jump keeps the place in the beat;
+ * else under ten minutes 10 s, or 60 s large, mplayer's; else 5 %, or
+ * 20 % large, of the whole.
+ */
+qint64 snurra_tile::jump_us(bool large) const {
+	if (m_grid.valid()) {
+		const int64_t frames = std::llround((large ? 64 : 16) * m_grid.period);
+		return qint64(snurra_frames_to_us(frames, m_deck->rate()));
+	}
+	constexpr qint64 SECOND = 1000000;
+	if (m_state.duration_us < 600 * SECOND) return (large ? 60 : 10) * SECOND;
+	return m_state.duration_us * (large ? 20 : 5) / 100;
+}
+
+QString snurra_tile::jump_step(bool large) const {
+	if (m_grid.valid()) return large ? tr("16 bars") : tr("4 bars");
+	if (m_state.duration_us < 600 * qint64(1000000)) return large ? tr("60 s") : tr("10 s");
+	return large ? tr("20 %") : tr("5 %");
+}
+
+void snurra_tile::jump(int direction, bool large) {
+	seek_by(direction * jump_us(large));
+}
+
+/* 10 ms, this tile alone: in a window, its lane against the others. */
+void snurra_tile::nudge(int direction) {
+	constexpr qint64 NUDGE_US = 10000;
+	if (m_grouped) emit nudge_requested(this, direction * NUDGE_US);
+	else seek_by(direction * NUDGE_US);
+}
+
+void snurra_tile::show_jumps() {
+	const QString step = jump_step(false);
+	m_back->setText(QStringLiteral("\u2039 ") + step);
+	m_forward->setText(step + QStringLiteral(" \u203a"));
+	m_back->setAccessibleName(tr("Back %1").arg(step));
+	m_forward->setAccessibleName(tr("Forward %1").arg(step));
+	const QString nudge = tr("; with Ctrl, a 10 ms nudge");
+	m_back->setToolTip(m_back->accessibleName() + nudge);
+	m_forward->setToolTip(m_forward->accessibleName() + nudge);
 }
 
 /*
@@ -515,6 +620,7 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 snurra_tile::~snurra_tile() {
 	m_peaks.reset();   /* before the deck can go: the waveform first */
 	m_video.reset();   /* its reader, joined */
+	m_beats.reset();
 	delete m_full.data();
 	/* Drawers a window took out are the tile's still, and go with it. */
 	if (m_drawers_out) {
@@ -677,6 +783,7 @@ void snurra_tile::tick() {
 		m_state.duration_us = frames_to_us(length, m_deck->rate());
 		m_position->setRange(0, int(qMax<qint64>(1, m_state.duration_us / 100000)));
 		show_envelope();
+		set_beats(m_grid);
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
@@ -694,8 +801,10 @@ QSize snurra_tile::minimumSizeHint() const {
 	return QSize(fontMetrics().averageCharWidth() * 14, QWidget::minimumSizeHint().height());
 }
 
+/* From where the deck is -- or was just asked to go -- not from the tile's
+ * last tick: two jumps in a row add up. */
 void snurra_tile::seek_by(qint64 delta_us) {
-	seek(m_state.position_now() + delta_us);
+	seek(frames_to_us(frame_now(), m_deck->rate()) + delta_us);
 }
 
 void snurra_tile::set_level(int level) {

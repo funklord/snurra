@@ -298,11 +298,12 @@ snare, hat and chord pattern at 87.5, 128, 140 and 127.3 BPM -- tempo
 within 0.003 BPM, every beat within 2.7 ms of the grid (which sits 1.6
 to 2.4 ms early); white noise, a steady tone and hits at random times
 get no grid (fold 1.4, 2.4, 3.3). Without the exact search, every one
-fails. **What "best in class" still needs:** the same measurement on
-real music with published annotations (Ballroom, GTZAN, SMC) by the
-field's metrics (F-measure at 70 ms, CMLt/AMLt, tempo accuracy), against
-the detectors DJs use; and what this detector does not do yet --
-downbeats (a bar is counted from any beat), and tempo that changes.
+fails. **Set aside by the holder the same day** ("for now we should
+just use the same method used by mixxx, this is sidequest"): this is
+Mixxx's shape -- a detection function, a tempo, one constant grid fitted
+to the whole track, Mixxx's default -- so it stays, and measuring it on
+real music with published annotations waits. Not done: downbeats (a bar
+is counted from any beat), tempo that changes.
 
 **The licence question this raises:** snurra has none yet, which is
 right; but linking qm-dsp or Rubber Band makes the whole program
@@ -778,6 +779,23 @@ controls; each tile very compact but resizeable).
   height exactly, and closing it restores every number; with the drawers
   left inside the tiles, B's waveform falls 24 px below A's and it fails.
   Not yet: seen on a compositing desktop.
+- **Jumps and nudge, built 2026-11-12** (the holder's steps): one pair
+  of buttons in the controls, labelled with the track's step -- 4 bars
+  where the beat detector found a grid (16 beats, so a jump keeps the
+  place in the beat), else 10 s under ten minutes, else 5 % -- held,
+  they repeat; with Ctrl they nudge. The keys keep mplayer's two levels
+  at the track's step: left and right the small, down and up the large
+  (16 bars, 60 s or 20 %); page up and down 10 minutes. A nudge moves
+  one tile 10 ms against its lane's time and every other lane, and is
+  kept as its offset (`offset_us`, carried by a handover), so the group
+  transport keeps a lane lined up by ear. Found on the way: a jump read
+  the position the deck last rendered, so a second jump inside one
+  output period went from the old place; a deck now reports a seek it
+  has been asked from the moment it is asked. Measured offscreen: steps
+  and labels by length; a 120 BPM kick found at 119.999 and a jump of
+  exactly 16 of its beats; a nudged lane 10 ms ahead, still so after a
+  group seek. Not yet: a nudge as a pitch bend -- today it is a seek, and
+  its click has not been measured.
 - **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
   in the drawer that opens upward). `snurra_video` decodes a file's
   picture on a thread of its own, six frames ahead, and gives the last
