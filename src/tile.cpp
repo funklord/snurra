@@ -312,19 +312,25 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_envelope(state.envelope);
 	tick();
 
-	/* The waveform's peaks, read from a source of their own and handed
-	 * over on this thread -- to the waveform, which a queued call never
-	 * reaches once it has gone. */
+	read_peaks(nullptr);
+}
+
+/* The waveform's peaks, read from a source of their own and handed over on
+ * this thread -- to the waveform, which a queued call never reaches once it
+ * has gone. From `bytes` when given, else from what the state names. */
+void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 	constexpr int COLUMNS = 1024;
 	QPointer<snurra_waveform> waveform = m_waveform;
-	m_peaks = std::make_unique<snurra_peaks>(
-	        state.source, m_deck->rate(), COLUMNS, [waveform](int first, const std::vector<float> &values) {
-		        QMetaObject::invokeMethod(
-		                waveform, [waveform, first, values] {
-			                if (waveform) waveform->set_peaks(COLUMNS, first, values);
-		                },
-		                Qt::QueuedConnection);
-	        });
+	auto piece = [waveform](int first, const std::vector<float> &values) {
+		QMetaObject::invokeMethod(
+		        waveform, [waveform, first, values] {
+			        if (waveform) waveform->set_peaks(COLUMNS, first, values);
+		        },
+		        Qt::QueuedConnection);
+	};
+	m_peaks.reset();   /* the last reader stopped before the next begins */
+	if (bytes) m_peaks = std::make_unique<snurra_peaks>(std::move(bytes), m_state.source, m_deck->rate(), COLUMNS, piece);
+	else m_peaks = std::make_unique<snurra_peaks>(m_state.source, m_deck->rate(), COLUMNS, piece);
 }
 
 snurra_tile::~snurra_tile() {
@@ -333,7 +339,8 @@ snurra_tile::~snurra_tile() {
 }
 
 snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_state &state,
-                                   std::shared_ptr<snurra_bytes> bytes, QWidget *parent) {
+                                   std::shared_ptr<snurra_bytes> bytes, QWidget *parent,
+                                   std::shared_ptr<snurra_bytes> peak_bytes) {
 	snurra_deck::start_t start;
 	start.source = state.source;
 	start.bytes = std::move(bytes);
@@ -345,6 +352,7 @@ snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_stat
 	start.level = float(state.level) / 100;
 	snurra_tile *tile = new snurra_tile(state, engine.add(start), parent);
 	tile->m_owner = &engine;
+	if (peak_bytes) tile->read_peaks(std::move(peak_bytes));
 	return tile;
 }
 

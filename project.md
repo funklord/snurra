@@ -596,14 +596,21 @@ controls; each tile very compact but resizeable).
   engine gone first leaves it safe to close -- shown not to crash, which
   without a sanitizer is weaker than shown safe. The tests now take the
   library through `snurra.pri`, as a consumer does, so the `.pri` is
-  under test too. A tile's waveform is read from files only: from bytes
-  it would fetch them twice, which over SFTP is not free. fuzzypickles
-  answered (inbox 20261112T0430Z): its bytes are a local blob once
-  fetched, so it shows stand-in bars where real peaks are cheap. Its
-  three shapes: a second snurra_bytes for the peaks, handed in by the
-  consumer; peaks from only the ranges `has()` says are here, never
-  calling `want` (no transport pays twice); or peaks from the frames the
-  deck decodes as it plays. Open, not blocking it.
+  under test too. A tile's waveform needs a second read of the track:
+  from a file it is read; from bytes, only when the consumer hands
+  `embedded` a second snurra_bytes over the same track (`peak_bytes`,
+  settled 2026-11-12 on fuzzypickles' ask, inbox 20261112T0430Z: its
+  bytes are a local blob once fetched, and it showed stand-in bars where
+  real peaks were cheap). Of its three shapes this one, because the
+  other two -- peaks from the ranges `has()` says are here, or from the
+  deck's own decoding -- read the deck's snurra_bytes from a second
+  thread, which source.h promises a consumer never happens; a consumer
+  whose transport pays per read (SFTP) hands none and keeps the
+  stand-in. The peaks fill as far as the bytes are here and wait there
+  (`a_waveform_from_bytes_fills_as_far_as_they_are_here`): they are now
+  handed over as each read finishes a column, since the wait is inside
+  the next read -- handed 64 columns at a time, or on a timer, nothing
+  showed until the bytes went on.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

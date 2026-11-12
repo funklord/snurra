@@ -43,9 +43,16 @@ public:
 	 * owns its deck in `engine` and retires it when the tile goes, so a
 	 * closed tile never leaves a deck playing. No window of its own, no
 	 * socket: a widget to put in the consumer's layout.
+	 *
+	 * Its waveform needs a second read of the track. With `peak_bytes` --
+	 * a second snurra_bytes over the same track, for a consumer to whom
+	 * that read is cheap -- it is drawn from them, as far as they are
+	 * here; without, it is the stand-in, so a transport that pays per read
+	 * (SFTP) never pays twice.
 	 */
 	static snurra_tile *embedded(snurra_engine &engine, const snurra_tile_state &state,
-	                             std::shared_ptr<snurra_bytes> bytes, QWidget *parent = nullptr);
+	                             std::shared_ptr<snurra_bytes> bytes, QWidget *parent = nullptr,
+	                             std::shared_ptr<snurra_bytes> peak_bytes = nullptr);
 	snurra_deck *deck() const { return m_deck; }
 
 	/* As it is now, sampled this moment, for a handover. */
@@ -111,6 +118,7 @@ private:
 	void seek(qint64 position_us);
 	void tick();
 	void show_envelope();
+	void read_peaks(std::shared_ptr<snurra_bytes> bytes);
 
 	snurra_tile_state m_state;
 	snurra_deck *m_deck;

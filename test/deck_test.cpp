@@ -130,6 +130,7 @@ private slots:
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
 	void a_waveform_closed_while_reading_stops_at_once();
+	void a_waveform_from_bytes_fills_as_far_as_they_are_here();
 
 private:
 	snurra_deck::start_t start_for(std::shared_ptr<snurra_bytes> bytes, const QString &name) const;
@@ -511,16 +512,66 @@ void deck_test::a_waveform_closed_while_reading_stops_at_once() {
 	QVERIFY(file.open(QIODevice::WriteOnly));
 	file.write(wav_of(RATE * 60, [](int i) { return (i % 100) * 300 - 15000; }));
 	file.close();
-	std::atomic<int> pieces{ 0 };
+	std::atomic<int> columns{ 0 };
 	QElapsedTimer timer;
 	{
-		snurra_peaks reading(path, RATE, 1024, [&pieces](int, const std::vector<float> &) { ++pieces; });
-		QTRY_VERIFY_WITH_TIMEOUT(pieces.load() > 0, 5000);
+		snurra_peaks reading(path, RATE, 1024,
+		                     [&columns](int, const std::vector<float> &values) { columns += int(values.size()); });
+		QTRY_VERIFY_WITH_TIMEOUT(columns.load() > 0, 5000);
 		timer.start();
 	}
 	const qint64 took = timer.elapsed();
 	QVERIFY2(took < 500, qPrintable(QStringLiteral("closing took %1 ms").arg(took)));
-	QVERIFY2(pieces.load() < 16, "it read the whole file before stopping");
+	QVERIFY2(columns.load() < 1024, "it read the whole file before stopping");
+}
+
+void deck_test::a_waveform_from_bytes_fills_as_far_as_they_are_here() {
+	/*
+	 * fuzzypickles' waveform (inbox 20261112T0430Z): from a second
+	 * snurra_bytes of the consumer's. The same four seconds as above, eight
+	 * columns, with the first half here: the first three columns come --
+	 * the fourth ends only with the first frame not here -- and the rest
+	 * wait; when the rest arrives, all eight, exactly a file's.
+	 * Closed while waiting, it stops at once.
+	 */
+	const QByteArray wav = wav_of(RATE * 4, [](int i) {
+		const int second = i / RATE;
+		const int sign = (i / 50) % 2 ? 1 : -1;
+		return second == 1 ? sign * 16384 : second == 2 ? sign * 8192 : 0;
+	});
+	auto bytes = std::make_shared<memory_bytes>(wav);
+	bytes->arrive(0, 44 + int64_t(RATE) * 2 * 4);
+	std::mutex lock;
+	std::vector<float> peaks(8, -1.0f);
+	auto piece = [&](int first, const std::vector<float> &values) {
+		std::lock_guard<std::mutex> hold(lock);
+		for (size_t i = 0; i < values.size(); ++i) peaks[size_t(first) + i] = values[i];
+	};
+	auto read = [&] {
+		std::lock_guard<std::mutex> hold(lock);
+		return peaks;
+	};
+	{
+		snurra_peaks reading(bytes, QStringLiteral("loud.wav"), RATE, 8, piece);
+		QTRY_VERIFY_WITH_TIMEOUT(read()[2] >= 0, 5000);
+		QTest::qWait(300);
+		const std::vector<float> half = read();
+		QCOMPARE(std::vector<float>(half.begin(), half.begin() + 3), (std::vector<float>{ 0, 0, 0.5f }));
+		QVERIFY2(half[3] < 0 && half[4] < 0, "a column was read past the bytes that are here");
+		bytes->arrive(0, wav.size());
+		QTRY_VERIFY_WITH_TIMEOUT(read()[7] >= 0, 5000);
+		QCOMPARE(read(), (std::vector<float>{ 0, 0, 0.5f, 0.5f, 0.25f, 0.25f, 0, 0 }));
+	}
+
+	auto stalled = std::make_shared<memory_bytes>(wav);
+	stalled->arrive(0, 44 + int64_t(RATE) * 4);
+	QElapsedTimer timer;
+	{
+		snurra_peaks waiting(stalled, QStringLiteral("loud.wav"), RATE, 8, [](int, const std::vector<float> &) {});
+		QTest::qWait(300);
+		timer.start();
+	}
+	QVERIFY2(timer.elapsed() < 500, qPrintable(QStringLiteral("closing took %1 ms").arg(timer.elapsed())));
 }
 
 int run_deck_tests(int argc, char **argv) {
