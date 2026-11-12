@@ -185,6 +185,8 @@ private:
 	snurra_waveform *m_waveform;
 	QToolButton *m_pull;
 	static QString drawer_style(const QString &name);
+	static QString clock_text(qint64 us);
+	QLabel *m_time = nullptr;
 	QVBoxLayout *m_column = nullptr;
 	QPointer<QWidget> m_above;      /* the upward drawer */
 	QPointer<QWidget> m_controls;   /* the downward drawer */

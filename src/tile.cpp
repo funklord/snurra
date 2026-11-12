@@ -371,12 +371,26 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	strip->addLayout(transport);
 	/* The position, a row of its own: beside the buttons it was squeezed
 	 * to nothing. */
-	strip->addWidget(m_position);
+	/* The time beside it, as mplayer shows it: where, of how long. */
+	QHBoxLayout *where = new QHBoxLayout;
+	where->addWidget(m_position, 1);
+	m_time = new QLabel(m_controls);
+	m_time->setObjectName(QStringLiteral("snurra-time"));
+	where->addWidget(m_time);
+	strip->addLayout(where);
 	m_level = new QSlider(Qt::Horizontal, m_controls);
 	m_level->setAccessibleName(tr("Level"));
 	m_level->setRange(0, 100);
 	m_level->setValue(state.level);
-	strip->addWidget(m_level);
+	/* The level, its icon beside it: three bare sliders read alike. */
+	QHBoxLayout *loud = new QHBoxLayout;
+	QLabel *speaker = new QLabel(m_controls);
+	const int icon = fontMetrics().height();
+	speaker->setPixmap(style()->standardIcon(QStyle::SP_MediaVolume).pixmap(icon, icon));
+	speaker->setToolTip(tr("Level"));
+	loud->addWidget(speaker);
+	loud->addWidget(m_level, 1);
+	strip->addLayout(loud);
 	/* The tempo, a DJ's +-8 % in tenths of a per cent, and key lock: with
 	 * it on the pitch stays as the tempo moves (sec 4). A double-click
 	 * puts the tempo back. */
@@ -384,6 +398,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_tempo = new QSlider(Qt::Horizontal, m_controls);
 	m_tempo->setObjectName(QStringLiteral("snurra-tempo"));
 	m_tempo->setAccessibleName(tr("Tempo"));
+	m_tempo->setToolTip(tr("Tempo; a double-click puts it back"));
 	m_tempo->setRange(-80, 80);
 	m_tempo->installEventFilter(this);
 	speed->addWidget(m_tempo, 1);
@@ -791,6 +806,16 @@ void snurra_tile::show_envelope() {
 	m_waveform->set_envelope(points);
 }
 
+/* m:ss, or h:mm:ss from an hour, as a player's clock reads. */
+QString snurra_tile::clock_text(qint64 us) {
+	const qint64 seconds = qMax<qint64>(0, us) / 1000000;
+	const qint64 h = seconds / 3600;
+	const qint64 m = seconds / 60 % 60;
+	const qint64 s = seconds % 60;
+	if (h > 0) return QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QLatin1Char('0')).arg(s, 2, 10, QLatin1Char('0'));
+	return QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QLatin1Char('0'));
+}
+
 QString snurra_tile::drawer_style(const QString &name) {
 	return QStringLiteral("#%1 { background: palette(window); border: 1px solid palette(mid); border-radius: 3px; }")
 	        .arg(name);
@@ -872,6 +897,7 @@ void snurra_tile::tick() {
 	m_state.position_us = now;
 	m_state.sampled_at_us = snurra_clock_us();
 	if (!m_position->isSliderDown()) m_position->setValue(int(now / 100000));
+	m_time->setText(clock_text(now) + QStringLiteral(" / ") + clock_text(m_state.duration_us));
 	m_waveform->set_fraction(m_state.duration_us > 0 ? double(now) / m_state.duration_us : 0);
 }
 
