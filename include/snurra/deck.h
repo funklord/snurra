@@ -225,6 +225,11 @@ private:
 	/* A seek for a moment ahead, made while playing: the old place plays
 	 * on until then, and the new one's first block waits here. */
 	bool m_pending = false;
+	/* The last period played the track: what a jump keeps playing until
+	 * its moment. Not a deck merely marked playing -- a train's next tile
+	 * asked to start ahead has nothing to keep (ThreadSanitizer's timing
+	 * let one sound its first blocks early). */
+	bool m_sounded = false;
 	uint64_t m_pending_generation = 0;
 	int64_t m_pending_frame = 0;
 	int64_t m_pending_us = 0;

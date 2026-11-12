@@ -317,7 +317,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	 * where dropping it at once, as any other seek does, left a silence
 	 * the length of the wait at every jump.
 	 */
-	if (generation != m_seen_generation && generation != m_pending_generation && playing && m_slew > 0 && !m_anchored
+	if (generation != m_seen_generation && generation != m_pending_generation && playing && m_sounded && !m_anchored
 	    && asked_at != INT64_MIN && asked_at > present_us) {
 		if (m_held) {
 			m_free.push(m_held);
@@ -364,7 +364,12 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		m_free.push(head);
 	}
 
-	if (m_anchored) m_position = m_anchor_frame + snurra_us_to_frames(present_us - m_anchor_us, m_rate);
+	/* At its tempo: a handover's taker of a tile at +5 % must be where the
+	 * giver is, which moves 1.05 frames a frame out. */
+	if (m_anchored)
+		m_position = m_anchor_frame
+		             + std::llround(double(snurra_us_to_frames(present_us - m_anchor_us, m_rate))
+		                            * double(m_tempo.load(std::memory_order_relaxed)));
 
 	const fade_t fade = fade_snapshot();
 	const envelope_snapshot &envelope = envelope_now();
@@ -400,8 +405,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		if (have) m_bend_left -= bent;
 		if (!have) {
 			if (m_anchored) {
-				/* Not yet in step: the clock moves on regardless. */
-				++m_position;
+				/* Not yet in step: the clock moves on regardless, at the
+				 * tempo, so the frame it locks onto is the giver's. */
+				const int64_t next_us = present_us + int64_t(i + 1) * 1000000 / m_rate;
+				m_position = m_anchor_frame + std::llround(double(snurra_us_to_frames(next_us - m_anchor_us, m_rate)) * double(tempo));
 				++advanced;
 				continue;
 			}
@@ -411,8 +418,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			if (!playing) m_slew = 0;
 			break;   /* starved: hold, and sound nothing until data comes */
 		}
+		bool just_locked = false;
 		if (m_anchored) {
 			m_anchored = false;
+			just_locked = true;
 			m_locked.store(true, std::memory_order_release);
 		}
 		const int64_t us = present_us + int64_t(i) * 1000000 / m_rate;
@@ -420,6 +429,13 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
 		if (!m_speed) ++m_position;   /* the stretch moved it as it read */
+		/* Just in step, off tempo 1: the stretch takes over from the next
+		 * frame, not the next period, which at +5 % would be 24 frames
+		 * off the giver by its end. */
+		if (just_locked && !m_speed && (tempo != 1.0f || key_lock || m_bend_left != 0)) {
+			m_speed = true;
+			m_stretch.reset(m_position);
+		}
 		++advanced;
 	}
 
@@ -428,6 +444,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	m_published_us.store(present_us, std::memory_order_relaxed);
 	m_published_advanced.store(advanced, std::memory_order_relaxed);
 	m_published_tempo.store(m_speed ? tempo : 1.0f, std::memory_order_relaxed);
+	m_sounded = advanced > 0 && !m_anchored;
 	m_published_sequence.fetch_add(1, std::memory_order_release);
 	m_published_generation.store(m_seen_generation, std::memory_order_release);
 }

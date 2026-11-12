@@ -130,6 +130,7 @@ private slots:
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
 	void a_nudge_bends_without_a_gap();
 	void a_jump_while_playing_has_no_gap();
+	void an_anchored_deck_keeps_step_at_its_tempo();
 	void an_envelope_is_heard_on_the_tracks_own_frames();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
@@ -603,6 +604,45 @@ void deck_test::a_jump_while_playing_has_no_gap() {
 	QCOMPARE(silent, 0);
 	QCOMPARE(jumps, 1);
 	QVERIFY2(std::abs(switched_at - double(at)) <= 0.5e6 / RATE, "switched away from its moment");
+}
+
+/*
+ * A handover's taker of a tile at +5 % (project.md sec 4): anchored to the
+ * giver's frame and moment, it must be where the giver is -- which moves
+ * 1.05 frames a frame out -- not where a tempo of 1 would put it. On the
+ * ramp: once sounding, the frame heard against the anchor's line, within
+ * a frame.
+ */
+void deck_test::an_anchored_deck_keeps_step_at_its_tempo() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 20;
+	int64_t present = snurra_clock_us();
+	start.anchor_frame = RATE * 3;
+	start.anchor_us = present;
+	start.playing = true;
+	start.anchored = true;
+	start.lead_us = 100000;
+	snurra_deck deck(start);
+	deck.set_tempo(1.05f);
+	const std::vector<rendered_t> blocks = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+	int64_t block_present = present - int64_t(blocks.size()) * snurra_frames_to_us(PERIOD, RATE);
+	double worst = 0;
+	int heard = 0;
+	for (const rendered_t &block : blocks) {
+		for (int i = 0; i < PERIOD; ++i) {
+			const float gain = block.samples[size_t(2 * i + 1)];
+			if (gain < 0.999f) continue;
+			const double frame = double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE;
+			const double when = double(block_present) + i * 1e6 / RATE;
+			const double line = RATE * 3 + (when - double(start.anchor_us)) * RATE / 1e6 * 1.05;
+			worst = std::max(worst, std::abs(frame - line));
+			++heard;
+		}
+		block_present += snurra_frames_to_us(PERIOD, RATE);
+	}
+	qInfo("anchored at 1.05: %d frames heard, off the giver's line by %.2f frames at worst", heard, worst);
+	QVERIFY2(heard > RATE / 4, "too little was heard");
+	QVERIFY2(worst < 2, qPrintable(QStringLiteral("off the giver's line by %1 frames").arg(worst)));
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {
