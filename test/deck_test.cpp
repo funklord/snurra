@@ -128,6 +128,7 @@ private slots:
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
+	void a_nudge_bends_without_a_gap();
 	void an_envelope_is_heard_on_the_tracks_own_frames();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
@@ -525,6 +526,37 @@ void deck_test::key_lock_keeps_the_pitch_as_the_tempo_moves() {
 	QVERIFY2(std::abs(hz - 440) < 1, qPrintable(QStringLiteral("key lock at %1 Hz, not 440").arg(hz)));
 	QVERIFY2(std::abs(speed - 1.2) < 0.01, qPrintable(QStringLiteral("the track went at %1, not 1.2").arg(speed)));
 	QVERIFY2(low > -1 && high < 1, qPrintable(QStringLiteral("the level went from %1 to %2 dB").arg(low).arg(high)));
+}
+
+/*
+ * A nudge as a bend (project.md sec 4): 10 ms gained, playing, on the
+ * ramp -- every frame out sounds (no gap), none steps more than a tenth
+ * faster, and the track ends exactly 480 frames further on than the
+ * frames out.
+ */
+void deck_test::a_nudge_bends_without_a_gap() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
+	deck.bend(480);
+	std::vector<double> frames;
+	int silent = 0;
+	const std::vector<rendered_t> blocks = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+	for (const rendered_t &block : blocks)
+		for (int64_t i = 0; i < block.advanced; ++i) {
+			const float gain = block.samples[size_t(2 * i + 1)];
+			if (gain < 0.999f) ++silent;
+			frames.push_back(double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE);
+		}
+	double fastest = 0;
+	for (size_t i = 1; i < frames.size(); ++i) fastest = std::max(fastest, frames[i] - frames[i - 1]);
+	const double gained = (frames.back() - frames.front()) - double(frames.size() - 1);
+	qInfo("bend: %zu frames out, %d silent, fastest step %.4f, %.3f frames gained", frames.size(), silent, fastest, gained);
+	QCOMPARE(silent, 0);
+	QVERIFY2(fastest < 1.1 + 5e-3, qPrintable(QStringLiteral("a step of %1").arg(fastest)));
+	QVERIFY2(std::abs(gained - 480) < 0.01, qPrintable(QStringLiteral("%1 frames gained, not 480").arg(gained)));
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {

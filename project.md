@@ -849,8 +849,13 @@ controls; each tile very compact but resizeable).
   has been asked from the moment it is asked. Measured offscreen: steps
   and labels by length; a 120 BPM kick found at 119.999 and a jump of
   exactly 16 of its beats; a nudged lane 10 ms ahead, still so after a
-  group seek. Not yet: a nudge as a pitch bend -- today it is a seek, and
-  its click has not been measured.
+  group seek. **A playing nudge is a bend** (2026-11-12): the track a
+  tenth faster or slower until it has moved, worked off in the callback,
+  exact in sum -- as a seek it left a silence the output's latency long
+  at every press. Measured on the ramp: 10 ms gained over 0.5 s, no
+  frame silent, no step over 1.1, 480.000 frames gained. With key lock
+  on the bend goes through WSOLA, whose steps are a segment long, so its
+  sum is near, not exact. A paused nudge is still a seek.
 - **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
   in the drawer that opens upward). `snurra_video` decodes a file's
   picture on a thread of its own, six frames ahead, and gives the last

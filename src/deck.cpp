@@ -326,7 +326,8 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 
 	const float tempo = m_tempo.load(std::memory_order_relaxed);
 	const bool key_lock = m_key_lock.load(std::memory_order_relaxed);
-	if (!m_speed && !m_anchored && (tempo != 1.0f || key_lock)) {
+	m_bend_left += double(m_bend_asked.exchange(0, std::memory_order_relaxed));
+	if (!m_speed && !m_anchored && (tempo != 1.0f || key_lock || m_bend_left != 0)) {
 		m_speed = true;
 		m_stretch.reset(m_position);
 	}
@@ -340,7 +341,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		float left = 0;
 		float right = 0;
 		const int64_t heard = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
-		const bool have = m_speed ? m_stretch.next(left, right, tempo, key_lock) : next_frame(left, right);
+		/* A bend's share of this frame: a tenth at most, the last exact. */
+		const double bent = m_speed ? std::clamp(m_bend_left, -0.1, 0.1) : 0.0;
+		const bool have = m_speed ? m_stretch.next(left, right, double(tempo) + bent, key_lock) : next_frame(left, right);
+		if (have) m_bend_left -= bent;
 		if (!have) {
 			if (m_anchored) {
 				/* Not yet in step: the clock moves on regardless. */

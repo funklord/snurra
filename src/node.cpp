@@ -506,13 +506,15 @@ int64_t snurra_node::time_of(snurra_tile *tile) const {
 /*
  * A nudge (project.md sec 4): this tile's track moved by `delta_us` against
  * its lane's time and every other lane, and remembered as its offset, so a
- * group play or seek keeps the lanes as lined up by ear. Playing, it goes
- * on from the moved frame at the next moment the output can take.
+ * group play or seek keeps the lanes as lined up by ear. Playing, it is a
+ * bend, a turntable's: the track a tenth faster or slower until it has
+ * moved, with no gap -- a seek, as it first was, left a silence the length
+ * of the output's latency at every press.
  */
 void snurra_node::nudge_lane(snurra_tile *tile, qint64 delta_us) {
 	tile->set_offset_us(tile->offset_us() + delta_us);
 	const int64_t frame = std::max<int64_t>(0, tile->frame_now() + snurra_us_to_frames(delta_us, m_engine->rate()));
-	if (tile->playing()) tile->play_from(frame, snurra_clock_us() + m_engine->latency_us() + 20000);
+	if (tile->playing()) tile->deck()->bend(snurra_us_to_frames(delta_us, m_engine->rate()));
 	else tile->hold_at(frame);
 }
 

@@ -65,6 +65,12 @@ public:
 	void set_tempo(float tempo) { m_tempo.store(std::clamp(tempo, 0.25f, 4.0f), std::memory_order_relaxed); }
 	float tempo() const { return m_tempo.load(std::memory_order_relaxed); }
 	void set_key_lock(bool on) { m_key_lock.store(on, std::memory_order_relaxed); }
+
+	/* A nudge (project.md sec 4), as a turntable's: `frames` more of the
+	 * track (fewer, negative) played over the next moments, at most a
+	 * tenth faster or slower -- 10 ms in 100 ms -- with no gap. Bends add
+	 * up. */
+	void bend(int64_t frames) { m_bend_asked.fetch_add(frames, std::memory_order_relaxed); }
 	bool key_lock() const { return m_key_lock.load(std::memory_order_relaxed); }
 	void seek(int64_t frame);
 
@@ -172,6 +178,7 @@ private:
 	std::atomic<float> m_level;
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
+	std::atomic<int64_t> m_bend_asked{ 0 };
 	std::atomic<uint64_t> m_generation{ 1 };   /* bumped by every seek */
 	std::atomic<int64_t> m_seek_target{ 0 };
 	std::atomic<uint32_t> m_fade_sequence{ 0 };   /* a seqlock over the fade */
@@ -214,6 +221,7 @@ private:
 	/* Off tempo 1, or key-locked: frames come through the stretch, and
 	 * m_position is where it reads the track, ahead of what is heard. */
 	bool m_speed = false;
+	double m_bend_left = 0;   /* frames of a bend still to play, the callback's */
 	snurra_stretch m_stretch;
 	fade_t m_fade_last{ 0, 0, 1, 1, false };
 	envelope_snapshot m_envelope_last;
