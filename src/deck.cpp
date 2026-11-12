@@ -225,6 +225,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		}
 		m_locked.store(!m_anchored, std::memory_order_release);
 		m_finished.store(false, std::memory_order_relaxed);
+		/* Paused, a seek is heard as nothing: the slew down to silence was
+		 * for the old position, and would otherwise sound the new one's
+		 * first 5 ms -- and move it -- if the pause came in this period. */
+		if (!playing) m_slew = 0;
 		if (m_current) {
 			m_free.push(m_current);
 			m_current = nullptr;
@@ -263,6 +267,9 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 				continue;
 			}
 			if (ended) m_finished.store(true, std::memory_order_relaxed);
+			/* Nothing sounding to slew down from: paused while starved,
+			 * the data that comes later must not play its first 5 ms. */
+			if (!playing) m_slew = 0;
 			break;   /* starved: hold, and sound nothing until data comes */
 		}
 		if (m_anchored) {

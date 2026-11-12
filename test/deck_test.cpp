@@ -125,6 +125,7 @@ private slots:
 	void a_play_before_any_bytes_begins_at_the_beginning_data() { formats_data(); }
 	void a_play_before_any_bytes_begins_at_the_beginning();
 	void a_deck_started_at_a_time_sounds_its_frame_then();
+	void a_seek_just_after_a_pause_is_heard_as_nothing();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
 	void a_waveform_closed_while_reading_stops_at_once();
@@ -354,6 +355,28 @@ void deck_test::a_deck_started_at_a_time_sounds_its_frame_then() {
 		block_present += snurra_frames_to_us(PERIOD, RATE);
 	}
 	QVERIFY2(sounding, "it never began");
+}
+
+void deck_test::a_seek_just_after_a_pause_is_heard_as_nothing() {
+	/*
+	 * A stack's lanes are paused and then sought together, in less than a
+	 * period (project.md sec 3b, step 4). The 5 ms slew down to silence
+	 * belongs to the old position: the new one must neither sound nor move
+	 * while paused, or each lane holds a different frame.
+	 */
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
+	deck.set_playing(false);
+	deck.seek(RATE);
+	const std::vector<rendered_t> blocks = play(deck, present, 50, [](const std::vector<rendered_t> &) { return false; });
+	float loudest = 0;
+	for (const rendered_t &block : blocks)
+		for (float sample : block.samples) loudest = std::max(loudest, std::abs(sample));
+	QCOMPARE(loudest, 0.0f);
+	QCOMPARE(blocks.back().first, int64_t(RATE));
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {
