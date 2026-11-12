@@ -220,6 +220,39 @@ snapping into one window; (3) the train: sequence and crossfade; (4) the
 stack: simultaneous lanes and levels; (5) envelopes; (6) analysis and
 beat-snapping. Each layer is a decision to go on, not a default.
 
+## 3e. Analysis, pitch and stems: where Mixxx gets them (2026-11-11)
+
+Read from the installed Mixxx 2.5.0 (linked libraries, analyzer names in
+its binary) and Debian's copyright files; licences are facts for the
+holder to weigh before anything is linked, not choices made here.
+
+| What | Mixxx's source | How | Licence |
+|---|---|---|---|
+| Beats, tempo | Queen Mary DSP (qm-dsp), its tempo tracker | built in, `lib/qm-dsp` | GPL-2+ (Mixxx's `Files: *`; its kissfft BSD-3) -- read qm-dsp's own terms before use |
+| Musical key | qm-dsp's key detector; libKeyFinder optional, not linked in this build | built in | GPL-2+ (KeyFinder GPL-3+) |
+| Time-stretch, pitch, quality | Rubber Band 3.3.0 | shared | GPL-2+, or a commercial licence |
+| Time-stretch, pitch, cheap | SoundTouch 2.4.0 | shared | LGPL-2.1+ |
+| Loudness | libebur128 | shared | MIT |
+| Fingerprints | Chromaprint | shared | LGPL-2.1+ / MIT |
+
+**The licence question this raises:** snurra has none yet, which is
+right; but linking qm-dsp or Rubber Band makes the whole program
+distributable only on GPL-compatible terms, so that choice is the
+holder's before either is linked. SoundTouch and libebur128 do not force
+it. Tempo and pitch go behind one interface either way (sec 3a).
+
+**Stems.** Mixxx 2.5.0 has none (no stem code, no ML runtime). From
+memory, not verified: Mixxx 2.6 plays Native Instruments' pre-separated
+`.stem.mp4` files with per-stem controls, and separates nothing itself.
+Separating a mix is a different, heavy job: Demucs v4 (Meta, MIT; check
+the weights), Spleeter (Deezer, MIT, older), Open-Unmix (MIT, small);
+the commercial DJ programs separate in real time with closed models. In
+snurra stems are simply a stack's lanes, so in layers: (1) play existing
+stem files -- FFmpeg decodes multi-track MP4, each stem a lane; (2)
+separate offline with Demucs as an outside tool, once, cached; (3) in
+process through an ONNX runtime, later if ever -- large, and not real
+time on Android.
+
 ## 3c. One set of controls, not one per tile
 
 The holder, 2026-11-11: **only the first window opens with its controls
@@ -304,3 +337,17 @@ spikes", with dummy controls; each tile very compact but resizeable).
   itself is not yet seen on a real X11 screen.
 - **Not yet:** audio (sec 3/3a), the crossfade in the overlap, Wayland's
   drag-and-drop merge, and a real waveform.
+
+## 5. Resuming work here (2026-11-12)
+
+Built and tested: the handover base (sec 4), tiles as waveforms with
+controls only for the first (sec 3c), the drop marker (sec 3d). Not seen
+on a real X11 screen yet -- every test runs offscreen; trying the drag,
+the snap and the marker by hand is the first thing to do.
+
+Open, the holder's: where to push this repository (it has no remote);
+adding snurra to the private-projects list in the guidelines (theirs to
+change); audio or video first; the analysis licences (sec 3e).
+Next to build, in order: the Wayland merge by drag and drop; then audio
+(sec 3, 3a), starting with the output interface and the shared default,
+the crossfade filling the handover's overlap.
