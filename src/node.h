@@ -14,6 +14,7 @@ class QLocalServer;
 class QLocalSocket;
 class QTimer;
 class snurra_tile;
+class snurra_marker;
 
 /*
  * One snurra process: its window, the tiles in it, and its side of every
@@ -85,6 +86,8 @@ private:
 	QPoint m_drag_from;
 	QPoint m_window_from;
 	bool m_system_move_started = false;
+	snurra_marker *m_marker = nullptr;
+	void mark(const QRect &landing, const QRect &shape);
 	qint64 m_last_started = 0;   /* the last handover, as taker */
 	qint64 m_last_stopped = 0;
 };

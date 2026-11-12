@@ -240,6 +240,19 @@ they asked for.
 - Effects and configuration are to follow the same rule when they come:
   pulled out from the tile they apply to, never shown by default.
 
+## 3d. A marker for where a drag lands
+
+The holder, 2026-11-12: a marker for the shape and where the window would
+land on each drag and drop, connecting and disconnecting. While a lone
+tile is dragged near another snurra, a marker shows **where it would
+land, filled, and the shape of the group it would make, outlined**;
+while a tile is dragged out of a group, it shows **where its new window
+opens**. The marker and the release use one answer
+(`snurra_find_snap()`, `src/snap.cpp`), so what is shown is what
+happens. It is a frameless window of its own that takes no input, so the
+drag goes on through it; on Wayland, where a program cannot place a
+window, it is not shown.
+
 ## 4. State
 
 **The handover base, built 2026-11-11, no audio yet** (the holder: "a
@@ -285,6 +298,9 @@ spikes", with dummy controls; each tile very compact but resizeable).
   the giver at OFFER (a 1 ms gap was caught), never aborting, every
   launch taken as the first, and pushed-in controls left playing -- each
   fails its test.
+- **The marker** (sec 3d): `the_marker_and_the_drop_agree_on_where_a_tile_lands`
+  checks the shared answer -- beside a right edge, under a bottom edge,
+  too far, not level, and the nearer of two edges. The marker window
+  itself is not yet seen on a real X11 screen.
 - **Not yet:** audio (sec 3/3a), the crossfade in the overlap, Wayland's
-  drag-and-drop merge, a snap preview while dragging, and the tile
-  waveform.
+  drag-and-drop merge, and a real waveform.

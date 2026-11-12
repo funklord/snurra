@@ -16,6 +16,8 @@
 
 #include <algorithm>
 
+#include "marker.h"
+#include "snap.h"
 #include "tile.h"
 
 namespace {
@@ -24,9 +26,6 @@ namespace {
  * milliseconds; a process started to adopt a tile needs to start first. */
 constexpr int READY_WAIT_MS = 2000;
 constexpr int ADOPT_WAIT_MS = 8000;
-
-/* How near two windows' edges must come to snap. */
-constexpr int SNAP_PX = 24;
 
 QString new_token() {
 	return QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -56,6 +55,7 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 }
 
 snurra_node::~snurra_node() {
+	delete m_marker;
 	if (m_server) {
 		m_server->close();
 		QLocalServer::removeServer(m_path);
@@ -388,8 +388,16 @@ void snurra_node::ask_where() {
 	}
 }
 
+void snurra_node::mark(const QRect &landing, const QRect &shape) {
+	/* Only where a program may place a window of its own; on Wayland the
+	 * compositor's drag shows the window itself and nothing more. */
+	if (!can_place_windows()) return;
+	if (!m_marker && landing.isEmpty()) return;
+	if (!m_marker) m_marker = new snurra_marker;
+	m_marker->show_at(landing, shape);
+}
+
 void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
-	Q_UNUSED(tile);
 	if (m_drag_from.isNull()) {
 		m_drag_from = global;
 		m_window_from = pos();
@@ -397,10 +405,21 @@ void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
 		ask_where();
 		return;
 	}
-	/* A lone tile, or the whole group: the window moves with the hand. */
-	if (m_tiles.size() > 1) return;
+	/*
+	 * In a group a tile is being pulled out: outside the window, the
+	 * marker is where its new window opens -- release() places it there.
+	 */
+	if (m_tiles.size() > 1) {
+		if (frameGeometry().contains(global)) mark(QRect(), QRect());
+		else mark(QRect(global, tile->size()), QRect());
+		return;
+	}
+	/* A lone tile: the window moves with the hand, and the marker says
+	 * where it would join, and the shape the group would take. */
 	if (can_place_windows()) {
 		move(m_window_from + (global - m_drag_from));
+		const snurra_snap snap = snurra_find_snap(frameGeometry(), m_peer_frames);
+		mark(snap.landing, snap.shape);
 	} else if (!m_system_move_started && windowHandle()) {
 		m_system_move_started = windowHandle()->startSystemMove();
 	}
@@ -409,6 +428,7 @@ void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
 void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 	const QPoint from = m_drag_from;
 	m_drag_from = QPoint();
+	mark(QRect(), QRect());
 	if (from.isNull()) return;
 
 	/* In a group, a tile dropped outside the window is pulled out there. */
@@ -417,19 +437,7 @@ void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 		return;
 	}
 
-	/* A lone tile let go near another window's edge joins it: beside its
-	 * right edge a train, under its bottom edge a stack. */
-	const QRect mine = frameGeometry();
-	for (auto it = m_peer_frames.cbegin(); it != m_peer_frames.cend(); ++it) {
-		const QRect theirs = it.value();
-		if (theirs.isNull()) continue;
-		const bool beside = qAbs(mine.left() - theirs.right()) <= SNAP_PX
-		                    && mine.bottom() > theirs.top() && mine.top() < theirs.bottom();
-		const bool under = qAbs(mine.top() - theirs.bottom()) <= SNAP_PX
-		                   && mine.right() > theirs.left() && mine.left() < theirs.right();
-		if (beside || under) {
-			merge_into(it.key(), beside ? snurra_wire::RIGHT : snurra_wire::BELOW);
-			return;
-		}
-	}
+	/* A lone tile joins where the marker showed: the same answer. */
+	const snurra_snap snap = snurra_find_snap(frameGeometry(), m_peer_frames);
+	if (!snap.peer.isEmpty()) merge_into(snap.peer, snap.side);
 }

@@ -13,6 +13,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "../src/snap.h"
 #include "../src/wire.h"
 
 class handover_test : public QObject {
@@ -21,6 +22,7 @@ class handover_test : public QObject {
 private slots:
 	void init();
 	void cleanup();
+	void the_marker_and_the_drop_agree_on_where_a_tile_lands();
 	void only_the_first_opens_with_controls_and_plays();
 	void a_merge_is_taken_before_it_is_let_go();
 	void a_tile_pulled_out_plays_on_in_a_new_process();
@@ -131,6 +133,39 @@ static snurra_wire::message status_request() {
 	snurra_wire::message m;
 	m.type = snurra_wire::STATUS;
 	return m;
+}
+
+void handover_test::the_marker_and_the_drop_agree_on_where_a_tile_lands() {
+	/*
+	 * project.md sec 3d: one answer for the marker and the release. A
+	 * window let go by another's right edge lands beside its first row,
+	 * and the shape is the two together; by its bottom edge, under its
+	 * first column; too far, or beside it but not level with it, nowhere;
+	 * and of two edges within reach, the nearer.
+	 */
+	const QHash<QString, QRect> peers{ { QStringLiteral("a"), QRect(100, 100, 200, 120) } };
+	const QSize tile(180, 110);
+
+	const snurra_snap beside = snurra_find_snap(QRect(QPoint(305, 130), tile), peers);
+	QCOMPARE(beside.peer, QStringLiteral("a"));
+	QCOMPARE(beside.side, snurra_wire::RIGHT);
+	QCOMPARE(beside.landing, QRect(QPoint(300, 100), tile));
+	QCOMPARE(beside.shape, QRect(100, 100, 380, 120));
+
+	const snurra_snap under = snurra_find_snap(QRect(QPoint(140, 228), tile), peers);
+	QCOMPARE(under.side, snurra_wire::BELOW);
+	QCOMPARE(under.landing, QRect(QPoint(100, 220), tile));
+	QCOMPARE(under.shape, QRect(100, 100, 200, 230));
+
+	QVERIFY(snurra_find_snap(QRect(QPoint(340, 130), tile), peers).peer.isEmpty());
+	QVERIFY(snurra_find_snap(QRect(QPoint(305, 400), tile), peers).peer.isEmpty());
+
+	/* Within reach of both a's right edge (4 px) and b's bottom (10 px). */
+	const QHash<QString, QRect> two{ { QStringLiteral("a"), QRect(100, 100, 200, 120) },
+	                                 { QStringLiteral("b"), QRect(304, 0, 200, 100) } };
+	const snurra_snap nearer = snurra_find_snap(QRect(QPoint(304, 110), tile), two);
+	QCOMPARE(nearer.peer, QStringLiteral("a"));
+	QCOMPARE(nearer.side, snurra_wire::RIGHT);
 }
 
 void handover_test::only_the_first_opens_with_controls_and_plays() {
