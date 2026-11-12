@@ -31,7 +31,64 @@ const AVRational MICROSECONDS{ 1, 1000000 };
  * range (limited or full) the stream says. A 10-bit sample is read in the
  * 8-bit scale the matrix works in. Any other layout gives no picture.
  */
+/* The picture's size here: at most WIDEST wide, its shape kept. */
+QSize shown_size(const AVFrame *from) {
+	int width = from->width;
+	int height = from->height;
+	if (width > WIDEST) {
+		height = int(int64_t(height) * WIDEST / width);
+		width = WIDEST;
+	}
+	return QSize(width, height);
+}
+
+/*
+ * Pictures already RGB, or near it: packed RGB in any byte order (screen
+ * recordings, PNG, QuickTime Animation), a palette (GIF) and grey. Null for
+ * any other layout, which the YUV path below then takes.
+ */
+QImage packed_to_rgb(const AVFrame *from) {
+	const AVPixelFormat format = AVPixelFormat(from->format);
+	int size = 0;          /* bytes a pixel */
+	int r = 0, g = 0, b = 0;
+	bool palette = false;
+	bool grey = false;
+	switch (format) {
+	case AV_PIX_FMT_RGB24: size = 3; r = 0; g = 1; b = 2; break;
+	case AV_PIX_FMT_BGR24: size = 3; r = 2; g = 1; b = 0; break;
+	case AV_PIX_FMT_RGBA: case AV_PIX_FMT_RGB0: size = 4; r = 0; g = 1; b = 2; break;
+	case AV_PIX_FMT_BGRA: case AV_PIX_FMT_BGR0: size = 4; r = 2; g = 1; b = 0; break;
+	case AV_PIX_FMT_ARGB: case AV_PIX_FMT_0RGB: size = 4; r = 1; g = 2; b = 3; break;
+	case AV_PIX_FMT_ABGR: case AV_PIX_FMT_0BGR: size = 4; r = 3; g = 2; b = 1; break;
+	case AV_PIX_FMT_PAL8: size = 1; palette = true; break;
+	case AV_PIX_FMT_GRAY8: size = 1; grey = true; break;
+	default: return QImage();
+	}
+	const QSize shown = shown_size(from);
+	if (shown.isEmpty()) return QImage();
+	QImage image(shown, QImage::Format_RGB32);
+	for (int y = 0; y < shown.height(); ++y) {
+		const int sy = int(int64_t(y) * from->height / shown.height());
+		const uint8_t *row = from->data[0] + int64_t(sy) * from->linesize[0];
+		QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+		for (int x = 0; x < shown.width(); ++x) {
+			const uint8_t *p = row + int64_t(x) * from->width / shown.width() * size;
+			if (palette) {
+				uint32_t entry = 0;   /* 0xAARRGGBB, native order (FFmpeg's PAL8) */
+				std::memcpy(&entry, from->data[1] + 4 * p[0], 4);
+				out[x] = qRgb(int(entry >> 16 & 0xff), int(entry >> 8 & 0xff), int(entry & 0xff));
+			} else if (grey) {
+				out[x] = qRgb(p[0], p[0], p[0]);
+			} else {
+				out[x] = qRgb(p[r], p[g], p[b]);
+			}
+		}
+	}
+	return image;
+}
+
 QImage to_rgb(const AVFrame *from) {
+	if (QImage packed = packed_to_rgb(from); !packed.isNull()) return packed;
 	const AVPixelFormat format = AVPixelFormat(from->format);
 	int x_shift = 0;
 	int y_shift = 0;
@@ -46,7 +103,8 @@ QImage to_rgb(const AVFrame *from) {
 	case AV_PIX_FMT_YUV444P10LE: wide = true; divisor = 4; break;
 	case AV_PIX_FMT_P010LE: wide = true; divisor = 256; x_shift = y_shift = 1; interleaved = true; break;
 	case AV_PIX_FMT_YUVJ420P: full = true; [[fallthrough]];
-	case AV_PIX_FMT_YUV420P: x_shift = y_shift = 1; break;
+	case AV_PIX_FMT_YUV420P:
+	case AV_PIX_FMT_YUVA420P: x_shift = y_shift = 1; break;   /* the alpha plane, a fourth, unread */
 	case AV_PIX_FMT_YUVJ422P: full = true; [[fallthrough]];
 	case AV_PIX_FMT_YUV422P: x_shift = 1; break;
 	case AV_PIX_FMT_YUVJ444P: full = true; [[fallthrough]];

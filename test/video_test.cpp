@@ -136,6 +136,29 @@ void video_test::every_codec_shows_the_frame_of_its_time_data() {
 	                             << QStringList{ c, QStringLiteral("libaom-av1"), QStringLiteral("-pix_fmt"),
 	                                             QStringLiteral("yuv420p10le"), QStringLiteral("-cpu-used"), QStringLiteral("8") }
 	                             << 0.0;
+	QTest::newRow("qtrle, rgb") << QStringLiteral("qtrle.mov")
+	                            << QStringList{ c, QStringLiteral("qtrle"), QStringLiteral("-pix_fmt"), QStringLiteral("rgb24") }
+	                            << 0.0;
+	QTest::newRow("png, rgb") << QStringLiteral("png.mkv")
+	                          << QStringList{ c, QStringLiteral("png"), QStringLiteral("-pix_fmt"), QStringLiteral("rgb24") }
+	                          << 0.0;
+	/* FFmpeg's GIF decoder hands over BGRA, not its palette: a paletted
+	 * PNG is what comes through as a palette, and a grey one as grey. */
+	QTest::newRow("png, palette") << QStringLiteral("pal.mkv")
+	                              << QStringList{ QStringLiteral("-vf"),
+	                                              QStringLiteral("split[a][b];[a]palettegen[p];[b][p]paletteuse"), c,
+	                                              QStringLiteral("png"), QStringLiteral("-pix_fmt"), QStringLiteral("pal8") }
+	                              << 0.0;
+	QTest::newRow("png, grey") << QStringLiteral("grey.mkv")
+	                           << QStringList{ c, QStringLiteral("png"), QStringLiteral("-pix_fmt"), QStringLiteral("gray") }
+	                           << 0.0;
+	QTest::newRow("gif, bgra") << QStringLiteral("anim.gif")
+	                              /* Its palette made from its own frames, as a GIF is: FFmpeg's
+	                               * fixed one flattens the greys before snurra ever sees them. */
+	                              << QStringList{ QStringLiteral("-vf"),
+	                                              QStringLiteral("split[a][b];[a]palettegen[p];[b][p]paletteuse"), c,
+	                                              QStringLiteral("gif"), QStringLiteral("-pix_fmt"), QStringLiteral("pal8") }
+	                              << 0.0;
 	QTest::newRow("mjpeg") << QStringLiteral("mjpeg.mkv") << QStringList{ c, QStringLiteral("mjpeg"), QStringLiteral("-q:v"), QStringLiteral("2") }
 	                       << 0.0;
 }
