@@ -79,6 +79,7 @@ style-tool:
 hooks:
 	@dir=$$(git rev-parse --git-common-dir 2>/dev/null); \
 	if [ -z "$$dir" ]; then echo "hooks: not a git repository" >&2; exit 1; fi; \
+	set -e; \
 	mkdir -p "$$dir/hooks"; \
 	install -m 0755 tool/hooks/commit-msg "$$dir/hooks/commit-msg"; \
 	echo "hooks: commit-msg installed into $$dir/hooks/"

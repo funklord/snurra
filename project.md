@@ -561,6 +561,11 @@ controls; each tile very compact but resizeable).
   an outlier reading taken whole by the old filter; not seen since.
   Not yet heard on a speaker; `tone:440` through the loopback was a clean
   440.3 Hz.
+- **`make hooks` fails when the install does** (2026-11-12, from
+  claude-guidelines, inbox 20261112T0227Z): one continued shell line
+  reported only the echo's status, so a missing hook printed
+  "installed" and exited 0; `set -e` after the guard -- exit 2 missing,
+  0 present, measured in a scratch repository.
 - **The marker** (sec 3d): `the_marker_and_the_drop_agree_on_where_a_tile_lands`
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
