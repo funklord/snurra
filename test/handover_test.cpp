@@ -42,6 +42,7 @@ private slots:
 	void mplayers_keys_drive_the_tile();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 	void a_stack_plays_its_lanes_at_once_from_one_time();
+	void a_stack_finds_its_time_in_a_lane_that_is_a_train();
 
 private:
 	QString start_x_server();
@@ -1025,6 +1026,88 @@ void handover_test::a_stack_plays_its_lanes_at_once_from_one_time() {
 	QVERIFY2(qAbs(b_last - b_first + 1 - 48000) <= 1,
 	         qPrintable(QStringLiteral("B played %1 frames, not one second").arg(b_last - b_first + 1)));
 	QVERIFY2(worst < 1e-4, "a lane was not at its level throughout");
+}
+
+/*
+ * A lane that is itself a train (project.md sec 3b, step 4): A and B side
+ * by side, two seconds each with a one-second overlap, so B begins at one
+ * second on the timeline; C, three seconds, below them. Sought to 2.5 s
+ * from C, the upper lane is B at 1.5 s -- not A -- and the lower C at
+ * 2.5 s: each plays half a second, from one frame. A is at half scale on
+ * the left, B a quarter on the left, C a quarter on the right.
+ */
+void handover_test::a_stack_finds_its_time_in_a_lane_that_is_a_train() {
+	const QString a_file = m_dir->filePath(QStringLiteral("a.wav"));
+	const QString b_file = m_dir->filePath(QStringLiteral("b.wav"));
+	const QString c_file = m_dir->filePath(QStringLiteral("c.wav"));
+	QVERIFY(write_constant_wav(a_file, 2, 16384, 0));
+	QVERIFY(write_constant_wav(b_file, 2, 8192, 0));
+	QVERIFY(write_constant_wav(c_file, 3, 0, 8192));
+	QProcessEnvironment train;
+	train.insert(QStringLiteral("SNURRA_TRAIN_OVERLAP_MS"), QStringLiteral("1000"));
+	const QString output = QStringLiteral("capture:") + capture_dir();
+
+	QProcess *a = start({ a_file }, output, train);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	auto join = [&](const QString &file, snurra_wire::side_t side) {
+		QProcess *p = start({ file }, output, train);
+		if (!p->waitForStarted() || !wait_for_socket(socket_of(p))) return false;
+		snurra_wire::message merge;
+		merge.type = snurra_wire::MERGE_INTO;
+		merge.path = socket_of(a);
+		merge.side = side;
+		tell(socket_of(p), merge);
+		return p->waitForFinished(5000);
+	};
+	auto control = [&](snurra_wire::type_t type, int index, qint64 time) {
+		snurra_wire::message m;
+		m.type = type;
+		m.index = index;
+		m.time = time;
+		tell(socket_of(a), m);
+	};
+	/* Paused before B joins, so no train runs on its own meanwhile. */
+	control(snurra_wire::PLAY, 0, 0);
+	QVERIFY2(join(b_file, snurra_wire::RIGHT), "B did not join A");
+	QVERIFY2(join(c_file, snurra_wire::BELOW), "C did not join below");
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(a), status_request()).states.size(), 3, 5000);
+	const QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
+	int c_index = -1;
+	for (int i = 0; i < states.size(); ++i) {
+		QVERIFY2(!states.at(i).playing, "a tile was playing before the play");
+		if (states.at(i).source == c_file) c_index = i;
+	}
+	QVERIFY(c_index >= 0);
+	QCOMPARE(states.at(c_index).row, 1);
+
+	control(snurra_wire::SEEK, c_index, 2500000);
+	QTest::qWait(300);
+	const double from = double(snurra_clock_us());
+	control(snurra_wire::PLAY, c_index, 1);
+	QTest::qWait(1500);
+
+	const capture_t heard = read_capture(QDir(capture_dir()).filePath(QStringLiteral("%1.capture").arg(a->processId())));
+	int up_first = -1, up_last = -1, down_first = -1, down_last = -1;
+	float up_loudest = 0;
+	for (int i = 0; i < heard.us.size(); ++i) {
+		if (heard.us.at(i) < from) continue;
+		if (heard.left.at(i) > 0) {
+			if (up_first < 0) up_first = i;
+			up_last = i;
+			up_loudest = qMax(up_loudest, heard.left.at(i));
+		}
+		if (heard.right.at(i) > 0) {
+			if (down_first < 0) down_first = i;
+			down_last = i;
+		}
+	}
+	qInfo("stack with a train: lanes began %d frames apart; upper %d frames at %.4f, lower %d frames",
+	      down_first - up_first, up_last - up_first + 1, up_loudest, down_last - down_first + 1);
+	QVERIFY2(up_first > 0 && down_first > 0, "a lane never sounded after the play");
+	QCOMPARE(down_first, up_first);
+	QVERIFY2(qAbs(up_loudest - 0.25f) < 1e-4, "the upper lane played A, not B");
+	QVERIFY2(qAbs(up_last - up_first + 1 - 24000) <= 1, "the upper lane did not play B's last half second");
+	QVERIFY2(qAbs(down_last - down_first + 1 - 24000) <= 1, "the lower lane did not play C's last half second");
 }
 
 /* A private Xvfb, 1280x800, ended in cleanup() with the rest: its
