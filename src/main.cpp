@@ -71,8 +71,12 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption output(QStringLiteral("output"),
 	                                QStringLiteral("Where to play: alsa:<device>, aaudio[:exclusive], qt, null."),
 	                                QStringLiteral("spec"));
-	parser.addOptions({ adopt, token, index, at, paused, output });
+	const QCommandLineOption layout(QStringLiteral("layout"),
+	                                QStringLiteral("The look: drawers (the normal one, where the window system can), or square."),
+	                                QStringLiteral("look"));
+	parser.addOptions({ adopt, token, index, at, paused, output, layout });
 	parser.process(app);
+	if (parser.isSet(layout)) qputenv("SNURRA_LAYOUT", parser.value(layout).toLocal8Bit());
 	/* As $SNURRA_OUTPUT, which the engine reads -- and which an app on
 	 * Android cannot be given, its arguments being all it has. A process
 	 * this one starts to adopt a tile inherits it. */

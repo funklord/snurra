@@ -22,6 +22,12 @@
 
 #include <algorithm>
 
+#if SNURRA_XCB
+#include <xcb/xcb.h>
+
+#include <cstdlib>
+#endif
+
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/engine.h"
@@ -78,7 +84,43 @@ bool tiles_join_by_drop() {
 
 }
 
+/*
+ * The look (project.md sec 3b): the normal one, drawers sticking out of a
+ * window that is transparent around them, wherever the window system can
+ * draw a window that is not a rectangle -- Wayland always, X11 when a
+ * compositor holds its selection -- and otherwise the square one, the
+ * same layout on an opaque window. $SNURRA_LAYOUT (--layout) decides it
+ * outright: `drawers` or `square`.
+ */
+static bool look_with_drawers() {
+	const QByteArray asked = qgetenv("SNURRA_LAYOUT");
+	if (asked == "square") return false;
+	if (asked == "drawers") return true;
+	const QString platform = QGuiApplication::platformName();
+	if (platform == QLatin1String("wayland")) return true;
+#if SNURRA_XCB
+	if (platform == QLatin1String("xcb")) {
+		auto *x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+		xcb_connection_t *connection = x11 ? x11->connection() : nullptr;
+		if (!connection) return false;
+		static const char name[] = "_NET_WM_CM_S0";
+		xcb_intern_atom_reply_t *atom
+		        = xcb_intern_atom_reply(connection, xcb_intern_atom(connection, 1, sizeof name - 1, name), nullptr);
+		if (!atom) return false;
+		xcb_get_selection_owner_reply_t *owner
+		        = xcb_get_selection_owner_reply(connection, xcb_get_selection_owner(connection, atom->atom), nullptr);
+		const bool composited = owner && owner->owner != XCB_NONE;
+		free(owner);
+		free(atom);
+		return composited;
+	}
+#endif
+	return false;
+}
+
 snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
+	m_drawers_look = look_with_drawers();
+	if (m_drawers_look) setAttribute(Qt::WA_TranslucentBackground);
 	m_engine = new snurra_engine(this);
 	connect(m_engine, &snurra_engine::idle, this, &snurra_node::leave_if_empty);
 	setWindowFlag(Qt::FramelessWindowHint);
@@ -87,7 +129,8 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	outer->setContentsMargins(2, 2, 2, 2);
 	outer->setSpacing(0);
 	m_grid = new QGridLayout;
-	m_grid->setSpacing(2);
+	m_grid->setHorizontalSpacing(2);
+	m_grid->setVerticalSpacing(0);   /* drawers meet their tiles */
 	outer->addLayout(m_grid, 1);
 	/* Resizeable, though frameless: the grip in the corner. */
 	QSizeGrip *grip = new QSizeGrip(this);
@@ -156,6 +199,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.held = held;
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
+	tile->take_drawers_out();
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
@@ -165,6 +209,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
 		/* What plays is what can be stopped (sec 3c): with no controls
 		 * out anywhere, the group stops. */
+		fit_to_drawers();
 		for (snurra_tile *other : m_tiles)
 			if (other->controls()) return;
 		for (snurra_tile *other : m_tiles)
@@ -196,15 +241,39 @@ void snurra_node::place_tiles() {
 	n = 0;
 	for (auto it = columns.begin(); it != columns.end(); ++it) it.value() = n++;
 
+	/* Each lane three rows of the grid: its upward drawers, its tiles,
+	 * its downward drawers (project.md sec 3b) -- so every waveform of a
+	 * lane is on one line whatever is open, and a row of drawers all
+	 * closed takes no room. Spare height goes below the last lane. */
 	setUpdatesEnabled(false);
-	for (snurra_tile *tile : m_tiles) m_grid->removeWidget(tile);
+	for (snurra_tile *tile : m_tiles) {
+		m_grid->removeWidget(tile);
+		m_grid->removeWidget(tile->drawer_above());
+		m_grid->removeWidget(tile->drawer_below());
+	}
+	for (int row = 0; row < m_grid->rowCount(); ++row) m_grid->setRowStretch(row, 0);
 	for (snurra_tile *tile : m_tiles) {
 		tile->set_place(rows.value(tile->row()), columns.value(tile->column()));
-		m_grid->addWidget(tile, tile->row(), tile->column());
+		const int lane = 3 * tile->row();
+		m_grid->addWidget(tile->drawer_above(), lane, tile->column());
+		m_grid->addWidget(tile, lane + 1, tile->column());
+		m_grid->addWidget(tile->drawer_below(), lane + 2, tile->column());
 		tile->show();
 	}
+	m_grid->setRowStretch(3 * int(rows.size()), 1);
 	setUpdatesEnabled(true);
 	adjustSize();
+}
+
+/* The window as tall as what is open: a drawer opened adds its height, a
+ * drawer closed gives it back; the width, which a person may have set,
+ * stays. After the event loop, once the drawer's own show or hide is in
+ * the layout. */
+void snurra_node::fit_to_drawers() {
+	QTimer::singleShot(0, this, [this] {
+		layout()->activate();
+		resize(qMax(width(), minimumSizeHint().width()), sizeHint().height());
+	});
 }
 
 void snurra_node::remove_tile(snurra_tile *tile) {
@@ -219,7 +288,11 @@ void snurra_node::drop_tile(snurra_tile *tile) {
 	m_following.remove(tile);
 	if (!m_tiles.removeOne(tile)) return;
 	m_grid->removeWidget(tile);
+	m_grid->removeWidget(tile->drawer_above());
+	m_grid->removeWidget(tile->drawer_below());
 	tile->hide();
+	if (tile->drawer_above()) tile->drawer_above()->hide();
+	if (tile->drawer_below()) tile->drawer_below()->hide();
 	tile->deleteLater();
 	place_tiles();
 }

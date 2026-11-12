@@ -69,6 +69,10 @@ linux:!android {
     SOURCES += $$SNURRA_ROOT/src/output_alsa.cpp
     PKGCONFIG += alsa
     DEFINES += SNURRA_ALSA=1
+    # Whether an X11 window may be other than a rectangle: a compositor's
+    # selection, asked of the X server (the normal look, project.md 3b).
+    PKGCONFIG += xcb
+    DEFINES += SNURRA_XCB=1
 }
 qtHaveModule(multimedia) {
     QT += multimedia

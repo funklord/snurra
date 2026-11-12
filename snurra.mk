@@ -23,8 +23,8 @@ SNURRA_INCLUDE  := $(SNURRA_DIR)/include
 # below), nor output_aaudio.cpp (Android's, which builds through qmake).
 SNURRA_SRCS     := $(filter-out $(SNURRA_DIR)/src/main.cpp $(SNURRA_DIR)/src/output_qt.cpp $(SNURRA_DIR)/src/output_aaudio.cpp,$(wildcard $(SNURRA_DIR)/src/*.cpp))
 SNURRA_HDRS     := $(wildcard $(SNURRA_INCLUDE)/snurra/*.h)
-SNURRA_PKGS     := libavformat libavcodec libswresample libavutil alsa
-SNURRA_DEFINES  := -DSNURRA_ALSA=1
+SNURRA_PKGS     := libavformat libavcodec libswresample libavutil alsa xcb
+SNURRA_DEFINES  := -DSNURRA_ALSA=1 -DSNURRA_XCB=1
 ifeq ($(SNURRA_QT_AUDIO),1)
 SNURRA_SRCS     += $(SNURRA_DIR)/src/output_qt.cpp
 SNURRA_PKGS     += Qt6Multimedia

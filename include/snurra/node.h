@@ -57,6 +57,10 @@ public:
 
 	int tile_count() const { return int(m_tiles.size()); }
 
+	/* The normal look, drawers out of a window not a rectangle; or the
+	 * square one (project.md sec 3b). */
+	bool drawers_look() const { return m_drawers_look; }
+
 protected:
 	/* A tile dragged here from another snurra joins this one (Wayland's
 	 * gesture, sec 3b), and the bare frame moves the window. */
@@ -97,6 +101,7 @@ private:
 	void remove_tile(snurra_tile *tile);
 	void drop_tile(snurra_tile *tile);
 	void place_tiles();
+	void fit_to_drawers();
 	void ask_where();
 	void handle_moved(snurra_tile *tile, const QPoint &global);
 	void handle_released(snurra_tile *tile, const QPoint &global);
@@ -117,6 +122,7 @@ private:
 	snurra_tile *lane_at(int row, int64_t time, int64_t &frame) const;
 	QList<int> rows() const;
 
+	bool m_drawers_look = false;
 	QString m_path;
 	QLocalServer *m_server = nullptr;
 	QGridLayout *m_grid = nullptr;

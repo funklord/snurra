@@ -73,8 +73,9 @@ and everything above it knows nothing of SFTP or fuzznet.
   arrived waits there and asks for it, which a playable prefix could not
   express. fuzzypickles' rule of offering seeks only where they cannot
   stall is not snurra's: a DJ cues anywhere, and the seek waits.
-- **Video, or audio first.** The mplayer use is the test; the holder to
-  say which comes first.
+- ~~Video, or audio first.~~ **Settled by the holder 2026-11-12:**
+  "make it work first" -- audio, then video, as a drawer that opens
+  upward from the tile (sec 3b).
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
@@ -305,8 +306,16 @@ that are not rectangles, but the stack needs them, and some systems
 cannot show them. So the player keeps **its normal look** -- tiles with
 small drawers sticking out of them, pulled to open the player out -- and
 also has **a mode where every window is square**, as the tiles are now.
-The drawers' shape waits on the holder's sketches; until then everything
-is built in the square layout, which is to stay as that mode.
+**The drawers, for now** (the holder, 2026-11-12): two per tile. **Upward,
+the video**: as wide as the player, with a maximize button. **Downward,
+the controls.** **A waveform stays the same size on every connected
+track**, whatever drawers are open: a drawer adds room to the window, it
+never squeezes or stretches a waveform. So a window's grid gives each
+lane three rows -- its upward drawers, its waveforms, its downward
+drawers -- and every waveform in a lane sits on one line. In the normal
+look the window is transparent outside the tiles and their open drawers,
+which is what makes it not a rectangle; in the square mode the same
+layout is drawn on an opaque window.
 
 ## 3c. One set of controls, not one per tile
 
@@ -716,6 +725,24 @@ controls; each tile very compact but resizeable).
   of itself; straight lines (power 0.31 off) and starting B at once (a
   third of it lost) each fail. Not yet: beat-snapping the overlap
   (step 6).
+- **Drawers, built 2026-11-12** (sec 3b): a tile has an upward drawer
+  (empty until video) and a downward one, its controls; one height for
+  every waveform. A window takes the drawers out of its tiles and gives
+  each lane three grid rows -- upward drawers, tiles, downward drawers --
+  and re-fits its height (never its width, which a person may have set)
+  as a drawer opens or closes; a tile alone, embedded, keeps its drawers
+  in itself. The look: `drawers` makes the window transparent around its
+  tiles and open drawers; `square` paints the same layout opaque; by
+  default `drawers` on Wayland and on X11 with a compositor (the owner of
+  `_NET_WM_CM_S0`, asked through xcb), `square` everywhere else,
+  offscreen included; `--layout` / $SNURRA_LAYOUT decides outright.
+  Measured offscreen (`a_drawer_adds_room_and_leaves_every_waveform_as_
+  it_was`): A beside B, C below; A's controls out, all three waveforms
+  keep their height, A's and B's tops stay level, the drawer sits flush
+  under A at A's width, C and the window move down by the drawer's
+  height exactly, and closing it restores every number; with the drawers
+  left inside the tiles, B's waveform falls 24 px below A's and it fails.
+  Not yet: seen on a compositing desktop.
 - **Envelopes, built 2026-11-12** (sec 3b, step 5): `snurra_deck::
   set_envelope` takes up to 64 points over the deck's frames, read by
   the callback under a seqlock as the fade is, and multiplies level,

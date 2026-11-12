@@ -9,6 +9,7 @@
 #include "snurra/tile_state.h"
 
 class QLabel;
+class QVBoxLayout;
 class QSlider;
 class QToolButton;
 class snurra_bytes;
@@ -95,6 +96,17 @@ public:
 	void set_envelope(const QList<QPair<qint64, float>> &points);
 	QList<QPair<qint64, float>> envelope() const { return m_state.envelope; }
 
+	/*
+	 * The drawers (project.md sec 3b): upward the video, downward the
+	 * controls. A tile alone keeps them in itself, above and below its
+	 * waveform; a window takes them out, to lay them in rows of their own,
+	 * so the waveforms of a lane stay on one line. Still the tile's: they
+	 * show and hide with it, and go when it goes.
+	 */
+	void take_drawers_out();
+	QWidget *drawer_above() const { return m_above; }
+	QWidget *drawer_below() const { return m_controls; }
+
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
 
@@ -125,7 +137,11 @@ private:
 	QLabel *m_title;
 	snurra_waveform *m_waveform;
 	QToolButton *m_pull;
-	QWidget *m_controls;
+	static QString drawer_style(const QString &name);
+	QVBoxLayout *m_column = nullptr;
+	QPointer<QWidget> m_above;      /* the upward drawer */
+	QPointer<QWidget> m_controls;   /* the downward drawer */
+	bool m_drawers_out = false;
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

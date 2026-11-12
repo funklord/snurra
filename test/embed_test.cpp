@@ -14,6 +14,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/engine.h"
+#include "snurra/node.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
 
@@ -27,6 +28,8 @@ private slots:
 	void an_engine_gone_first_leaves_the_tile_safe_to_close();
 	void an_envelope_is_drawn_on_the_waveform();
 	void a_handover_carries_the_envelope();
+	void a_drawer_adds_room_and_leaves_every_waveform_as_it_was();
+	void the_look_is_drawers_or_square_as_asked();
 };
 
 static snurra_tile_state playing(const QString &name) {
@@ -156,6 +159,78 @@ void embed_test::a_handover_carries_the_envelope() {
 	in >> back;
 	QCOMPARE(back.envelope, state.envelope);
 	QCOMPARE(back.source, state.source);
+}
+
+static QWidget *waveform_of(snurra_tile *tile) {
+	for (QWidget *child : tile->findChildren<QWidget *>())
+		if (child->accessibleName() == QLatin1String("Waveform")) return child;
+	return nullptr;
+}
+
+static snurra_tile_state placed(const QString &name, int row, int column) {
+	snurra_tile_state state;
+	state.source = name;
+	state.duration_us = 4000000;
+	state.controls = false;
+	state.row = row;
+	state.column = column;
+	return state;
+}
+
+/*
+ * The drawers (project.md sec 3b): A and B side by side, C below. A's
+ * controls drawer opened, every waveform keeps its height, A's and B's
+ * stay on one line, the drawer sits right under A at A's width, and C --
+ * and the window -- move down by just the drawer. Closed, all as before.
+ */
+void embed_test::a_drawer_adds_room_and_leaves_every_waveform_as_it_was() {
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_tile *b = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+	snurra_tile *c = node.add_tile(placed(QStringLiteral("c"), 1, 0));
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTest::qWait(50);
+	auto top = [&node](snurra_tile *tile) { return waveform_of(tile)->mapTo(&node, QPoint(0, 0)).y(); };
+	const int height = waveform_of(a)->height();
+	const int c_top = top(c);
+	const int window = node.height();
+
+	a->set_controls(true);
+	QTRY_VERIFY_WITH_TIMEOUT(node.height() > window, 2000);
+	QWidget *drawer = a->drawer_below();
+	QVERIFY(drawer->isVisible());
+	for (snurra_tile *tile : { a, b, c }) QCOMPARE(waveform_of(tile)->height(), height);
+	QCOMPARE(top(b), top(a));
+	QCOMPARE(drawer->geometry().top(), a->geometry().bottom() + 1);
+	QCOMPARE(drawer->geometry().left(), a->geometry().left());
+	QCOMPARE(drawer->width(), a->width());
+	QCOMPARE(top(c) - c_top, drawer->height());
+	QCOMPARE(node.height() - window, drawer->height());
+
+	a->set_controls(false);
+	QTRY_COMPARE_WITH_TIMEOUT(node.height(), window, 2000);
+	QCOMPARE(top(c), c_top);
+	for (snurra_tile *tile : { a, b, c }) QCOMPARE(waveform_of(tile)->height(), height);
+}
+
+void embed_test::the_look_is_drawers_or_square_as_asked() {
+	qputenv("SNURRA_LAYOUT", "drawers");
+	{
+		snurra_node node;
+		QVERIFY(node.drawers_look());
+		QVERIFY(node.testAttribute(Qt::WA_TranslucentBackground));
+	}
+	qputenv("SNURRA_LAYOUT", "square");
+	{
+		snurra_node node;
+		QVERIFY(!node.drawers_look());
+		QVERIFY(!node.testAttribute(Qt::WA_TranslucentBackground));
+	}
+	/* Offscreen, nothing can say the window may have a shape: square. */
+	qunsetenv("SNURRA_LAYOUT");
+	snurra_node node;
+	QVERIFY(!node.drawers_look());
 }
 
 int run_embed_tests(int argc, char **argv) {

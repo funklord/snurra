@@ -29,8 +29,10 @@ public:
 	snurra_waveform(const QString &source, QWidget *parent) : QWidget(parent) {
 		QRandomGenerator bars(qHash(source));
 		for (int i = 0; i < 96; ++i) m_bars << 0.15 + 0.85 * bars.generateDouble();
-		setMinimumHeight(fontMetrics().height() * 2);
-		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+		/* One height for every waveform (project.md sec 3b): a drawer
+		 * opening adds room, it never squeezes or stretches one. */
+		setFixedHeight(fontMetrics().height() * 3);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		setCursor(Qt::IBeamCursor);
 	}
 
@@ -206,11 +208,22 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
     : QWidget(parent), m_state(state), m_deck(deck) {
 	setObjectName(QStringLiteral("snurra-tile"));
 	setAttribute(Qt::WA_StyledBackground);
-	setStyleSheet(QStringLiteral("#snurra-tile { border: 1px solid palette(mid); border-radius: 3px; }"));
+	setStyleSheet(QStringLiteral(
+	        "#snurra-tile { background: palette(window); border: 1px solid palette(mid); border-radius: 3px; }"));
+	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 
 	QVBoxLayout *column = new QVBoxLayout(this);
 	column->setContentsMargins(4, 2, 4, 4);
 	column->setSpacing(2);
+	m_column = column;
+
+	/* The upward drawer: the video, when the track has one. */
+	m_above = new QWidget(this);
+	m_above->setObjectName(QStringLiteral("snurra-drawer-above"));
+	m_above->setAttribute(Qt::WA_StyledBackground);
+	m_above->setStyleSheet(drawer_style(m_above->objectName()));
+	m_above->hide();
+	column->addWidget(m_above);
 
 	QHBoxLayout *top = new QHBoxLayout;
 	const QString name = QFileInfo(state.source).fileName();
@@ -239,10 +252,13 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_waveform->on_seek = [this](double fraction) { seek(qint64(fraction * m_state.duration_us)); };
 	column->addWidget(m_waveform, 1);
 
+	/* The downward drawer: the controls (sec 3c). */
 	m_controls = new QWidget(this);
 	m_controls->setObjectName(QStringLiteral("snurra-controls"));
+	m_controls->setAttribute(Qt::WA_StyledBackground);
+	m_controls->setStyleSheet(drawer_style(m_controls->objectName()));
 	QVBoxLayout *strip = new QVBoxLayout(m_controls);
-	strip->setContentsMargins(0, 0, 0, 0);
+	strip->setContentsMargins(4, 2, 4, 4);
 	strip->setSpacing(2);
 	QHBoxLayout *transport = new QHBoxLayout;
 	m_play = new QToolButton(m_controls);
@@ -335,6 +351,11 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 
 snurra_tile::~snurra_tile() {
 	m_peaks.reset();   /* before the deck can go: the waveform first */
+	/* Drawers a window took out are the tile's still, and go with it. */
+	if (m_drawers_out) {
+		delete m_above.data();
+		delete m_controls.data();
+	}
 	if (m_owner) m_owner->retire(m_deck);
 }
 
@@ -440,6 +461,18 @@ void snurra_tile::show_envelope() {
 		for (const auto &point : m_state.envelope)
 			points << QPointF(double(point.first) / double(m_state.duration_us), point.second);
 	m_waveform->set_envelope(points);
+}
+
+QString snurra_tile::drawer_style(const QString &name) {
+	return QStringLiteral("#%1 { background: palette(window); border: 1px solid palette(mid); border-radius: 3px; }")
+	        .arg(name);
+}
+
+void snurra_tile::take_drawers_out() {
+	if (m_drawers_out) return;
+	m_drawers_out = true;
+	m_column->removeWidget(m_above);
+	m_column->removeWidget(m_controls);
 }
 
 int64_t snurra_tile::frame_now() const {
