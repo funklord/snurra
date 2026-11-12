@@ -219,12 +219,16 @@ does the same with a tile's playback:
 - **Envelopes:** a level curve per tile, drawn on it; the crossfade of a
   train is two of them.
 
-**"Tiny" kept honest by building in layers**, each usable before the
+**"Tiny" kept honest by building in steps**, each usable before the
 next: (1) the tile -- one file, play/pause/seek, opened at the pointer,
 the shared default output; (2) single instance and several tiles,
 snapping into one window; (3) the train: sequence and crossfade; (4) the
 stack: simultaneous lanes and levels; (5) envelopes; (6) analysis and
-beat-snapping. Each layer is a decision to go on, not a default.
+beat-snapping. Each step is a decision to go on, not a default.
+Called steps, not layers (the holder, 2026-11-12): "layer" already
+means a level of a program's structure -- the control layer above --
+and reads as one here, where these are stages of what the player can
+do, built in order.
 
 ## 3e. Analysis, pitch and stems: where Mixxx gets them (2026-11-11)
 
@@ -253,7 +257,7 @@ memory, not verified: Mixxx 2.6 plays Native Instruments' pre-separated
 Separating a mix is a different, heavy job: Demucs v4 (Meta, MIT; check
 the weights), Spleeter (Deezer, MIT, older), Open-Unmix (MIT, small);
 the commercial DJ programs separate in real time with closed models. In
-snurra stems are simply a stack's lanes, so in layers: (1) play existing
+snurra stems are simply a stack's lanes, so in steps: (1) play existing
 stem files -- FFmpeg decodes multi-track MP4, each stem a lane; (2)
 separate offline with Demucs as an outside tool, once, cached; (3) in
 process through an ONNX runtime, later if ever -- large, and not real
@@ -641,7 +645,7 @@ controls; each tile very compact but resizeable).
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
-- **The train plays as one, built 2026-11-12** (sec 3b, layer 3): when a
+- **The train plays as one, built 2026-11-12** (sec 3b, step 3): when a
   playing tile comes within 1.5 s of its length less the overlap, the
   next tile in its row is started at frame 0 on that exact moment
   (`snurra_deck::start_at`, the anchored start a handover's taker uses,
@@ -652,12 +656,12 @@ controls; each tile very compact but resizeable).
   stopped before its next began takes the next back. **The overlap is
   5 s** ($SNURRA_TRAIN_OVERLAP_MS), never more than half either tile -- a
   DJ mix's crossfade, decided from the aims; a tile's own when
-  envelopes come (layer 5). Measured from a capture of two constant
+  envelopes come (step 5). Measured from a capture of two constant
   files, one per channel: the overlap exactly 48000 frames for 1 s, the
   summed power 1.0000 through it, each side whole outside it, and B all
   of itself; straight lines (power 0.31 off) and starting B at once (a
   third of it lost) each fail. Not yet: beat-snapping the overlap
-  (layer 6).
+  (step 6).
 - **On Android, built 2026-11-12** (sec 1: BeerSSH's tile, Android first).
   `make android` (tool/android.mk, copied from the shared fragment, with
   a build rule after bbq-predictor's) builds the player for a Qt kit's ABI;
@@ -695,7 +699,7 @@ controls; each tile very compact but resizeable).
   **Low latency is not shown**: that needs a phone. A stream AAudio
   closes underneath (a route change) stops; reopening it is not built.
 - **Not yet:** the stack's own
-  mixing (sec 3b, layer 4: lanes at once, today a tile with its controls
+  mixing (sec 3b, step 4: lanes at once, today a tile with its controls
   out plays alongside, which is most of it).
 
 ## 5. Resuming work here (2026-11-12)

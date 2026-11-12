@@ -226,7 +226,7 @@ void snurra_node::drop_tile(snurra_tile *tile) {
  *
  * The overlap is 5 s, or $SNURRA_TRAIN_OVERLAP_MS, and never more than
  * half of either tile -- a decision taken from the aims (a DJ mix's
- * crossfade), to be made a tile's own when envelopes come (sec 3b, layer
+ * crossfade), to be made a tile's own when envelopes come (sec 3b, step
  * 5).
  */
 void snurra_node::run_trains() {
