@@ -65,6 +65,8 @@ protected:
 	void dragLeaveEvent(QDragLeaveEvent *event) override;
 	void dropEvent(QDropEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
+	/* mplayer's keys, on the tile last touched (src/node.cpp). */
+	void keyPressEvent(QKeyEvent *event) override;
 
 private:
 	struct pending_give {
@@ -118,6 +120,7 @@ private:
 	bool m_system_move_started = false;
 	snurra_marker *m_marker = nullptr;
 	QWidget *m_drop_hint = nullptr;   /* where a tile dropped here would go */
+	QPointer<snurra_tile> m_current;  /* the tile the keys act on, last touched */
 	void mark(const QRect &landing, const QRect &shape);
 	snurra_engine *m_engine = nullptr;
 	/* A train's next tile, started for the tile before it: when, so a

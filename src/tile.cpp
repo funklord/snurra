@@ -163,6 +163,17 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	strip->addWidget(m_level);
 	column->addWidget(m_controls);
 
+	/*
+	 * The window takes the keys (snurra_node::keyPressEvent), so nothing in
+	 * a tile takes focus: space would press whichever button had it, and a
+	 * slider would keep the arrows. And a press anywhere in a tile makes it
+	 * the one the keys act on.
+	 */
+	for (QWidget *child : findChildren<QWidget *>()) {
+		child->setFocusPolicy(Qt::NoFocus);
+		child->installEventFilter(this);
+	}
+
 	connect(close, &QToolButton::clicked, this, [this] { emit close_requested(this); });
 	connect(m_pull, &QToolButton::toggled, this, &snurra_tile::set_controls);
 	connect(m_play, &QToolButton::toggled, this, &snurra_tile::set_playing);
@@ -278,7 +289,33 @@ QSize snurra_tile::minimumSizeHint() const {
 	return QSize(fontMetrics().averageCharWidth() * 14, QWidget::minimumSizeHint().height());
 }
 
+void snurra_tile::seek_by(qint64 delta_us) {
+	seek(m_state.position_now() + delta_us);
+}
+
+void snurra_tile::set_level(int level) {
+	m_muted_from = -1;
+	m_level->setValue(qBound(0, level, 100));   /* the slider tells the deck */
+}
+
+void snurra_tile::toggle_mute() {
+	if (m_muted_from >= 0) {
+		const int back = m_muted_from;
+		set_level(back);
+		return;
+	}
+	const int was = m_state.level;
+	m_level->setValue(0);
+	m_muted_from = was;
+}
+
+void snurra_tile::mousePressEvent(QMouseEvent *event) {
+	emit touched(this);
+	QWidget::mousePressEvent(event);
+}
+
 bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
+	if (event->type() == QEvent::MouseButtonPress) emit touched(this);
 	if (watched != m_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {
 	case QEvent::MouseButtonPress: {

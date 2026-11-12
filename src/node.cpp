@@ -5,6 +5,7 @@
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QMimeData>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QGridLayout>
@@ -92,6 +93,7 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	QSizeGrip *grip = new QSizeGrip(this);
 	outer->addWidget(grip, 0, Qt::AlignRight | Qt::AlignBottom);
 
+	setFocusPolicy(Qt::StrongFocus);
 	m_trains = new QTimer(this);
 	m_trains->setInterval(100);
 	connect(m_trains, &QTimer::timeout, this, &snurra_node::run_trains);
@@ -156,6 +158,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
+	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
 	connect(tile, &snurra_tile::close_requested, this, [this](snurra_tile *closing) {
 		remove_tile(closing);
 		leave_if_empty();
@@ -730,6 +733,60 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
 	/* The bare frame beside the tiles moves the window -- on Wayland the
 	 * only way to, the tiles' titles being drags of their own there. */
 	if (event->button() == Qt::LeftButton && windowHandle()) windowHandle()->startSystemMove();
+}
+
+/*
+ * mplayer's keys, since snurra is to replace it (project.md sec 1): space
+ * or p plays and pauses, the arrows seek 10 s and a minute, page up and
+ * down ten minutes, 9 and 0 (and / and *) take the level down and up by
+ * mplayer's 3, m mutes, q and escape quit. On the tile last touched, or
+ * the first with its controls out, or the first. A tile played from the
+ * keyboard has its controls pulled out first: what plays is what can be
+ * stopped (sec 3c).
+ */
+void snurra_node::keyPressEvent(QKeyEvent *event) {
+	snurra_tile *tile = m_current && m_tiles.contains(m_current) ? m_current.data() : nullptr;
+	for (snurra_tile *candidate : m_tiles)
+		if (!tile && candidate->controls()) tile = candidate;
+	if (!tile && !m_tiles.isEmpty()) tile = m_tiles.first();
+	if (!tile) {
+		QWidget::keyPressEvent(event);
+		return;
+	}
+	constexpr qint64 SECOND = 1000000;
+	switch (event->key()) {
+	case Qt::Key_Space:
+	case Qt::Key_P:
+		if (tile->playing()) {
+			tile->set_playing(false);
+		} else {
+			if (!tile->controls()) tile->set_controls(true);
+			tile->set_playing(true);
+		}
+		break;
+	case Qt::Key_Left: tile->seek_by(-10 * SECOND); break;
+	case Qt::Key_Right: tile->seek_by(10 * SECOND); break;
+	case Qt::Key_Down: tile->seek_by(-60 * SECOND); break;
+	case Qt::Key_Up: tile->seek_by(60 * SECOND); break;
+	case Qt::Key_PageDown: tile->seek_by(-600 * SECOND); break;
+	case Qt::Key_PageUp: tile->seek_by(600 * SECOND); break;
+	case Qt::Key_9:
+	case Qt::Key_Slash: tile->set_level(tile->level() - 3); break;
+	case Qt::Key_0:
+	case Qt::Key_Asterisk: tile->set_level(tile->level() + 3); break;
+	case Qt::Key_M: tile->toggle_mute(); break;
+	case Qt::Key_Q:
+	case Qt::Key_Escape: {
+		const QList<snurra_tile *> all = m_tiles;
+		for (snurra_tile *closing : all) remove_tile(closing);
+		leave_if_empty();
+		break;
+	}
+	default:
+		QWidget::keyPressEvent(event);
+		return;
+	}
+	event->accept();
 }
 
 void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {

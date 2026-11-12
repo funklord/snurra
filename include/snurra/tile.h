@@ -45,6 +45,13 @@ public:
 	int column() const { return m_state.column; }
 	void set_place(int row, int column);
 
+	/* For the keys (snurra_node::keyPressEvent): seek by an amount, the
+	 * level in per cent, and a mute that comes back to where it was. */
+	void seek_by(qint64 delta_us);
+	int level() const { return m_state.level; }
+	void set_level(int level);
+	void toggle_mute();
+
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
 
@@ -53,9 +60,12 @@ signals:
 	void handle_moved(snurra_tile *tile, const QPoint &global);
 	void handle_released(snurra_tile *tile, const QPoint &global);
 	void close_requested(snurra_tile *tile);
+	/* Pressed anywhere: the tile the keys act on. */
+	void touched(snurra_tile *tile);
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
+	void mousePressEvent(QMouseEvent *event) override;
 
 private:
 	void seek(qint64 position_us);
@@ -70,6 +80,7 @@ private:
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
+	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
 	QPoint m_press;
 	bool m_dragging = false;
 	/* Last, so it is destroyed first: its thread is joined before the

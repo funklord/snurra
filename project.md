@@ -526,6 +526,16 @@ controls; each tile very compact but resizeable).
   in Xvfb: `a_tile_opens_at_the_pointer_clamped_to_the_screen`. An Xvfb
   with no window open reports the pointer where it started however it
   is moved, so the test opens one first.
+- **mplayer's keys, 2026-11-12** (sec 1: snurra is to replace it): space
+  or p plays and pauses, the arrows seek 10 s and a minute, page up and
+  down ten minutes, 9 and 0 (/ and *) the level by mplayer's 3, m mutes
+  and comes back, q and escape quit -- on the tile last touched, else the
+  first with its controls out, else the first; one played from the keys
+  has its controls pulled out first (sec 3c). Nothing in a tile takes
+  focus, or space would press whatever button had it. Driven through
+  XTEST in Xvfb (`mplayers_keys_drive_the_tile`): paused, each seek
+  moves by exactly what its key says; a handler that ignores the keys
+  fails it at the first.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

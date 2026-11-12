@@ -39,6 +39,7 @@ private slots:
 	void a_merge_between_two_alsa_outputs_is_heard_in_step();
 	void a_tile_dragged_onto_another_window_joins_it();
 	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
+	void mplayers_keys_drive_the_tile();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 
 private:
@@ -1021,6 +1022,64 @@ void handover_test::a_tile_opens_at_the_pointer_clamped_to_the_screen() {
 	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(middle), where).frame).isValid(), 5000);
 	QVERIFY2((frame.center() - QPoint(640, 400)).manhattanLength() <= 4,
 	         qPrintable(QStringLiteral("centred on %1,%2, not the pointer").arg(frame.center().x()).arg(frame.center().y())));
+}
+
+/*
+ * snurra is to replace mplayer (project.md sec 1), so it answers to its
+ * keys: real key presses through XTEST into the window, in Xvfb. Paused,
+ * a seek moves by exactly what the key says.
+ */
+void handover_test::mplayers_keys_drive_the_tile() {
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	QProcess *a = start({ QStringLiteral("a.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	snurra_wire::message where;
+	where.type = snurra_wire::WHERE;
+	QRect frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(a), where).frame).isValid(), 5000);
+	/* Xvfb's focus follows the pointer: over the waveform, below the title. */
+	xdotool(name, { QStringLiteral("mousemove"), QString::number(frame.center().x()), QString::number(frame.center().y()) });
+	QTest::qWait(200);
+	auto key = [&](const QString &which) {
+		xdotool(name, { QStringLiteral("key"), which });
+		QTest::qWait(150);
+	};
+	auto now = [&] { return ask(socket_of(a), status_request()).states.value(0); };
+
+	QVERIFY(now().playing);
+	key(QStringLiteral("space"));
+	QVERIFY2(!now().playing, "space did not pause");
+	key(QStringLiteral("space"));
+	QVERIFY2(now().playing, "space did not play again");
+	key(QStringLiteral("p"));
+	QVERIFY2(!now().playing, "p did not pause");
+
+	const qint64 from = now().position_us;
+	key(QStringLiteral("Right"));
+	QCOMPARE(now().position_us - from, qint64(10000000));
+	key(QStringLiteral("Up"));
+	QCOMPARE(now().position_us - from, qint64(70000000));
+	key(QStringLiteral("Left"));
+	QCOMPARE(now().position_us - from, qint64(60000000));
+
+	QCOMPARE(now().level, 100);
+	key(QStringLiteral("9"));
+	QCOMPARE(now().level, 97);
+	key(QStringLiteral("0"));
+	QCOMPARE(now().level, 100);
+	key(QStringLiteral("m"));
+	QCOMPARE(now().level, 0);
+	key(QStringLiteral("m"));
+	QCOMPARE(now().level, 100);
+
+	/* waitForFinished() is false for a process already finished, which
+	 * is what a prompt quit is by the time it is asked. */
+	key(QStringLiteral("q"));
+	QVERIFY2(a->state() == QProcess::NotRunning || a->waitForFinished(5000), "q did not quit");
 }
 
 int run_handover_tests(int argc, char **argv) {
