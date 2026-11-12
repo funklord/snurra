@@ -855,7 +855,16 @@ controls; each tile very compact but resizeable).
   at every press. Measured on the ramp: 10 ms gained over 0.5 s, no
   frame silent, no step over 1.1, 480.000 frames gained. With key lock
   on the bend goes through WSOLA, whose steps are a segment long, so its
-  sum is near, not exact. A paused nudge is still a seek.
+  sum is near, not exact. A paused nudge is still a seek. **A jump while
+  playing has no gap** (2026-11-12): the window starts every lane on one
+  moment a little ahead, and a deck dropped what it played at once and
+  waited in silence for that moment -- 100 ms of it in the test, about
+  60 ms in the player, at every jump. A seek for a moment ahead, made
+  while sounding, now plays the old place until then and switches on the
+  frame nearest that moment, the new place's first block held till then.
+  Measured on the ramp: no silent frame, one jump, onto the target, 7 us
+  from its moment. Not yet: a few milliseconds' crossfade over the cut,
+  which a hard switch between two places may click without.
 - **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
   in the drawer that opens upward). `snurra_video` decodes a file's
   picture on a thread of its own, six frames ahead, and gives the last

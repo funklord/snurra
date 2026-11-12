@@ -129,6 +129,7 @@ private slots:
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
 	void a_nudge_bends_without_a_gap();
+	void a_jump_while_playing_has_no_gap();
 	void an_envelope_is_heard_on_the_tracks_own_frames();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
@@ -557,6 +558,51 @@ void deck_test::a_nudge_bends_without_a_gap() {
 	QCOMPARE(silent, 0);
 	QVERIFY2(fastest < 1.1 + 5e-3, qPrintable(QStringLiteral("a step of %1").arg(fastest)));
 	QVERIFY2(std::abs(gained - 480) < 0.01, qPrintable(QStringLiteral("%1 frames gained, not 480").arg(gained)));
+}
+
+/*
+ * A jump while playing (project.md sec 4), as a window makes one: the new
+ * place from a moment 100 ms ahead. Until then the old place plays on,
+ * frame after frame; from then, the new one -- no silent frame between,
+ * and the switch on its moment to half a frame.
+ */
+void deck_test::a_jump_while_playing_has_no_gap() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
+	const int64_t target = RATE * 5;
+	const int64_t at = present + 100000 + 7;
+	deck.start_at(target, at);
+	int64_t block_present = present;
+	std::vector<double> frames;
+	std::vector<double> times;
+	int silent = 0;
+	const std::vector<rendered_t> blocks = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+	for (const rendered_t &block : blocks) {
+		for (int i = 0; i < PERIOD; ++i) {
+			const float gain = block.samples[size_t(2 * i + 1)];
+			if (gain < 0.999f) ++silent;
+			else {
+				frames.push_back(double(block.samples[size_t(2 * i)]) / gain * SNURRA_RAMP_SCALE);
+				times.push_back(double(block_present) + i * 1e6 / RATE);
+			}
+		}
+		block_present += snurra_frames_to_us(PERIOD, RATE);
+	}
+	int jumps = 0;
+	double switched_at = 0;
+	for (size_t i = 1; i < frames.size(); ++i)
+		if (frames[i] != frames[i - 1] + 1) {
+			++jumps;
+			switched_at = times[i];
+			QCOMPARE(frames[i], double(target));
+		}
+	qInfo("jump: %d silent frames, %d jumps, switched %.1f us from its moment", silent, jumps, switched_at - double(at));
+	QCOMPARE(silent, 0);
+	QCOMPARE(jumps, 1);
+	QVERIFY2(std::abs(switched_at - double(at)) <= 0.5e6 / RATE, "switched away from its moment");
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {

@@ -222,6 +222,14 @@ private:
 	 * m_position is where it reads the track, ahead of what is heard. */
 	bool m_speed = false;
 	double m_bend_left = 0;   /* frames of a bend still to play, the callback's */
+	/* A seek for a moment ahead, made while playing: the old place plays
+	 * on until then, and the new one's first block waits here. */
+	bool m_pending = false;
+	uint64_t m_pending_generation = 0;
+	int64_t m_pending_frame = 0;
+	int64_t m_pending_us = 0;
+	block *m_held = nullptr;
+	void switch_to_pending(int64_t us);
 	snurra_stretch m_stretch;
 	fade_t m_fade_last{ 0, 0, 1, 1, false };
 	envelope_snapshot m_envelope_last;

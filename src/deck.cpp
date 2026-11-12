@@ -250,11 +250,36 @@ void snurra_deck::read_loop() {
 
 /* ---- the callback ----------------------------------------------------- */
 
+/* The pending seek's moment: its generation seen from here, its frame
+ * placed on this moment, the old place's block let go and the new one's
+ * first, held till now, taken up. */
+void snurra_deck::switch_to_pending(int64_t us) {
+	m_pending = false;
+	m_seen_generation = m_pending_generation;
+	m_position = m_pending_frame;
+	m_anchored = true;
+	m_anchor_frame = m_pending_frame;
+	m_anchor_us = us;
+	m_locked.store(false, std::memory_order_release);
+	m_finished.store(false, std::memory_order_relaxed);
+	m_speed = false;
+	if (m_current) m_free.push(m_current);
+	m_current = m_held;
+	m_held = nullptr;
+	m_offset = 0;
+}
+
 bool snurra_deck::next_frame(float &left, float &right) {
 	for (;;) {
 		if (!m_current) {
+			if (m_held) return false;   /* the pending seek's: not until its moment */
 			if (!m_filled.pop(m_current)) return false;
 			m_offset = 0;
+			if (m_pending && m_current->generation == m_pending_generation) {
+				m_held = m_current;
+				m_current = nullptr;
+				return false;
+			}
 			if (m_current->generation != m_seen_generation) {
 				m_free.push(m_current);
 				m_current = nullptr;
@@ -285,7 +310,30 @@ bool snurra_deck::next_frame(float &left, float &right) {
 void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	const bool playing = m_playing.load(std::memory_order_acquire);   /* first: see set_playing */
 	const uint64_t generation = m_generation.load(std::memory_order_acquire);
-	if (generation != m_seen_generation) {
+	const int64_t asked_at = m_seek_anchor_us.load(std::memory_order_relaxed);
+	/*
+	 * A seek for a moment ahead, while sounding: the old place plays on
+	 * until that moment and the switch is made on its very frame, below --
+	 * where dropping it at once, as any other seek does, left a silence
+	 * the length of the wait at every jump.
+	 */
+	if (generation != m_seen_generation && generation != m_pending_generation && playing && m_slew > 0 && !m_anchored
+	    && asked_at != INT64_MIN && asked_at > present_us) {
+		if (m_held) {
+			m_free.push(m_held);
+			m_held = nullptr;
+		}
+		m_pending = true;
+		m_pending_generation = generation;
+		m_pending_frame = m_seek_target.load(std::memory_order_relaxed);
+		m_pending_us = asked_at;
+	}
+	if (generation != m_seen_generation && !(m_pending && generation == m_pending_generation)) {
+		if (m_held) {
+			m_free.push(m_held);
+			m_held = nullptr;
+		}
+		m_pending = false;
 		/* A seek: what was read for before it is stale. */
 		m_seen_generation = generation;
 		m_position = m_seek_target.load(std::memory_order_relaxed);
@@ -307,9 +355,11 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_current = nullptr;
 		}
 	}
-	/* Stale blocks go back even while paused, or the reader waits on them. */
+	/* Stale blocks go back even while paused, or the reader waits on them --
+	 * not the pending seek's, which are the next to play. */
 	block *head = nullptr;
-	while (!m_current && m_filled.peek(head) && head->generation != m_seen_generation) {
+	while (!m_current && m_filled.peek(head) && head->generation != m_seen_generation
+	       && !(m_pending && head->generation == m_pending_generation)) {
 		m_filled.pop(head);
 		m_free.push(head);
 	}
@@ -340,6 +390,9 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 
 		float left = 0;
 		float right = 0;
+		/* On the frame nearest the moment: within half a frame of it. */
+		if (m_pending && present_us + (int64_t(2 * i + 1) * 1000000) / (2 * m_rate) > m_pending_us)
+			switch_to_pending(present_us + int64_t(i) * 1000000 / m_rate);
 		const int64_t heard = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
 		/* A bend's share of this frame: a tenth at most, the last exact. */
 		const double bent = m_speed ? std::clamp(m_bend_left, -0.1, 0.1) : 0.0;
