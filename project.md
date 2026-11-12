@@ -559,7 +559,13 @@ controls; each tile very compact but resizeable).
   without a sanitizer is weaker than shown safe. The tests now take the
   library through `snurra.pri`, as a consumer does, so the `.pri` is
   under test too. A tile's waveform is read from files only: from bytes
-  it would fetch them twice, which over SFTP is not free.
+  it would fetch them twice, which over SFTP is not free. fuzzypickles
+  answered (inbox 20261112T0430Z): its bytes are a local blob once
+  fetched, so it shows stand-in bars where real peaks are cheap. Its
+  three shapes: a second snurra_bytes for the peaks, handed in by the
+  consumer; peaks from only the ranges `has()` says are here, never
+  calling `want` (no transport pays twice); or peaks from the frames the
+  deck decodes as it plays. Open, not blocking it.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
