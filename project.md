@@ -283,6 +283,27 @@ holder to weigh before anything is linked, not choices made here.
 | Loudness | libebur128 | shared | MIT |
 | Fingerprints | Chromaprint | shared | LGPL-2.1+ / MIT |
 
+**Beats are snurra's own** (2026-11-12, the holder asking for beat
+detection, best in class, with tests): a detector written here, no
+third-party code, so none of the licences above is taken on.
+`snurra_find_beats` (`src/beats.cpp`): onsets as spectral flux over
+512-frame hops, the tempo from their autocorrelation weighted toward
+120 BPM, 70 to 180; the exact period and phase by folding the whole
+track's onsets at each candidate, three passes finer; between a tempo
+and its half, the half when the faster grid's lines alternate strong and
+weak in the plain magnitude below 4 kHz (kick and snare, then hats
+alone); no grid when the fold's peak is under 6 times its mean.
+Measured on made signals, a minute each: a bare kick at 120 and a kick,
+snare, hat and chord pattern at 87.5, 128, 140 and 127.3 BPM -- tempo
+within 0.003 BPM, every beat within 2.7 ms of the grid (which sits 1.6
+to 2.4 ms early); white noise, a steady tone and hits at random times
+get no grid (fold 1.4, 2.4, 3.3). Without the exact search, every one
+fails. **What "best in class" still needs:** the same measurement on
+real music with published annotations (Ballroom, GTZAN, SMC) by the
+field's metrics (F-measure at 70 ms, CMLt/AMLt, tempo accuracy), against
+the detectors DJs use; and what this detector does not do yet --
+downbeats (a bar is counted from any beat), and tempo that changes.
+
 **The licence question this raises:** snurra has none yet, which is
 right; but linking qm-dsp or Rubber Band makes the whole program
 distributable only on GPL-compatible terms, so that choice is the
