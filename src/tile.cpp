@@ -177,7 +177,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 
 	connect(close, &QToolButton::clicked, this, [this] { emit close_requested(this); });
 	connect(m_pull, &QToolButton::toggled, this, &snurra_tile::set_controls);
-	connect(m_play, &QToolButton::toggled, this, &snurra_tile::set_playing);
+	connect(m_play, &QToolButton::toggled, this, &snurra_tile::request_playing);
 	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
@@ -254,6 +254,10 @@ snurra_tile_state snurra_tile::state() const {
 }
 
 void snurra_tile::seek(qint64 position_us) {
+	if (m_grouped) {
+		emit seek_requested(this, qBound<qint64>(0, position_us, m_state.duration_us));
+		return;
+	}
 	m_deck->seek(us_to_frames(qBound<qint64>(0, position_us, m_state.duration_us), m_deck->rate()));
 	tick();
 }
@@ -268,6 +272,41 @@ void snurra_tile::set_playing(bool playing) {
 	m_play->setAccessibleName(playing ? tr("Pause") : tr("Play"));
 }
 
+void snurra_tile::request_playing(bool playing) {
+	if (!m_grouped) {
+		set_playing(playing);
+		return;
+	}
+	/* The button shows what is, not what was asked, until the group says. */
+	m_play->blockSignals(true);
+	m_play->setChecked(m_state.playing);
+	m_play->blockSignals(false);
+	emit play_requested(this, playing);
+}
+
+void snurra_tile::play_from(int64_t frame, qint64 at_us) {
+	m_deck->fade(0, 0, 1, 1);
+	m_deck->start_at(frame, at_us);   /* before playing: deck.h */
+	set_playing(true);
+	tick();
+}
+
+void snurra_tile::hold_at(int64_t frame) {
+	set_playing(false);
+	m_deck->fade(0, 0, 1, 1);
+	m_deck->seek(frame);
+	tick();
+}
+
+int64_t snurra_tile::frame_now() const {
+	return m_deck->position_at(snurra_clock_us());
+}
+
+int64_t snurra_tile::length_frames() const {
+	const int64_t length = m_deck->length();
+	return length > 0 ? length : us_to_frames(m_state.duration_us, m_deck->rate());
+}
+
 void snurra_tile::set_controls(bool out) {
 	m_state.controls = out;
 	m_controls->setVisible(out);
@@ -277,8 +316,10 @@ void snurra_tile::set_controls(bool out) {
 	m_pull->setArrowType(out ? Qt::UpArrow : Qt::DownArrow);
 	m_pull->setAccessibleName(out ? tr("Push the controls in") : tr("Pull the controls out"));
 	m_pull->setToolTip(m_pull->accessibleName());
-	/* Pushed back in, a tile stops: what plays is what can be stopped. */
-	if (!out && m_state.playing) set_playing(false);
+	/* Pushed back in, a tile alone stops: what plays is what can be
+	 * stopped. In a window the group decides (snurra_node). */
+	if (!out && m_state.playing && !m_grouped) set_playing(false);
+	emit controls_changed(this);
 }
 
 void snurra_tile::set_place(int row, int column) {

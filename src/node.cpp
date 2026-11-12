@@ -159,6 +159,17 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
+	tile->set_grouped(true);
+	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
+	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
+	connect(tile, &snurra_tile::controls_changed, this, [this] {
+		/* What plays is what can be stopped (sec 3c): with no controls
+		 * out anywhere, the group stops. */
+		for (snurra_tile *other : m_tiles)
+			if (other->controls()) return;
+		for (snurra_tile *other : m_tiles)
+			if (other->playing()) other->set_playing(false);
+	});
 	connect(tile, &snurra_tile::close_requested, this, [this](snurra_tile *closing) {
 		remove_tile(closing);
 		leave_if_empty();
@@ -229,10 +240,14 @@ void snurra_node::drop_tile(snurra_tile *tile) {
  * crossfade), to be made a tile's own when envelopes come (sec 3b, step
  * 5).
  */
-void snurra_node::run_trains() {
-	const qint64 now = snurra_clock_us();
+static int64_t train_overlap(int64_t length, int64_t next_length, int rate) {
 	const QByteArray wanted = qgetenv("SNURRA_TRAIN_OVERLAP_MS");
 	const qint64 overlap_us = wanted.isEmpty() ? 5000000 : qint64(wanted.toLongLong()) * 1000;
+	return std::min({ snurra_us_to_frames(overlap_us, rate), length / 2, next_length / 2 });
+}
+
+void snurra_node::run_trains() {
+	const qint64 now = snurra_clock_us();
 	constexpr qint64 LEAD_US = 1500000;   /* for the next one's reader to be ahead */
 
 	/* What was started: taken back if its tile stopped before it began;
@@ -276,7 +291,7 @@ void snurra_node::run_trains() {
 		int64_t advanced = 0;
 		deck->last_rendered(frame, at, advanced);
 		if (advanced <= 0) continue;   /* starved or paused: no moment to aim at */
-		const int64_t overlap = std::min({ snurra_us_to_frames(overlap_us, rate), length / 2, next_length / 2 });
+		const int64_t overlap = train_overlap(length, next_length, rate);
 		const qint64 start = at + snurra_frames_to_us(length - overlap - frame, rate);
 		if (start - now > LEAD_US || start < now) continue;
 		const qint64 fade_us = snurra_frames_to_us(overlap, rate);
@@ -286,6 +301,100 @@ void snurra_node::run_trains() {
 		next->set_controls(true);
 		deck->fade(start, fade_us, 1, 0, true);
 		m_following.insert(tile, following{ next, start });
+	}
+}
+
+/*
+ * The stack (project.md sec 3b, step 4): rows are lanes, played at once on
+ * one timeline, each lane a train along it. So the transport is the
+ * group's -- play, pause or seek on any tile moves every lane -- and a
+ * time on that timeline is a lane's own: its tiles one after another, each
+ * next one starting its overlap before the one before ends, as a train
+ * plays them. Every lane is started on one moment of the shared clock,
+ * anchored (deck.h), so the lanes are in step to the frame however their
+ * readers fare; the lead only keeps a slow reader from losing a lane's
+ * first frames.
+ */
+QList<snurra_tile *> snurra_node::lane(int row) const {
+	QList<snurra_tile *> tiles;
+	for (snurra_tile *tile : m_tiles)
+		if (tile->row() == row) tiles << tile;
+	std::sort(tiles.begin(), tiles.end(), [](snurra_tile *a, snurra_tile *b) { return a->column() < b->column(); });
+	return tiles;
+}
+
+int64_t snurra_node::lane_start(snurra_tile *tile) const {
+	const int rate = m_engine->rate();
+	const QList<snurra_tile *> tiles = lane(tile->row());
+	int64_t start = 0;
+	for (int i = 0; i < tiles.size() && tiles.at(i) != tile; ++i) {
+		const int64_t length = tiles.at(i)->length_frames();
+		const int64_t next = i + 1 < tiles.size() ? tiles.at(i + 1)->length_frames() : 0;
+		start += length - train_overlap(length, next, rate);
+	}
+	return start;
+}
+
+void snurra_node::play_group(snurra_tile *from, bool playing) {
+	if (!playing) {
+		for (snurra_tile *tile : m_tiles)
+			if (tile->playing()) tile->set_playing(false);
+		return;
+	}
+	start_group_at(lane_start(from) + from->frame_now());
+}
+
+QList<int> snurra_node::rows() const {
+	QList<int> rows;
+	for (snurra_tile *tile : m_tiles)
+		if (!rows.contains(tile->row())) rows << tile->row();
+	return rows;
+}
+
+snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
+	const QList<snurra_tile *> tiles = lane(row);
+	int64_t start = 0;
+	for (int i = 0; i < tiles.size(); ++i) {
+		const int64_t length = tiles.at(i)->length_frames();
+		const int64_t next = i + 1 < tiles.size() ? tiles.at(i + 1)->length_frames() : 0;
+		const int64_t own = length - train_overlap(length, next, m_engine->rate());
+		/* Inside an overlap belongs to the next: a seek into a crossfade
+		 * comes in on the track it goes to. A length not known yet is
+		 * taken as long enough. */
+		if (length <= 0 || time < start + own) {
+			frame = std::max<int64_t>(0, time - start);
+			return tiles.at(i);
+		}
+		start += own;
+	}
+	return nullptr;
+}
+
+void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
+	const int64_t time = lane_start(from) + snurra_us_to_frames(position_us, m_engine->rate());
+	for (snurra_tile *tile : m_tiles) {
+		if (tile->playing()) {
+			start_group_at(time);
+			return;
+		}
+	}
+	/* Paused: each lane held where the time falls in it. */
+	for (int row : rows()) {
+		int64_t frame = 0;
+		if (snurra_tile *tile = lane_at(row, time, frame)) tile->hold_at(frame);
+	}
+}
+
+void snurra_node::start_group_at(int64_t time) {
+	const qint64 at = snurra_clock_us() + m_engine->latency_us() + 50000;
+	m_following.clear();   /* every lane starts afresh: no train is mid-way */
+	for (int row : rows()) {
+		int64_t frame = 0;
+		snurra_tile *chosen = lane_at(row, time, frame);
+		for (snurra_tile *tile : lane(row)) {
+			if (tile == chosen) tile->play_from(frame, at);
+			else if (tile->playing()) tile->set_playing(false);
+		}
 	}
 }
 
@@ -570,6 +679,12 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 	case snurra_wire::SHOW_CONTROLS:
 		if (m.index >= 0 && m.index < m_tiles.size()) m_tiles.at(m.index)->set_controls(m.time != 0);
 		break;
+	case snurra_wire::PLAY:
+		if (m.index >= 0 && m.index < m_tiles.size()) m_tiles.at(m.index)->request_playing(m.time != 0);
+		break;
+	case snurra_wire::SEEK:
+		if (m.index >= 0 && m.index < m_tiles.size()) seek_group(m_tiles.at(m.index), m.time);
+		break;
 	case snurra_wire::STATUS: {
 		snurra_wire::message status;
 		status.type = snurra_wire::STATUS_IS;
@@ -757,12 +872,8 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 	switch (event->key()) {
 	case Qt::Key_Space:
 	case Qt::Key_P:
-		if (tile->playing()) {
-			tile->set_playing(false);
-		} else {
-			if (!tile->controls()) tile->set_controls(true);
-			tile->set_playing(true);
-		}
+		if (!tile->playing() && !tile->controls()) tile->set_controls(true);
+		tile->request_playing(!tile->playing());
 		break;
 	case Qt::Key_Left: tile->seek_by(-10 * SECOND); break;
 	case Qt::Key_Right: tile->seek_by(10 * SECOND); break;

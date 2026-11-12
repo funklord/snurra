@@ -53,6 +53,22 @@ public:
 
 	void set_playing(bool playing);
 	bool playing() const { return m_state.playing; }
+
+	/*
+	 * In a window's group (project.md sec 3b, step 4), play, pause and
+	 * seek are the group's: the tile asks (play_requested, seek_requested)
+	 * and the group moves every lane at once. Alone, or embedded, the tile
+	 * does them itself.
+	 */
+	void set_grouped(bool grouped) { m_grouped = grouped; }
+	void request_playing(bool playing);
+	/* Plays `frame` from the moment `at_us` on the shared clock, any fade
+	 * done with; or holds at `frame`, paused. */
+	void play_from(int64_t frame, qint64 at_us);
+	void hold_at(int64_t frame);
+	/* Frames, at the deck's rate: where it is now, and how long. */
+	int64_t frame_now() const;
+	int64_t length_frames() const;
 	void set_controls(bool out);
 	bool controls() const { return m_state.controls; }
 	int row() const { return m_state.row; }
@@ -76,6 +92,10 @@ signals:
 	void close_requested(snurra_tile *tile);
 	/* Pressed anywhere: the tile the keys act on. */
 	void touched(snurra_tile *tile);
+	/* Grouped: what was asked of the tile, for the group to do. */
+	void play_requested(snurra_tile *tile, bool playing);
+	void seek_requested(snurra_tile *tile, qint64 position_us);
+	void controls_changed(snurra_tile *tile);
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
@@ -97,6 +117,7 @@ private:
 	/* Set when the tile owns its deck. Guarded: an engine destroyed first
 	 * has deleted its decks already, and is not to be called. */
 	QPointer<snurra_engine> m_owner;
+	bool m_grouped = false;
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
 	QPoint m_press;
 	bool m_dragging = false;

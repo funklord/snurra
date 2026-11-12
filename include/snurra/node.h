@@ -105,6 +105,17 @@ private:
 	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT);
 	void leave_if_empty();
 	void run_trains();
+	/* The group's transport (project.md sec 3b, step 4): every lane at
+	 * once, at a time on the group's timeline, in frames. */
+	void play_group(snurra_tile *from, bool playing);
+	void seek_group(snurra_tile *from, qint64 position_us);
+	void start_group_at(int64_t time);
+	QList<snurra_tile *> lane(int row) const;
+	int64_t lane_start(snurra_tile *tile) const;
+	/* The tile of lane `row` that plays at `time`, and its frame then;
+	 * none past the lane's end. */
+	snurra_tile *lane_at(int row, int64_t time, int64_t &frame) const;
+	QList<int> rows() const;
 
 	QString m_path;
 	QLocalServer *m_server = nullptr;

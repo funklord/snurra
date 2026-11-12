@@ -41,6 +41,7 @@ private slots:
 	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
 	void mplayers_keys_drive_the_tile();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
+	void a_stack_plays_its_lanes_at_once_from_one_time();
 
 private:
 	QString start_x_server();
@@ -945,6 +946,85 @@ void handover_test::a_train_plays_its_tiles_in_sequence_crossed_at_equal_power()
 	const QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
 	for (const snurra_tile_state &state : states)
 		QCOMPARE(state.controls, state.source == b_file);
+}
+
+/*
+ * A stack (project.md sec 3b, step 4): B snapped below A is a second lane,
+ * and the transport is the group's. Paused from A, sought to one second
+ * from B and played from B, both lanes start on the same frame of the
+ * shared clock and each plays what is left of it after that second --
+ * A, three seconds long, two more; B, two seconds long, one more. A is
+ * on the left only and B the right only, at a quarter scale, so the
+ * capture reads each lane apart.
+ */
+void handover_test::a_stack_plays_its_lanes_at_once_from_one_time() {
+	const QString a_file = m_dir->filePath(QStringLiteral("a.wav"));
+	const QString b_file = m_dir->filePath(QStringLiteral("b.wav"));
+	QVERIFY(write_constant_wav(a_file, 3, 8192, 0));
+	QVERIFY(write_constant_wav(b_file, 2, 0, 8192));
+	const QString output = QStringLiteral("capture:") + capture_dir();
+
+	QProcess *a = start({ a_file }, output);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ b_file }, output);
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = socket_of(a);
+	merge.side = snurra_wire::BELOW;
+	tell(socket_of(b), merge);
+	QVERIFY2(b->waitForFinished(5000), "B did not join A");
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(a), status_request()).states.size(), 2, 5000);
+	QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
+	QCOMPARE(states.at(1).row, 1);
+
+	auto control = [&](snurra_wire::type_t type, int index, qint64 time) {
+		snurra_wire::message m;
+		m.type = type;
+		m.index = index;
+		m.time = time;
+		tell(socket_of(a), m);
+	};
+	control(snurra_wire::PLAY, 0, 0);
+	QTRY_VERIFY_WITH_TIMEOUT(!ask(socket_of(a), status_request()).states.value(0).playing, 2000);
+	control(snurra_wire::SEEK, 1, 1000000);
+	QTest::qWait(300);
+
+	states = ask(socket_of(a), status_request()).states;
+	QCOMPARE(states.at(0).position_us, qint64(1000000));
+	QCOMPARE(states.at(1).position_us, qint64(1000000));
+
+	const double from = double(snurra_clock_us());
+	control(snurra_wire::PLAY, 1, 1);
+	QTRY_VERIFY_WITH_TIMEOUT(ask(socket_of(a), status_request()).states.value(0).playing, 2000);
+	QTRY_VERIFY_WITH_TIMEOUT(!ask(socket_of(a), status_request()).states.value(0).playing, 5000);
+	QTest::qWait(300);
+
+	const capture_t heard = read_capture(QDir(capture_dir()).filePath(QStringLiteral("%1.capture").arg(a->processId())));
+	int a_first = -1, a_last = -1, b_first = -1, b_last = -1;
+	double worst = 0;
+	for (int i = 0; i < heard.us.size(); ++i) {
+		if (heard.us.at(i) < from) continue;
+		if (heard.left.at(i) > 0) {
+			if (a_first < 0) a_first = i;
+			a_last = i;
+			worst = qMax(worst, qAbs(heard.left.at(i) - 0.25));
+		}
+		if (heard.right.at(i) > 0) {
+			if (b_first < 0) b_first = i;
+			b_last = i;
+			worst = qMax(worst, qAbs(heard.right.at(i) - 0.25));
+		}
+	}
+	qInfo("stack: lanes began %d frames apart; A played %d frames, B %d; level off by %.5f at worst",
+	      b_first - a_first, a_last - a_first + 1, b_last - b_first + 1, worst);
+	QVERIFY2(a_first > 0 && b_first > 0, "a lane never sounded after the play");
+	QCOMPARE(b_first, a_first);
+	QVERIFY2(qAbs(a_last - a_first + 1 - 2 * 48000) <= 1,
+	         qPrintable(QStringLiteral("A played %1 frames, not two seconds").arg(a_last - a_first + 1)));
+	QVERIFY2(qAbs(b_last - b_first + 1 - 48000) <= 1,
+	         qPrintable(QStringLiteral("B played %1 frames, not one second").arg(b_last - b_first + 1)));
+	QVERIFY2(worst < 1e-4, "a lane was not at its level throughout");
 }
 
 /* A private Xvfb, 1280x800, ended in cleanup() with the rest: its

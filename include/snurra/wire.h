@@ -40,6 +40,8 @@ enum type_t : quint8 {
 	STATUS,        /* -> STATUS_IS: tiles and the last handover's times */
 	STATUS_IS,
 	SHOW_CONTROLS, /* control: pull out (index >= 0) or push in a tile's controls; time 1 or 0 */
+	PLAY,          /* control: as the tile at index's button would -- play (time 1) or pause (0) */
+	SEEK,          /* control: as the tile at index's waveform would -- to time, in microseconds */
 };
 
 /* Where the giver's tiles go relative to the taker's: a train continues to

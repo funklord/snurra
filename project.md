@@ -210,7 +210,20 @@ does the same with a tile's playback:
   is a DJ mix, and Mixxx's engine shape (sec 3a) plays it: two decks and
   a crossfader, scheduled.
 - **A stack** (one below another) is multitrack: tiles play at once, each
-  a lane, each with its own level -- an arranger, not a DJ.
+  a lane, each with its own level -- an arranger, not a DJ. Settled with
+  step 4 (2026-11-12), from the aims: the rows of a window are its lanes
+  on **one timeline**, each lane a train along it, so a window's grid is
+  both shapes at once. **The transport is the group's**: play, pause or
+  seek on any tile moves every lane, to the time that tile's place
+  names on the timeline, and the lanes are started on one moment of the
+  shared clock -- in step to the frame however their readers fare. A
+  lane's level is its tiles' levels. So two tiles of one row no longer
+  play at the same time: a row is a sequence, and what plays at once is
+  stacked. A merge does not realign what is playing -- it is heard as
+  nothing (above) -- so lanes merged while playing run apart until the
+  group is next played or sought. Not yet: a lane starting later than
+  the timeline's start; it comes with the layout below or with
+  envelopes.
 - **Beat-snapping:** a dragged tile's start or overlap snaps to the
   other's beat grid, which needs tempo and beat analysis per file (Mixxx
   analyses on load; aubio and the Queen Mary vamp plugins are the usual
@@ -263,6 +276,14 @@ separate offline with Demucs as an outside tool, once, cached; (3) in
 process through an ONNX runtime, later if ever -- large, and not real
 time on Android.
 
+**Two layouts** (the holder, 2026-11-12). The holder dislikes windows
+that are not rectangles, but the stack needs them, and some systems
+cannot show them. So the player keeps **its normal look** -- tiles with
+small drawers sticking out of them, pulled to open the player out -- and
+also has **a mode where every window is square**, as the tiles are now.
+The drawers' shape waits on the holder's sketches; until then everything
+is built in the square layout, which is to stay as that mode.
+
 ## 3c. One set of controls, not one per tile
 
 The holder, 2026-11-11: **only the first window opens with its controls
@@ -277,8 +298,10 @@ they asked for.
   starts (a socket a crashed process left does not count); within one
   launch of several files, the first file.
 - **Pulled out**, a tile's controls show below its waveform, and it can
-  be played alongside the others. **Pushed back in, it stops**: what
-  plays is what can be stopped from a tile.
+  be played alongside the others -- in a window, as a lane of its stack
+  (sec 3b). **Pushed back in, it stops**: what plays is what can be
+  stopped from a tile. In a window that is the group: it stops when the
+  last of its tiles' controls goes in.
 - A handover carries whether a tile's controls are out.
 - Effects and configuration are to follow the same rule when they come:
   pulled out from the tile they apply to, never shown by default.
@@ -698,9 +721,25 @@ controls; each tile very compact but resizeable).
   buffer of 1920), its server reporting 128 ms against QAudioSink's 132.
   **Low latency is not shown**: that needs a phone. A stream AAudio
   closes underneath (a route change) stops; reopening it is not built.
-- **Not yet:** the stack's own
-  mixing (sec 3b, step 4: lanes at once, today a tile with its controls
-  out plays alongside, which is most of it).
+- **The stack plays as one, built 2026-11-12** (sec 3b, step 4): a
+  tile's button, waveform and the keys ask the window, which plays,
+  pauses or seeks every lane at once (`snurra_node::start_group_at`):
+  the time that tile's place names, found in each lane by the train's own
+  overlaps, every lane started with `start_at` on one moment -- now plus
+  the output's latency and 50 ms. `PLAY` and `SEEK` on the socket do what
+  a tile's button and waveform do. Measured from a capture
+  (`a_stack_plays_its_lanes_at_once_from_one_time`): two lanes of three
+  and two seconds, paused, sought to 1 s from the lower and played, began
+  on the same frame and played exactly 96000 and 48000 frames, at their
+  level throughout; with each lane seeking and playing on its own instead
+  (no shared moment) the test fails every run -- a period apart, or
+  starting mid-slew. **Found on the way, a deck fault**: a pause and a
+  seek within one period played the new position's first 5 ms -- the
+  slew down to silence ran on over it -- and moved the deck 239 frames
+  while paused, so two lanes held different frames. A seek seen paused,
+  or a paused deck starved, now starts from silence
+  (`a_seek_just_after_a_pause_is_heard_as_nothing` fails without it,
+  loudest 0.99).
 
 ## 5. Resuming work here (2026-11-12)
 
