@@ -10,12 +10,19 @@
 snurra_engine::snurra_engine(QObject *parent) : QObject(parent) {
 	const QByteArray wanted = qgetenv("SNURRA_OUTPUT");
 #ifdef Q_OS_ANDROID
-	const QString fallback = QStringLiteral("qt");   /* no ALSA for an app there */
+	/* No ALSA for an app there: AAudio, and QAudioSink if it will not. */
+	const QString fallback = QStringLiteral("aaudio");
+	const QString second = QStringLiteral("qt");
 #else
 	const QString fallback = QStringLiteral("alsa:default");
+	const QString second;
 #endif
 	const QString spec = wanted.isEmpty() ? fallback : QString::fromLocal8Bit(wanted);
 	m_output = snurra_open_output(spec);
+	if (!m_output && wanted.isEmpty() && !second.isEmpty()) {
+		qWarning("snurra: no output from %s; trying %s", qPrintable(spec), qPrintable(second));
+		m_output = snurra_open_output(second);
+	}
 	if (!m_output) {
 		qWarning("snurra: no output from %s; playing to none", qPrintable(spec));
 		m_output = snurra_open_output(QStringLiteral("null"));

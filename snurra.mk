@@ -19,7 +19,9 @@
 SNURRA_DIR ?= snurra
 
 SNURRA_INCLUDE  := $(SNURRA_DIR)/include
-SNURRA_SRCS     := $(filter-out $(SNURRA_DIR)/src/main.cpp $(SNURRA_DIR)/src/output_qt.cpp,$(wildcard $(SNURRA_DIR)/src/*.cpp))
+# Not main.cpp (the player's, not the library's), nor output_qt.cpp (opt-in,
+# below), nor output_aaudio.cpp (Android's, which builds through qmake).
+SNURRA_SRCS     := $(filter-out $(SNURRA_DIR)/src/main.cpp $(SNURRA_DIR)/src/output_qt.cpp $(SNURRA_DIR)/src/output_aaudio.cpp,$(wildcard $(SNURRA_DIR)/src/*.cpp))
 SNURRA_HDRS     := $(wildcard $(SNURRA_INCLUDE)/snurra/*.h)
 SNURRA_PKGS     := libavformat libavcodec libswresample libavutil alsa
 SNURRA_DEFINES  := -DSNURRA_ALSA=1

@@ -631,6 +631,24 @@ controls; each tile very compact but resizeable).
   latency below Qt, which this output does not see. Not yet: heard on a
   phone; a tile per process does not apply there (one process per app),
   so the embedded tile is the shape BeerSSH will use.
+- **AAudio, Android's default output, built 2026-11-12**
+  (`src/output_aaudio.cpp`): the engine in AAudio's data callback, low
+  latency asked, shared by default and `aaudio:exclusive` by choice
+  (sec 3a); QAudioSink if it will not open, then null. Each callback's
+  frames are placed by AAudioStream_getTimestamp -- the moment a known
+  frame was presented, on CLOCK_MONOTONIC, clock.h's own clock -- through
+  the shared filter; AAudio.h allows its getters in the callback, and
+  nothing else is called there. It says on start what was GRANTED, which
+  need not be what was asked. `--output <spec>` sets the output from the
+  command line, since an app on Android has its arguments and no
+  environment. On the emulator: AAudio, AAudio asked exclusive, and
+  QAudioSink all pulled at the device's rate (47823-48279 frames a second
+  of host time, no underrun); the emulator refuses exclusive ("EXCLUSIVE
+  sharing mode not supported") and low latency, and snurra said so
+  ("shared (exclusive asked) ... not low latency", bursts of 960, a
+  buffer of 1920), its server reporting 128 ms against QAudioSink's 132.
+  **Low latency is not shown**: that needs a phone. A stream AAudio
+  closes underneath (a route change) stops; reopening it is not built.
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
   consumer embedding snurra hands a deck its bytes); the stack's own
   mixing (sec 3b, layer 4: lanes at once, today a tile with its controls
@@ -651,6 +669,6 @@ first; the analysis licences (sec 3e).
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox
 20261112T0229Z); the drag and drop tried on a real Wayland compositor;
-AAudio direct on Android, for the latency QAudioSink cannot see or set;
-a handover between an ALSA output and a hw: one (two devices, two clocks
+AAudio's low latency measured on a phone, and its stream reopened on a
+route change; a handover between an ALSA output and a hw: one (two devices, two clocks
 -- drift, not only latency, then matters).

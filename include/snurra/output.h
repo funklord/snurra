@@ -44,6 +44,8 @@ public:
  *   alsa:<device>     ALSA, e.g. alsa:default (shared: dmix, PulseAudio or
  *                     PipeWire behind it, so other programs go on sounding)
  *                     or alsa:hw:0,0 (the card alone, lowest latency)
+ *   aaudio[:exclusive] Android's AAudio, low latency, shared unless asked;
+ *                     the default there (SNURRA_AAUDIO)
  *   qt[:<device>]     Qt Multimedia's QAudioSink, by its description or
  *                     the default: the plain fallback, and Android's
  *                     output; built where Qt Multimedia is (SNURRA_QT_AUDIO)
@@ -51,7 +53,8 @@ public:
  *   capture:<dir>     as null, and what was played written to
  *                     <dir>/<pid>.capture, for the tests
  *
- * $SNURRA_OUTPUT names it, alsa:default when unset (qt on Android); one that will not open
+ * $SNURRA_OUTPUT names it, alsa:default when unset (aaudio, then qt, on
+ * Android); one that will not open
  * falls back to null, said on stderr, so a machine with no sound still
  * plays -- silently, with the positions moving as they would.
  *
@@ -102,5 +105,6 @@ private:
 std::unique_ptr<snurra_output> snurra_open_output(const QString &spec);
 std::unique_ptr<snurra_output> snurra_open_output_alsa(const QString &device);
 std::unique_ptr<snurra_output> snurra_open_output_qt(const QString &device);
+std::unique_ptr<snurra_output> snurra_open_output_aaudio(bool exclusive);
 
 #endif

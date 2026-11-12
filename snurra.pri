@@ -25,6 +25,10 @@ android {
     isEmpty(SNURRA_FFMPEG_INCLUDE): error("snurra: set SNURRA_FFMPEG_INCLUDE to FFmpeg 7.1's headers")
     INCLUDEPATH += $$SNURRA_FFMPEG_INCLUDE
     LIBS += -L$$[QT_INSTALL_LIBS] -lavformat -lavcodec -lswresample -lavutil
+    # Output: AAudio, Android's own (API 26, the floor here).
+    SOURCES += $$SNURRA_ROOT/src/output_aaudio.cpp
+    LIBS += -laaudio
+    DEFINES += SNURRA_AAUDIO=1
 } else {
     PKGCONFIG += libavformat libavcodec libswresample libavutil
 }

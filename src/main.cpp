@@ -66,8 +66,15 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption index(QStringLiteral("index"), QStringLiteral("Which tile."), QStringLiteral("n"));
 	const QCommandLineOption at(QStringLiteral("at"), QStringLiteral("Where, as x,y."), QStringLiteral("x,y"));
 	const QCommandLineOption paused(QStringLiteral("paused"), QStringLiteral("Open without playing."));
-	parser.addOptions({ adopt, token, index, at, paused });
+	const QCommandLineOption output(QStringLiteral("output"),
+	                                QStringLiteral("Where to play: alsa:<device>, aaudio[:exclusive], qt, null."),
+	                                QStringLiteral("spec"));
+	parser.addOptions({ adopt, token, index, at, paused, output });
 	parser.process(app);
+	/* As $SNURRA_OUTPUT, which the engine reads -- and which an app on
+	 * Android cannot be given, its arguments being all it has. A process
+	 * this one starts to adopt a tile inherits it. */
+	if (parser.isSet(output)) qputenv("SNURRA_OUTPUT", parser.value(output).toLocal8Bit());
 
 	snurra_node node;
 	if (!node.listen()) return 1;
