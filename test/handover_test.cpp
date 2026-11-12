@@ -38,9 +38,12 @@ private slots:
 	void a_tile_pulled_out_crosses_over_in_step_without_a_gap();
 	void a_merge_between_two_alsa_outputs_is_heard_in_step();
 	void a_tile_dragged_onto_another_window_joins_it();
+	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 
 private:
+	QString start_x_server();
+	static QString xdotool(const QString &display, const QStringList &args);
 	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"),
 	                const QProcessEnvironment &extra = {});
 	QString capture_dir() const { return m_dir->filePath(QStringLiteral("capture")); }
@@ -745,36 +748,13 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
  * compositor carries it the same way.
  */
 void handover_test::a_tile_dragged_onto_another_window_joins_it() {
-	const QString xvfb = QStandardPaths::findExecutable(QStringLiteral("Xvfb"));
-	const QString xdotool = QStandardPaths::findExecutable(QStringLiteral("xdotool"));
-	if (xvfb.isEmpty() || xdotool.isEmpty()) QSKIP("no Xvfb or xdotool");
-	int display = -1;
-	for (int n = 90; n < 130 && display < 0; ++n)
-		if (!QFile::exists(QStringLiteral("/tmp/.X11-unix/X%1").arg(n)) && !QFile::exists(QStringLiteral("/tmp/.X%1-lock").arg(n)))
-			display = n;
-	if (display < 0) QSKIP("no free X display number");
-	const QString name = QStringLiteral(":%1").arg(display);
-
-	QProcess *server = new QProcess;
-	m_processes << server;   /* ended in cleanup() with the rest */
-	server->start(xvfb, { name, QStringLiteral("-screen"), QStringLiteral("0"), QStringLiteral("1280x800x24"),
-	                      QStringLiteral("-nolisten"), QStringLiteral("tcp") });
-	QVERIFY(server->waitForStarted());
-	QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(QStringLiteral("/tmp/.X11-unix/X%1").arg(display)), 5000);
-
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
 	QProcessEnvironment x11;
 	x11.insert(QStringLiteral("DISPLAY"), name);
 	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
 	x11.insert(QStringLiteral("SNURRA_DRAG"), QStringLiteral("dnd"));
-	auto run = [&](const QStringList &args) {
-		QProcess tool;
-		QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-		env.insert(QStringLiteral("DISPLAY"), name);
-		tool.setProcessEnvironment(env);
-		tool.start(xdotool, args);
-		tool.waitForFinished(5000);
-		return QString::fromLocal8Bit(tool.readAllStandardOutput()).trimmed();
-	};
+	auto run = [&](const QStringList &args) { return xdotool(name, args); };
 	auto window_of = [&](QProcess *p) {
 		return run({ QStringLiteral("search"), QStringLiteral("--sync"), QStringLiteral("--onlyvisible"),
 		             QStringLiteral("--pid"), QString::number(p->processId()) })
@@ -964,6 +944,83 @@ void handover_test::a_train_plays_its_tiles_in_sequence_crossed_at_equal_power()
 	const QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
 	for (const snurra_tile_state &state : states)
 		QCOMPARE(state.controls, state.source == b_file);
+}
+
+/* A private Xvfb, 1280x800, ended in cleanup() with the rest: its
+ * display name, or empty where there is no Xvfb, no xdotool to drive it,
+ * or no free display number. */
+QString handover_test::start_x_server() {
+	const QString xvfb = QStandardPaths::findExecutable(QStringLiteral("Xvfb"));
+	if (xvfb.isEmpty() || QStandardPaths::findExecutable(QStringLiteral("xdotool")).isEmpty()) return QString();
+	int display = -1;
+	for (int n = 90; n < 130 && display < 0; ++n)
+		if (!QFile::exists(QStringLiteral("/tmp/.X11-unix/X%1").arg(n)) && !QFile::exists(QStringLiteral("/tmp/.X%1-lock").arg(n)))
+			display = n;
+	if (display < 0) return QString();
+	const QString name = QStringLiteral(":%1").arg(display);
+	QProcess *server = new QProcess;
+	m_processes << server;
+	server->start(xvfb, { name, QStringLiteral("-screen"), QStringLiteral("0"), QStringLiteral("1280x800x24"),
+	                      QStringLiteral("-nolisten"), QStringLiteral("tcp") });
+	if (!server->waitForStarted()) return QString();
+	QElapsedTimer waited;
+	waited.start();
+	/* Answering, not merely listening: its socket appears before it
+	 * serves, and a pointer moved then stays where it was. */
+	while (!xdotool(name, { QStringLiteral("getmouselocation") }).startsWith(QLatin1String("x:")) && waited.elapsed() < 5000)
+		QTest::qWait(50);
+	return waited.elapsed() < 5000 ? name : QString();
+}
+
+/* xdotool on `display`: what it printed. */
+QString handover_test::xdotool(const QString &display, const QStringList &args) {
+	QProcess tool;
+	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+	env.insert(QStringLiteral("DISPLAY"), display);
+	tool.setProcessEnvironment(env);
+	tool.start(QStringLiteral("xdotool"), args);
+	tool.waitForFinished(5000);
+	return QString::fromLocal8Bit(tool.readAllStandardOutput()).trimmed();
+}
+
+/*
+ * project.md sec 3b: a tile opens at the pointer -- where the file was
+ * clicked -- clamped to the screen. By the bottom right corner it lies
+ * wholly on the screen; in the middle, it is centred on the pointer.
+ */
+void handover_test::a_tile_opens_at_the_pointer_clamped_to_the_screen() {
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	const QRect screen(0, 0, 1280, 800);
+	snurra_wire::message where;
+	where.type = snurra_wire::WHERE;
+
+	/* Xvfb with no window at all reports the pointer where it started,
+	 * however it is moved -- XWarpPointer and XTEST alike -- and Qt asks
+	 * the same way. One window open, and it follows. */
+	QProcess *placeholder = start({ QStringLiteral("z.flac"), QStringLiteral("--paused") }, QStringLiteral("null"), x11);
+	QVERIFY(placeholder->waitForStarted() && wait_for_socket(socket_of(placeholder)));
+	xdotool(name, { QStringLiteral("mousemove"), QStringLiteral("1275"), QStringLiteral("795") });
+	QVERIFY2(xdotool(name, { QStringLiteral("getmouselocation") }).startsWith(QLatin1String("x:1275 y:795")),
+	         "the pointer did not move");
+	QProcess *corner = start({ QStringLiteral("a.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(corner->waitForStarted() && wait_for_socket(socket_of(corner)));
+	QRect frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(corner), where).frame).isValid(), 5000);
+	QVERIFY2(screen.contains(frame),
+	         qPrintable(QStringLiteral("opened at %1,%2 %3x%4, off the screen")
+	                            .arg(frame.x()).arg(frame.y()).arg(frame.width()).arg(frame.height())));
+	QVERIFY2(frame.right() >= 1270 && frame.bottom() >= 790, qPrintable(QStringLiteral("at %1,%2 %3x%4: not as near the pointer as the screen allows").arg(frame.x()).arg(frame.y()).arg(frame.width()).arg(frame.height())));
+
+	xdotool(name, { QStringLiteral("mousemove"), QStringLiteral("640"), QStringLiteral("400") });
+	QProcess *middle = start({ QStringLiteral("b.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(middle->waitForStarted() && wait_for_socket(socket_of(middle)));
+	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(middle), where).frame).isValid(), 5000);
+	QVERIFY2((frame.center() - QPoint(640, 400)).manhattanLength() <= 4,
+	         qPrintable(QStringLiteral("centred on %1,%2, not the pointer").arg(frame.center().x()).arg(frame.center().y())));
 }
 
 int run_handover_tests(int argc, char **argv) {

@@ -2,6 +2,8 @@
 #include <QCommandLineParser>
 #include <QCursor>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QSocketNotifier>
 
 #include <csignal>
@@ -108,7 +110,17 @@ int main(int argc, char *argv[]) {
 		node.add_tile(state);
 	}
 	node.adjustSize();
-	node.move(QCursor::pos() - QPoint(node.width() / 2, node.height() / 2));
+	/* At the pointer -- where the file was clicked, on X11 -- and clamped
+	 * to the screen it is on (project.md sec 3b), so a file by the edge
+	 * does not open half off it. */
+	const QPoint pointer = QCursor::pos();
+	QRect place(pointer - QPoint(node.width() / 2, node.height() / 2), node.size());
+	if (const QScreen *screen = QGuiApplication::screenAt(pointer)) {
+		const QRect room = screen->availableGeometry();
+		place.moveLeft(qBound(room.left(), place.left(), qMax(room.left(), room.right() + 1 - place.width())));
+		place.moveTop(qBound(room.top(), place.top(), qMax(room.top(), room.bottom() + 1 - place.height())));
+	}
+	node.move(place.topLeft());
 	node.show();
 	return app.exec();
 }

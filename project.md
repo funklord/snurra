@@ -521,6 +521,11 @@ controls; each tile very compact but resizeable).
   at once; without the stop, it read all sixty seconds. Seen in Xvfb: a
   swelling tone draws its diamond. Not yet for bytes still arriving.
   About 26 characters wide, 14 at least, frameless with a size grip.
+  Opened at the pointer, clamped to the screen it is on (2026-11-12; it
+  was not clamped, and by the corner opened half off the screen), shown
+  in Xvfb: `a_tile_opens_at_the_pointer_clamped_to_the_screen`. An Xvfb
+  with no window open reports the pointer where it started however it
+  is moved, so the test opens one first.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
