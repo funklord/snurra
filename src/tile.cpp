@@ -12,6 +12,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "deck.h"
+
 /*
  * A stand-in for the waveform until there is audio to draw: bars from the
  * source's name, so the same file always looks the same, and the playhead
@@ -62,8 +64,8 @@ private:
 	double m_fraction = 0;
 };
 
-snurra_tile::snurra_tile(const snurra_tile_state &state, QWidget *parent)
-    : QWidget(parent), m_state(state) {
+snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent)
+    : QWidget(parent), m_state(state), m_deck(deck) {
 	setObjectName(QStringLiteral("snurra-tile"));
 	setAttribute(Qt::WA_StyledBackground);
 	setStyleSheet(QStringLiteral("#snurra-tile { border: 1px solid palette(mid); border-radius: 3px; }"));
@@ -96,7 +98,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, QWidget *parent)
 
 	m_waveform = new snurra_waveform(state.source, this);
 	m_waveform->setAccessibleName(tr("Waveform"));
-	m_waveform->on_seek = [this](double fraction) { seek(qint64(fraction * m_state.duration_ms)); };
+	m_waveform->on_seek = [this](double fraction) { seek(qint64(fraction * m_state.duration_us)); };
 	column->addWidget(m_waveform, 1);
 
 	m_controls = new QWidget(this);
@@ -112,7 +114,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, QWidget *parent)
 	transport->addWidget(m_play);
 	m_position = new QSlider(Qt::Horizontal, m_controls);
 	m_position->setAccessibleName(tr("Position"));
-	m_position->setRange(0, int(qMax<qint64>(1, state.duration_ms / 100)));
+	m_position->setRange(0, int(qMax<qint64>(1, state.duration_us / 100000)));
 	transport->addWidget(m_position, 1);
 	strip->addLayout(transport);
 	m_level = new QSlider(Qt::Horizontal, m_controls);
@@ -125,8 +127,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, QWidget *parent)
 	connect(close, &QToolButton::clicked, this, [this] { emit close_requested(this); });
 	connect(m_pull, &QToolButton::toggled, this, &snurra_tile::set_controls);
 	connect(m_play, &QToolButton::toggled, this, &snurra_tile::set_playing);
-	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100); });
-	connect(m_level, &QSlider::valueChanged, this, [this](int level) { m_state.level = level; });
+	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
+	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
+		m_state.level = level;
+		m_deck->set_level(float(level) / 100);
+	});
 
 	/* A tenth of a second is fine enough for a slider and a playhead, and
 	 * cheap; the waveform repaints only when its playhead moves a pixel. */
@@ -140,26 +145,31 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, QWidget *parent)
 	tick();
 }
 
+/* The deck's frames as the shared clock's microseconds, and back. */
+static qint64 frames_to_us(int64_t frames, int rate) {
+	return qint64(frames * 1000000 / rate);
+}
+
+static int64_t us_to_frames(qint64 us, int rate) {
+	return int64_t(us) * rate / 1000000;
+}
+
 snurra_tile_state snurra_tile::state() const {
 	snurra_tile_state now = m_state;
-	const qint64 at = QDateTime::currentMSecsSinceEpoch();
-	now.position_ms = m_state.position_now(at);
-	now.sampled_at = at;
+	const qint64 at = snurra_clock_us();
+	now.position_us = frames_to_us(m_deck->position_at(at), m_deck->rate());
+	now.sampled_at_us = at;
 	return now;
 }
 
-void snurra_tile::seek(qint64 position_ms) {
-	m_state.position_ms = qBound<qint64>(0, position_ms, m_state.duration_ms);
-	m_state.sampled_at = QDateTime::currentMSecsSinceEpoch();
+void snurra_tile::seek(qint64 position_us) {
+	m_deck->seek(us_to_frames(qBound<qint64>(0, position_us, m_state.duration_us), m_deck->rate()));
 	tick();
 }
 
 void snurra_tile::set_playing(bool playing) {
-	/* The sample moves to now either way, so a pause keeps its place. */
-	const qint64 at = QDateTime::currentMSecsSinceEpoch();
-	m_state.position_ms = m_state.position_now(at);
-	m_state.sampled_at = at;
 	m_state.playing = playing;
+	m_deck->set_playing(playing);
 	m_play->blockSignals(true);
 	m_play->setChecked(playing);
 	m_play->blockSignals(false);
@@ -186,9 +196,18 @@ void snurra_tile::set_place(int row, int column) {
 }
 
 void snurra_tile::tick() {
-	const qint64 now = m_state.position_now();
-	if (!m_position->isSliderDown()) m_position->setValue(int(now / 100));
-	m_waveform->set_fraction(m_state.duration_ms > 0 ? double(now) / m_state.duration_ms : 0);
+	/* The length once the source has said it; a dummy until then. */
+	const int64_t length = m_deck->length();
+	if (length > 0 && frames_to_us(length, m_deck->rate()) != m_state.duration_us) {
+		m_state.duration_us = frames_to_us(length, m_deck->rate());
+		m_position->setRange(0, int(qMax<qint64>(1, m_state.duration_us / 100000)));
+	}
+	if (m_state.playing && m_deck->ended()) set_playing(false);
+	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
+	m_state.position_us = now;
+	m_state.sampled_at_us = snurra_clock_us();
+	if (!m_position->isSliderDown()) m_position->setValue(int(now / 100000));
+	m_waveform->set_fraction(m_state.duration_us > 0 ? double(now) / m_state.duration_us : 0);
 }
 
 QSize snurra_tile::sizeHint() const {

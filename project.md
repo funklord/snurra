@@ -41,15 +41,11 @@ and everything above it knows nothing of SFTP or fuzznet.
 
 ## 3. Open -- the holder's, or to settle with the first code
 
-- **The decoding and output backend.** Qt Multimedia's `QMediaPlayer`
-  (FFmpeg underneath in Qt 6) is the least code and plays from a
-  `QIODevice`, but mixes nothing: one stream, one volume. Decoding with
-  FFmpeg's libraries and mixing into one `QAudioSink` gives mixing and
-  control of buffering, at the cost of owning the decode loop and video
-  presentation. libmpv plays anything and is not small. Mixing is an aim,
-  which leans to the second; measure before choosing -- what a
-  `QMediaPlayer` build adds to an Android APK is itself unmeasured
-  (BeerSSH's plan says "several MB").
+- ~~The decoding and output backend.~~ **Settled 2026-11-12 by building
+  it:** FFmpeg's libraries decode into snurra's own engine (sec 3a, 4),
+  since `QMediaPlayer` cannot be a deck in a mixer and libmpv is not
+  small. What FFmpeg adds to an Android APK is still unmeasured, and is
+  the number to take before the Android build.
 - **The source interface's shape.** fuzzypickles' contract (a
   `QIODevice` whose reads return nothing while bytes are missing, and a
   playable prefix) is the starting point; whether ranges rather than a
@@ -288,21 +284,64 @@ window, it is not shown.
 
 ## 4. State
 
-**The handover base, built 2026-11-11, no audio yet** (the holder: "a
-good base for the window connection/disconnection to make them as
-seamless handovers as possible so we avoid dropouts and performance
-spikes", with dummy controls; each tile very compact but resizeable).
+**Audio, built 2026-11-12** (the holder: "start on the audio output and
+how it acts when windows are connected and disconnected"). The shape is
+sec 3a's:
+
+- **A deck per tile** (`src/deck.*`): a reader thread decodes ahead into
+  24 blocks of 1024 frames; the callback takes them through two lock-free
+  queues (`src/spsc.h`) and atomics -- no lock, allocation or I/O in the
+  callback. A block not there yet is silence and the position holds.
+  Play/pause and level are slewed over 5 ms, so neither clicks.
+- **Sources** (`src/source.*`): a file through FFmpeg (resampled to
+  stereo float at the engine's rate; a seek decodes forward from the key
+  frame and drops to the exact frame); `tone:<hz>` for trying an output by
+  ear; `snurra-test:ramp`, whose samples are their own frame index and
+  gain, for the tests; anything else is silence, so an unplayable name is
+  still a tile.
+- **The engine** (`src/engine.*`): one per process, decks in 64 atomic
+  slots summed in the output's callback; a deck leaves at a time to come
+  and is deleted only after two callbacks without it.
+- **Outputs** (`src/output*`): an interface called with the buffer and
+  the shared-clock time its first frame is heard. **ALSA** (`alsa:default`,
+  shared, the default; `alsa:hw:...` exclusive), latency asked for by
+  `$SNURRA_LATENCY_MS` (40 ms by default) and taken as granted; **null**
+  and **capture:<dir>**, paced by the clock, for no sound card and for the
+  tests. `$SNURRA_OUTPUT` chooses; one that will not open falls back to
+  null, said on stderr. PortAudio was planned first, but its headers
+  (`portaudio19-dev`) are not installed here; AAudio and `QAudioSink`
+  wait for their platforms.
+- **The shared clock** (`src/clock.h`) is `steady_clock` in microseconds,
+  one for every process on a machine and never stepped. Tile states carry
+  positions in microseconds, so a taker can be in step to a frame.
+
+**A handover is a crossfade over one stretch of that clock.** The taker
+builds its tiles with their decks *held* silent and *anchored* to the
+giver's sampled position, so each plays whatever frame belongs to each
+moment; once all are in step (500 ms at most) it sends READY with the
+earliest moment it can sound. The giver takes the later of that and its
+own (latency + a period + 20 ms for the COMMIT to cross), fades out over
+50 ms from then, sends COMMIT with the moment, takes the tiles out of its
+window at once, and keeps their decks sounding until the fade has been
+rendered; the process ends when the engine is idle. The taker fades in
+over the same 50 ms. Straight-line fades, because the two play the same
+samples in step and straight lines then sum to one. A taker whose giver
+disconnects, or sends no COMMIT within 2 s, fades in on its own.
+
+**The handover base, built 2026-11-11** (the holder: "a good base for the
+window connection/disconnection to make them as seamless handovers as
+possible so we avoid dropouts and performance spikes", with dummy
+controls; each tile very compact but resizeable).
 
 - **A process per tile**, listening on `<runtime>/snurra/<pid>.sock`
   (`$SNURRA_RUNTIME_DIR` overrides); peers are found by listing the
   directory. Messages are length-framed QDataStream (`src/wire.*`).
 - **The handover overlaps by design:** OFFER (states, each position
-  stamped with when it was sampled) -> the taker builds the tiles,
-  starts them at the extrapolated position and answers READY -> only
-  then the giver stops, sends COMMIT with the time, and goes once
-  empty. Between READY and COMMIT both play: the window a crossfade
-  fills when there is audio. No READY within 2 s: ABORT, and the giver
-  plays on -- a failed handover costs nothing.
+  stamped with when it is heard) -> the taker builds the tiles, in step
+  and silent, and answers READY -> the giver fades out and sends COMMIT
+  with the moment -> the taker fades in over it, and the giver goes once
+  its fade is heard. No READY within 2 s: ABORT, and the giver plays on
+  -- a failed handover costs nothing.
 - **Pulling a tile out** starts a new process with `--adopt`; it
   connects back and asks for the tile by token, and the group plays it
   until READY. 8 s for that, as a process has to start.
@@ -319,35 +358,52 @@ spikes", with dummy controls; each tile very compact but resizeable).
 - **A tile:** a title that is the handle, a handle for the controls,
   close; a waveform (a stand-in drawn from the source's name, so a file
   always looks the same, with the playhead, and a click seeks); the
-  controls, when out: play/pause, a position a clock moves, a level.
+  controls, when out: play/pause, the deck's position, a level.
   About 26 characters wide, 14 at least, frameless with a size grip.
-- **Measured** (`make test`, real processes over their sockets, offscreen):
-  a merge is taken before it is let go and the moved tile's position
-  carries on within 150 ms of the extrapolation; a tile pulled out plays
-  on in a new process; a taker that never answers leaves the giver
-  playing; only the first opens with controls and plays, a later one as
-  a waveform, paused, controls pushed in stop a tile, and a handover
-  keeps each tile's controls as they were. Sabotaged by hand: stopping
-  the giver at OFFER (a 1 ms gap was caught), never aborting, every
-  launch taken as the first, and pushed-in controls left playing -- each
-  fails its test.
+- **Measured** (`make test`, real processes over their sockets, offscreen,
+  output null or capture): a merge is taken before it is let go and the
+  moved tile's position carries on within 2 ms of the extrapolation; a
+  tile pulled out plays on in a new process; a taker that never answers
+  leaves the giver playing; only the first opens with controls and plays;
+  and **from what each process rendered**, for a merge and for a pull-out,
+  the two gains sum to 1 within 0.0003 at every frame from 200 ms before
+  the fade to 200 ms after, the two are at most 1 frame apart where both
+  sound, and each plays its frames without a skip or a repeat.
+  Sabotaged by hand 2026-11-12, each failing its test: the giver cutting
+  at the fade's start (sum 0), the taker not anchored (919 frames apart,
+  and the position test), the giver's deck retired before its fade (sum
+  0). Earlier: stopping the giver at OFFER, never aborting, every launch
+  taken as the first, pushed-in controls left playing.
+- **ALSA on a real device clock:** `tone:440` to `plughw:Loopback,0,5`
+  (this machine's `snd-aloop`; subdevice 0 was busy with someone else's
+  use), recorded from `hw:Loopback,1,5`: 440.3 Hz at the 0.2 peak, no
+  quiet run inside it longer than a zero crossing. Not yet a handover
+  between two ALSA outputs, and not yet heard on a speaker.
 - **The marker** (sec 3d): `the_marker_and_the_drop_agree_on_where_a_tile_lands`
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
-- **Not yet:** audio (sec 3/3a), the crossfade in the overlap, Wayland's
-  drag-and-drop merge, and a real waveform.
+- **Not yet:** codec timing (sec 5), Wayland's drag-and-drop merge, a
+  real waveform, and the train's and stack's own mixing (sec 3b).
 
 ## 5. Resuming work here (2026-11-12)
 
-Built and tested: the handover base (sec 4), tiles as waveforms with
-controls only for the first (sec 3c), the drop marker (sec 3d). Not seen
-on a real X11 screen yet -- every test runs offscreen; trying the drag,
-the snap and the marker by hand is the first thing to do.
+Built and tested: the handover base, tiles as waveforms with controls
+only for the first (sec 3c), the drop marker (sec 3d), and audio with the
+handover as a crossfade (sec 4). Not seen or heard on a real screen and
+speaker yet -- every test runs offscreen; trying the drag, the snap, the
+marker and a merge by ear is the first thing to do.
 
 Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
-over SSH as the other trees are. Open, the holder's: adding snurra to the private-projects list in the guidelines (theirs to
-change); audio or video first; the analysis licences (sec 3e).
-Next to build, in order: the Wayland merge by drag and drop; then audio
-(sec 3, 3a), starting with the output interface and the shared default,
-the crossfade filling the handover's overlap.
+over SSH as the other trees are. Open, the holder's: audio or video
+first; the analysis licences (sec 3e).
+
+**Next, from the holder (2026-11-12): codec timing tests.** Every codec
+added should be tested for how it keeps time against other files, so
+timing faults are found and fixed before anything depends on them. The
+crossfade test proves decks agree with each other only for the ramp
+source, which is exact by construction; real codecs bring encoder delay
+and padding (MP3, AAC, Opus pre-skip), resampler delay (44.1 kHz into
+48 kHz), and key-frame seeks, none of it measured yet. Then: the Wayland
+merge by drag and drop; a handover between two ALSA outputs measured
+through the loopback.

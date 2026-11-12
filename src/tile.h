@@ -8,6 +8,7 @@
 class QLabel;
 class QSlider;
 class QToolButton;
+class snurra_deck;
 class snurra_waveform;
 
 /*
@@ -15,15 +16,19 @@ class snurra_waveform;
  * always, and its controls only when pulled out. The first tile opens
  * with them and plays; the others open as a waveform alone, paused, so a
  * screen of tiles is not a screen of control panels. The controls are
- * dummies until there is audio: play and pause, a position a clock moves,
- * a level. The title is the handle: dragged, it asks its window to move,
+ * play and pause, the position and a level, all of them the deck's: the
+ * tile shows what the engine is playing rather than keeping a clock of
+ * its own. The title is the handle: dragged, it asks its window to move,
  * or, in a group, to be pulled out.
  */
 class snurra_tile : public QWidget {
 	Q_OBJECT
 
 public:
-	explicit snurra_tile(const snurra_tile_state &state, QWidget *parent = nullptr);
+	/* `deck` is the engine's, and outlives the tile when a handover's
+	 * fade is still sounding after the tile has gone. */
+	snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent = nullptr);
+	snurra_deck *deck() const { return m_deck; }
 
 	/* As it is now, sampled this moment, for a handover. */
 	snurra_tile_state state() const;
@@ -49,10 +54,11 @@ protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-	void seek(qint64 position_ms);
+	void seek(qint64 position_us);
 	void tick();
 
 	snurra_tile_state m_state;
+	snurra_deck *m_deck;
 	QLabel *m_title;
 	snurra_waveform *m_waveform;
 	QToolButton *m_pull;

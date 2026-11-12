@@ -3,6 +3,7 @@
 #include <QCursor>
 #include <QFileInfo>
 
+#include "clock.h"
 #include "node.h"
 #include "wire.h"
 
@@ -50,8 +51,10 @@ int main(int argc, char *argv[]) {
 	for (const QString &file : files.isEmpty() ? QStringList{ QStringLiteral("untitled") } : files) {
 		snurra_tile_state state;
 		state.source = QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
-		state.duration_ms = 180000;   /* a dummy three minutes until there is audio */
-		state.sampled_at = QDateTime::currentMSecsSinceEpoch();
+		/* Three minutes for what has no length of its own: silence, for
+		 * a name nothing can play, still behaves as a tile. */
+		state.duration_us = 180000000;
+		state.sampled_at_us = snurra_clock_us();
 		state.controls = first;
 		state.playing = first && !parser.isSet(paused);
 		first = false;

@@ -24,10 +24,15 @@ How it differs from its neighbours:
 - **Mixing** -- more than one stream and their levels -- is part of the
   player, not a separate DAW.
 
-Not playing sound yet: tiles open, snap and hand over between processes
-with dummy controls; `project.md` holds the plan and the state.
+Not there yet: video, the train's and the stack's own mixing, Wayland's
+merge by drag and drop, and outputs beyond ALSA; `project.md` holds the
+plan and the state.
 
 ## Building
+
+Needs Qt 6 (Widgets, Network), FFmpeg's libraries and, on Linux, ALSA --
+on Debian `qt6-base-dev libavformat-dev libavcodec-dev libswresample-dev
+libasound2-dev`.
 
     make            # the player, in build/
     fmake

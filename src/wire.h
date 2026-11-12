@@ -18,10 +18,12 @@
  * others is listing that directory.
  *
  * A handover is three messages and overlaps on purpose: OFFER carries the
- * states, READY says the taker is already playing them, COMMIT says the
- * giver has stopped. Between READY and COMMIT both play -- the window a
- * crossfade will fill once there is audio -- so nothing is ever silent.
- * A giver that hears no READY in time sends ABORT and plays on.
+ * states; READY says the taker is playing them, silently and in step with
+ * the giver, and from when it could fade in; COMMIT names the moment both
+ * cross over and for how long -- the giver fading out as the taker fades
+ * in, over the same stretch of the shared clock -- so nothing is ever
+ * silent and nothing is heard twice. A giver that hears no READY in time
+ * sends ABORT and plays on. Times are microseconds on clock.h's clock.
  */
 namespace snurra_wire {
 
@@ -29,8 +31,8 @@ enum type_t : quint8 {
 	WHERE = 1,     /* -> HERE: the window's frame on screen */
 	HERE,
 	OFFER,         /* token, side, states */
-	READY,         /* token, the time the taker started */
-	COMMIT,        /* token, the time the giver stopped */
+	READY,         /* token; time: the earliest the taker can fade in */
+	COMMIT,        /* token; time: the crossfade starts, fade: its length */
 	ABORT,         /* token */
 	ADOPT,         /* token, tile index: hand that tile to the sender */
 	MERGE_INTO,    /* control: hand every tile to the process at this socket */
@@ -52,9 +54,10 @@ struct message {
 	QRect frame;
 	QString path;
 	qint32 index = -1;
-	qint64 time = 0;      /* READY: started; COMMIT: stopped */
-	qint64 started = 0;   /* STATUS_IS: the last handover, as the taker saw it */
-	qint64 stopped = 0;
+	qint64 time = 0;      /* READY, COMMIT: see above */
+	qint64 fade = 0;      /* COMMIT: the crossfade's length */
+	qint64 started = 0;   /* STATUS_IS: the last crossfade taken, its start */
+	qint64 stopped = 0;   /* and its end, when the giver fell silent */
 };
 
 QByteArray encode(const message &m);

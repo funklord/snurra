@@ -1,12 +1,14 @@
 /*
  * Handovers between real snurra processes (project.md sec 3b), driven over
- * their sockets the way a peer would drive them. No audio yet, so what is
- * checked is the protocol's promise: the taker is playing before the giver
- * stops, the position carries on without a jump, and a handover that
- * fails costs the giver nothing.
+ * their sockets the way a peer would drive them: the taker is playing
+ * before the giver stops, the position carries on without a jump, a
+ * handover that fails costs the giver nothing -- and, from what each
+ * process actually rendered, the two cross over in step and sum to one
+ * stream throughout.
  */
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QProcess>
@@ -14,6 +16,7 @@
 #include <QtTest>
 
 #include "../src/snap.h"
+#include "../src/source.h"
 #include "../src/wire.h"
 
 class handover_test : public QObject {
@@ -27,9 +30,13 @@ private slots:
 	void a_merge_is_taken_before_it_is_let_go();
 	void a_tile_pulled_out_plays_on_in_a_new_process();
 	void a_taker_that_never_answers_leaves_the_giver_playing();
+	void a_merge_crosses_over_in_step_without_a_gap();
+	void a_tile_pulled_out_crosses_over_in_step_without_a_gap();
 
 private:
-	QProcess *start(const QStringList &args = {});
+	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"));
+	QString capture_dir() const { return m_dir->filePath(QStringLiteral("capture")); }
+	void check_crossover(qint64 giver, qint64 taker, const snurra_wire::message &status);
 	QString socket_of(QProcess *process) const;
 	QStringList sockets() const;
 	bool wait_for_socket(const QString &path, int ms = 10000);
@@ -67,11 +74,13 @@ void handover_test::cleanup() {
 	m_dir = nullptr;
 }
 
-QProcess *handover_test::start(const QStringList &args) {
+QProcess *handover_test::start(const QStringList &args, const QString &output) {
 	QProcess *process = new QProcess;
 	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
 	env.insert(QStringLiteral("SNURRA_RUNTIME_DIR"), m_dir->path());
 	env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+	/* No sound card is touched: null, or a capture the test reads. */
+	env.insert(QStringLiteral("SNURRA_OUTPUT"), output);
 	process->setProcessEnvironment(env);
 	process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
 	process->start(QStringLiteral(SNURRA_BIN), args);
@@ -244,9 +253,9 @@ void handover_test::a_merge_is_taken_before_it_is_let_go() {
 		if (state.source.endsWith(QLatin1String("a.flac"))) moved = state;
 	QVERIFY(moved.playing);
 	QCOMPARE(moved.column, 1);
-	const qint64 expected = given.position_now(moved.sampled_at);
-	QVERIFY2(qAbs(moved.position_ms - expected) <= 150,
-	         qPrintable(QStringLiteral("position %1 ms, expected %2").arg(moved.position_ms).arg(expected)));
+	const qint64 expected = given.position_now(moved.sampled_at_us);
+	QVERIFY2(qAbs(moved.position_us - expected) <= 2000,
+	         qPrintable(QStringLiteral("position %1 us, expected %2").arg(moved.position_us).arg(expected)));
 }
 
 void handover_test::a_tile_pulled_out_plays_on_in_a_new_process() {
@@ -315,6 +324,187 @@ void handover_test::a_taker_that_never_answers_leaves_the_giver_playing() {
 	const snurra_wire::message status = ask(socket_of(a), status_request());
 	QCOMPARE(status.states.size(), 1);
 	QVERIFY(status.states.first().playing);
+}
+
+/* ---- what was heard ----------------------------------------------------- */
+
+namespace {
+
+/* A capture (output.h), frame by frame: when it was heard, and the ramp's
+ * two channels -- the frame index over 2^24 times the gain, and the gain. */
+struct capture_t {
+	QList<double> us;
+	QList<float> left;
+	QList<float> right;
+
+	double gain(int i) const { return i >= 0 && i < right.size() ? right.at(i) : 0.0; }
+	double frame(int i) const { return double(left.at(i)) / right.at(i) * SNURRA_RAMP_SCALE; }
+
+	/* The frame heard nearest `at`, or -1 outside the capture. */
+	int at(double when) const {
+		if (us.isEmpty() || when < us.first() - 11 || when > us.last() + 11) return -1;
+		const double step = 1e6 / 48000;
+		return qBound(0, int((when - us.first()) / step + 0.5), int(us.size()) - 1);
+	}
+};
+
+capture_t read_capture(const QString &path) {
+	capture_t capture;
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) return capture;
+	const QByteArray bytes = file.readAll();
+	qsizetype at = 0;
+	while (at + 12 <= bytes.size()) {
+		qint64 present = 0;
+		qint32 frames = 0;
+		memcpy(&present, bytes.constData() + at, 8);
+		memcpy(&frames, bytes.constData() + at + 8, 4);
+		at += 12;
+		if (frames <= 0 || at + qsizetype(frames) * 8 > bytes.size()) break;
+		const float *samples = reinterpret_cast<const float *>(bytes.constData() + at);
+		for (int i = 0; i < frames; ++i) {
+			capture.us << double(present) + i * 1e6 / 48000;
+			capture.left << samples[2 * i];
+			capture.right << samples[2 * i + 1];
+		}
+		at += qsizetype(frames) * 8;
+	}
+	return capture;
+}
+
+}
+
+/*
+ * From the two captures, around the crossfade the taker reports: at every
+ * frame the taker heard, the two gains sum to one (nothing missing,
+ * nothing doubled); where both sound, they play the same frame; each
+ * plays its frames one after another, without a skip or a repeat; and the
+ * fade really overlaps, rather than one side cutting off.
+ */
+void handover_test::check_crossover(qint64 giver_pid, qint64 taker_pid, const snurra_wire::message &status) {
+	const QDir dir(capture_dir());
+	const capture_t giver = read_capture(dir.filePath(QStringLiteral("%1.capture").arg(giver_pid)));
+	const capture_t taker = read_capture(dir.filePath(QStringLiteral("%1.capture").arg(taker_pid)));
+	QVERIFY2(!giver.us.isEmpty() && !taker.us.isEmpty(), "no capture to read");
+	QVERIFY2(status.started > 0 && status.stopped > status.started, "no crossfade reported");
+
+	const double from = double(status.started) - 200000;
+	const double to = double(status.stopped) + 200000;
+	/* The giver from before; the taker, which may be a process started
+	 * for the handover, from before its fade -- silent until then. */
+	QVERIFY2(giver.us.first() < from, "the giver's capture does not reach back before the crossfade");
+	QVERIFY2(taker.us.first() < double(status.started) && taker.us.last() > to,
+	         "the taker's capture does not cover the crossfade");
+
+	int checked = 0;
+	int both = 0;
+	double worst_sum = 1;
+	double worst_at = 0;
+	double worst_apart = 0;
+	double last_giver = -1;
+	double last_taker = -1;
+	for (double when = from; when <= to; when += 1e6 / 48000) {
+		const int t = taker.at(when);
+		const int g = giver.at(when);
+		const double gain_taker = taker.gain(t);
+		const double gain_giver = giver.gain(g);
+		const double sum = gain_taker + gain_giver;
+		if (qAbs(sum - 1) > qAbs(worst_sum - 1)) {
+			worst_sum = sum;
+			worst_at = when - double(status.started);
+		}
+		++checked;
+
+		if (gain_taker > 0.001) {
+			const double frame = taker.frame(t);
+			if (last_taker >= 0)
+				QVERIFY2(qAbs(frame - last_taker - 1) < 0.5,
+				         qPrintable(QStringLiteral("the taker went from frame %1 to %2").arg(last_taker).arg(frame)));
+			last_taker = frame;
+		}
+		if (gain_giver > 0.001) {
+			const double frame = giver.frame(g);
+			last_giver = frame;
+		}
+		if (gain_taker > 0.01 && gain_giver > 0.01) {
+			++both;
+			worst_apart = qMax(worst_apart, qAbs(giver.frame(g) - taker.frame(t)));
+		}
+	}
+	/* The giver's own run, over the whole of its capture's sounding part. */
+	double previous = -1;
+	for (int g = 0; g < giver.us.size(); ++g) {
+		if (giver.gain(g) <= 0.001) continue;
+		const double frame = giver.frame(g);
+		if (previous >= 0)
+			QVERIFY2(qAbs(frame - previous - 1) < 0.5,
+			         qPrintable(QStringLiteral("the giver went from frame %1 to %2").arg(previous).arg(frame)));
+		previous = frame;
+	}
+	Q_UNUSED(last_giver);
+
+	qInfo("crossover: %d frames checked, %d with both sounding, gains summed to %.4f at worst "
+	      "(%.1f ms from the fade's start), %.2f frames apart at worst",
+	      checked, both, worst_sum, worst_at / 1000, worst_apart);
+	QVERIFY2(checked > 20000, "too little of the crossfade was checked");
+	QVERIFY2(qAbs(worst_sum - 1) < 0.02,
+	         qPrintable(QStringLiteral("the gains summed to %1: a gap or a doubling").arg(worst_sum)));
+	QVERIFY2(both >= 48000 * (status.stopped - status.started) / 2000000,
+	         qPrintable(QStringLiteral("only %1 frames with both sounding: no real overlap").arg(both)));
+	QVERIFY2(worst_apart <= 2, qPrintable(QStringLiteral("the two were %1 frames apart").arg(worst_apart)));
+}
+
+void handover_test::a_merge_crosses_over_in_step_without_a_gap() {
+	const QString output = QStringLiteral("capture:") + capture_dir();
+	QProcess *a = start({ QStringLiteral("snurra-test:ramp") }, output);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ QStringLiteral("b.flac") }, output);
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	QTest::qWait(500);
+	const qint64 giver = a->processId();
+
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = socket_of(b);
+	tell(socket_of(a), merge);
+	QVERIFY2(a->waitForFinished(5000), "the giver did not go once its fade was heard");
+	QTest::qWait(500);
+
+	const snurra_wire::message status = ask(socket_of(b), status_request());
+	QCOMPARE(status.states.size(), 2);
+	check_crossover(giver, b->processId(), status);
+}
+
+void handover_test::a_tile_pulled_out_crosses_over_in_step_without_a_gap() {
+	const QString output = QStringLiteral("capture:") + capture_dir();
+	QProcess *group = start({ QStringLiteral("snurra-test:ramp"), QStringLiteral("two.flac") }, output);
+	QVERIFY(group->waitForStarted());
+	const QString group_socket = socket_of(group);
+	QVERIFY(wait_for_socket(group_socket));
+	QTest::qWait(500);
+
+	snurra_wire::message release;
+	release.type = snurra_wire::RELEASE;
+	release.index = 0;
+	release.frame = QRect(40, 40, 1, 1);
+	tell(group_socket, release);
+
+	QString adopted;
+	snurra_wire::message status;
+	QElapsedTimer waited;
+	waited.start();
+	while (adopted.isEmpty() && waited.elapsed() < 10000) {
+		for (const QString &path : sockets()) {
+			if (path == group_socket) continue;
+			status = ask(path, status_request(), 500);
+			if (status.states.size() == 1 && status.stopped > 0) adopted = path;
+		}
+		QTest::qWait(100);
+	}
+	QVERIFY2(!adopted.isEmpty(), "no process took the released tile");
+	QTest::qWait(500);
+	status = ask(adopted, status_request());
+	check_crossover(group->processId(), QFileInfo(adopted).baseName().toLongLong(), status);
 }
 
 QTEST_GUILESS_MAIN(handover_test)

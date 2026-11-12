@@ -12,7 +12,7 @@ QByteArray encode(const message &m) {
 	QByteArray payload;
 	QDataStream out(&payload, QIODevice::WriteOnly);
 	out.setVersion(QDataStream::Qt_6_0);
-	out << quint8(m.type) << m.token << quint8(m.side) << m.states << m.frame << m.path << m.index << m.time
+	out << quint8(m.type) << m.token << quint8(m.side) << m.states << m.frame << m.path << m.index << m.time << m.fade
 	    << m.started << m.stopped;
 	QByteArray framed;
 	QDataStream head(&framed, QIODevice::WriteOnly);
@@ -38,7 +38,7 @@ QList<message> decode(QByteArray &buffer) {
 		message m;
 		quint8 type = 0;
 		quint8 side = 0;
-		in >> type >> m.token >> side >> m.states >> m.frame >> m.path >> m.index >> m.time >> m.started
+		in >> type >> m.token >> side >> m.states >> m.frame >> m.path >> m.index >> m.time >> m.fade >> m.started
 		   >> m.stopped;
 		m.type = type_t(type);
 		m.side = side_t(side);

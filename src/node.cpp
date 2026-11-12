@@ -1,7 +1,6 @@
 #include "node.h"
 
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QLocalServer>
@@ -16,6 +15,9 @@
 
 #include <algorithm>
 
+#include "clock.h"
+#include "deck.h"
+#include "engine.h"
 #include "marker.h"
 #include "snap.h"
 #include "tile.h"
@@ -26,6 +28,21 @@ namespace {
  * milliseconds; a process started to adopt a tile needs to start first. */
 constexpr int READY_WAIT_MS = 2000;
 constexpr int ADOPT_WAIT_MS = 8000;
+
+/*
+ * The crossfade a handover makes. Both sides play the same samples in
+ * step, so it is not heard as a fade at all if they are; if they are a
+ * little apart, a short one keeps the comb filtering brief.
+ */
+constexpr qint64 CROSSFADE_US = 50000;
+
+/* Slack for a COMMIT to cross the socket before its moment arrives. */
+constexpr qint64 COMMIT_MARGIN_US = 20000;
+
+/* How long a taker waits to fall in step before saying READY anyway, and
+ * after READY for a COMMIT before fading in on its own. */
+constexpr int IN_STEP_WAIT_MS = 500;
+constexpr int COMMIT_WAIT_MS = 2000;
 
 QString new_token() {
 	return QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -41,6 +58,8 @@ bool can_place_windows() {
 }
 
 snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
+	m_engine = new snurra_engine(this);
+	connect(m_engine, &snurra_engine::idle, this, &snurra_node::leave_if_empty);
 	setWindowFlag(Qt::FramelessWindowHint);
 	setWindowTitle(QStringLiteral("snurra"));
 	QVBoxLayout *outer = new QVBoxLayout(this);
@@ -89,8 +108,17 @@ void snurra_node::send(QLocalSocket *socket, const snurra_wire::message &m) {
 	if (socket && socket->state() == QLocalSocket::ConnectedState) socket->write(snurra_wire::encode(m));
 }
 
-void snurra_node::add_tile(const snurra_tile_state &state) {
-	snurra_tile *tile = new snurra_tile(state, this);
+snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
+	snurra_deck::start_t start;
+	start.source = state.source;
+	start.rate = m_engine->rate();
+	start.fallback_length = state.duration_us * start.rate / 1000000;
+	start.anchor_frame = state.position_now(state.sampled_at_us) * start.rate / 1000000;
+	start.anchor_us = state.sampled_at_us;
+	start.playing = state.playing;
+	start.level = float(state.level) / 100;
+	start.held = held;
+	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::close_requested, this, [this](snurra_tile *closing) {
@@ -99,6 +127,7 @@ void snurra_node::add_tile(const snurra_tile_state &state) {
 	});
 	m_tiles.append(tile);
 	place_tiles();
+	return tile;
 }
 
 void snurra_node::place_tiles() {
@@ -130,6 +159,13 @@ void snurra_node::place_tiles() {
 }
 
 void snurra_node::remove_tile(snurra_tile *tile) {
+	if (!m_tiles.contains(tile)) return;
+	m_engine->retire(tile->deck());
+	drop_tile(tile);
+}
+
+/* Out of the window, its deck left to whoever retires it. */
+void snurra_node::drop_tile(snurra_tile *tile) {
 	if (!m_tiles.removeOne(tile)) return;
 	m_grid->removeWidget(tile);
 	tile->hide();
@@ -138,7 +174,8 @@ void snurra_node::remove_tile(snurra_tile *tile) {
 }
 
 void snurra_node::leave_if_empty() {
-	if (!m_tiles.isEmpty() || !m_giving.isEmpty() || !m_adopt_token.isEmpty()) return;
+	/* Not while a given tile's fade is still to be heard. */
+	if (!m_tiles.isEmpty() || !m_giving.isEmpty() || !m_adopt_token.isEmpty() || m_engine->busy()) return;
 	hide();
 	/* After the event loop has written what is queued: a COMMIT must
 	 * reach the taker before this process goes. */
@@ -180,23 +217,37 @@ void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side) {
 	socket->connectToServer(peer);
 }
 
-void snurra_node::complete_give(QLocalSocket *socket, const QString &token) {
-	const auto it = m_giving.find(token);
+void snurra_node::complete_give(QLocalSocket *socket, const snurra_wire::message &ready) {
+	const auto it = m_giving.find(ready.token);
 	if (it == m_giving.end()) return;
 	const pending_give give = it.value();
 	m_giving.erase(it);
 	if (give.expiry) give.expiry->deleteLater();
 
-	/* The taker is playing: stop ours now, and say when. */
+	/*
+	 * The taker is playing, silently, in step. The crossfade starts at the
+	 * later of when it can fade in and when this side can still change
+	 * what it plays -- what is rendered now is heard a latency from now --
+	 * with slack for the COMMIT to arrive first. The tiles leave the window
+	 * at once; their decks sound on through the fade, and then retire.
+	 */
+	const qint64 period_us = qint64(m_engine->period()) * 1000000 / m_engine->rate();
+	const qint64 start = qMax(ready.time, snurra_clock_us() + m_engine->latency_us() + period_us + COMMIT_MARGIN_US);
 	for (const QPointer<snurra_tile> &tile : give.tiles) {
 		if (!tile) continue;
-		tile->set_playing(false);
-		remove_tile(tile);
+		if (tile->playing()) {
+			tile->deck()->fade(start, CROSSFADE_US, 1, 0);
+			m_engine->retire(tile->deck(), start + CROSSFADE_US + period_us);
+		} else {
+			m_engine->retire(tile->deck());
+		}
+		drop_tile(tile);
 	}
 	snurra_wire::message commit;
 	commit.type = snurra_wire::COMMIT;
-	commit.token = token;
-	commit.time = QDateTime::currentMSecsSinceEpoch();
+	commit.token = ready.token;
+	commit.time = start;
+	commit.fade = CROSSFADE_US;
 	send(socket, commit);
 	if (socket) socket->flush();
 	leave_if_empty();
@@ -271,23 +322,23 @@ void snurra_node::take(QLocalSocket *socket, const snurra_wire::message &m) {
 		last_row = qMax(last_row, tile->row());
 		last_column = qMax(last_column, tile->column());
 	}
-	const qint64 now = QDateTime::currentMSecsSinceEpoch();
-	QList<QPointer<snurra_tile>> taken;
+	const qint64 now = snurra_clock_us();
+	pending_take pending;
+	pending.socket = socket;
+	pending.since = now;
 	setUpdatesEnabled(false);
 	for (snurra_tile_state state : m.states) {
-		/* Carried across the handover's own time, so nothing is replayed. */
-		state.position_ms = state.position_now(now);
-		state.sampled_at = now;
+		/* Carried across the handover's own time, so nothing is replayed;
+		 * a playing tile's deck is held silent until the crossfade. */
+		state.position_us = state.position_now(now);
+		state.sampled_at_us = now;
 		if (!m_tiles.isEmpty()) {
 			if (m.side == snurra_wire::RIGHT) state.column += last_column + 1;
 			else state.row += last_row + 1;
 		}
-		add_tile(state);
-		taken << m_tiles.last();
+		pending.tiles << add_tile(state, state.playing);
 	}
 	setUpdatesEnabled(true);
-	m_taking.insert(m.token, taken);
-	m_last_started = now;
 
 	if (!m_adopt_token.isEmpty() && m.token == m_adopt_token) {
 		m_adopt_token.clear();
@@ -295,11 +346,60 @@ void snurra_node::take(QLocalSocket *socket, const snurra_wire::message &m) {
 	}
 	show();
 
+	/* READY once every deck plays in step with the giver, which takes a
+	 * decode or two; checked often, so the giver waits no longer. */
+	const QString token = m.token;
+	pending.timer = new QTimer(this);
+	pending.timer->setInterval(2);
+	connect(pending.timer, &QTimer::timeout, this, [this, token] { check_ready(token); });
+	pending.timer->start();
+	m_taking.insert(token, pending);
+	/* A giver gone without a word: what was taken fades in on its own. */
+	if (socket)
+		connect(socket, &QLocalSocket::disconnected, this,
+		        [this, token] { fade_in(token, snurra_clock_us(), CROSSFADE_US); });
+	check_ready(token);
+}
+
+void snurra_node::check_ready(const QString &token) {
+	auto it = m_taking.find(token);
+	if (it == m_taking.end() || it->ready) return;
+	bool in_step = true;
+	for (const QPointer<snurra_tile> &tile : it->tiles)
+		if (tile && !tile->deck()->locked()) in_step = false;
+	if (!in_step && snurra_clock_us() - it->since < qint64(IN_STEP_WAIT_MS) * 1000) return;
+
+	it->ready = true;
+	/* Now a wait for the COMMIT, which a giver sends at once. */
+	it->timer->stop();
+	disconnect(it->timer, nullptr, this, nullptr);
+	connect(it->timer, &QTimer::timeout, this, [this, token] { fade_in(token, snurra_clock_us(), CROSSFADE_US); });
+	it->timer->setSingleShot(true);
+	it->timer->start(COMMIT_WAIT_MS);
+
+	/* The earliest this side can begin to sound: what it renders now is
+	 * heard a latency from now. */
+	const qint64 period_us = qint64(m_engine->period()) * 1000000 / m_engine->rate();
 	snurra_wire::message ready;
 	ready.type = snurra_wire::READY;
-	ready.token = m.token;
-	ready.time = now;
-	send(socket, ready);
+	ready.token = token;
+	ready.time = snurra_clock_us() + m_engine->latency_us() + period_us + COMMIT_MARGIN_US;
+	send(it->socket, ready);
+}
+
+void snurra_node::fade_in(const QString &token, qint64 start_us, qint64 length_us) {
+	const auto it = m_taking.constFind(token);
+	if (it == m_taking.constEnd()) return;
+	for (const QPointer<snurra_tile> &tile : it->tiles)
+		if (tile) tile->deck()->fade(start_us, length_us, 0, 1);
+	m_last_started = start_us;
+	m_last_stopped = start_us + length_us;
+	end_take(token);
+}
+
+void snurra_node::end_take(const QString &token) {
+	const pending_take pending = m_taking.take(token);
+	if (pending.timer) pending.timer->deleteLater();
 }
 
 /* ---- the socket -------------------------------------------------------- */
@@ -322,15 +422,16 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		take(socket, m);
 		break;
 	case snurra_wire::READY:
-		complete_give(socket, m.token);
+		complete_give(socket, m);
 		break;
 	case snurra_wire::COMMIT:
-		m_last_stopped = m.time;
-		m_taking.remove(m.token);
+		fade_in(m.token, m.time, m.fade);
 		break;
 	case snurra_wire::ABORT: {
-		/* The giver plays on: what was taken goes. */
-		for (const QPointer<snurra_tile> &tile : m_taking.take(m.token))
+		/* The giver plays on: what was taken goes, never having sounded. */
+		const QList<QPointer<snurra_tile>> taken = m_taking.value(m.token).tiles;
+		end_take(m.token);
+		for (const QPointer<snurra_tile> &tile : taken)
 			if (tile) remove_tile(tile);
 		leave_if_empty();
 		break;
