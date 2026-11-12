@@ -5,7 +5,12 @@
  * tempo off by a little turns into a drift that grows to the end. And
  * signals with no beat at all, which must be given none.
  */
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QtTest>
+
+#include <memory>
 
 #include <cmath>
 #include <random>
@@ -103,6 +108,9 @@ private slots:
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
 	void what_has_no_beat_is_given_none();
+	void an_encoded_steady_tone_has_no_beat_data();
+	void an_encoded_steady_tone_has_no_beat();
+	void an_encoded_beat_is_still_found();
 };
 
 void beats_test::a_beat_is_found_to_the_frame_data() {
@@ -165,6 +173,67 @@ void beats_test::what_has_no_beat_is_given_none() {
 	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
 	qInfo("confidence %.2f", grid.confidence);
 	QVERIFY2(!grid.valid(), qPrintable(QStringLiteral("a beat at %1 BPM was found").arg(grid.bpm())));
+}
+
+/*
+ * A steady tone through a lossy codec: the codec's frames (AAC's 1024
+ * samples, 21 ms) leave a faint ripple at their own period in the onsets,
+ * which a fold can find. Seen in the player on a test video's 440 Hz
+ * tone, shown as 4 bars and a waveform full of beats. No beat.
+ */
+void beats_test::an_encoded_steady_tone_has_no_beat_data() {
+	QTest::addColumn<QString>("codec");
+	QTest::newRow("aac") << QStringLiteral("aac");
+	QTest::newRow("mp3") << QStringLiteral("libmp3lame");
+	QTest::newRow("opus") << QStringLiteral("libopus");
+}
+
+void beats_test::an_encoded_steady_tone_has_no_beat() {
+	QFETCH(QString, codec);
+	const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+	if (ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("tone.mka"));
+	QProcess make;
+	make.start(ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                     QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=f=440:d=30"),
+	                     QStringLiteral("-c:a"), codec, path });
+	QVERIFY(make.waitForFinished(60000) && make.exitCode() == 0);
+	std::unique_ptr<snurra_source> source = snurra_open_source(path, RATE, 0);
+	const snurra_beat_grid grid = snurra_find_beats(*source, RATE);
+	qInfo("%s: confidence %.2f", qPrintable(codec), grid.confidence);
+	QVERIFY2(!grid.valid(), qPrintable(QStringLiteral("a beat at %1 BPM was found").arg(grid.bpm())));
+}
+
+/* And the other way: a made pattern at 128 BPM through AAC is still
+ * found, at its tempo, every beat on the grid. */
+void beats_test::an_encoded_beat_is_still_found() {
+	const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+	if (ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	made_t made = beat(128, 0.2, true, 30);
+	QTemporaryDir dir;
+	const QString raw = dir.filePath(QStringLiteral("beat.f32"));
+	QFile file(raw);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(reinterpret_cast<const char *>(made.mono.data()), qint64(made.mono.size() * sizeof(float)));
+	file.close();
+	const QString path = dir.filePath(QStringLiteral("beat.m4a"));
+	QProcess make;
+	make.start(ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                     QStringLiteral("f32le"), QStringLiteral("-ar"), QStringLiteral("48000"), QStringLiteral("-ac"),
+	                     QStringLiteral("1"), QStringLiteral("-i"), raw, QStringLiteral("-c:a"), QStringLiteral("aac"), path });
+	QVERIFY(make.waitForFinished(60000) && make.exitCode() == 0);
+	std::unique_ptr<snurra_source> source = snurra_open_source(path, RATE, 0);
+	const snurra_beat_grid grid = snurra_find_beats(*source, RATE);
+	QVERIFY2(grid.valid(), qPrintable(QStringLiteral("no beat (confidence %1)").arg(grid.confidence)));
+	double worst = 0;
+	for (double at : made.beats) {
+		const double k = std::round((at - grid.first) / grid.period);
+		worst = std::max(worst, std::abs(grid.first + k * grid.period - at) / RATE * 1000);
+	}
+	qInfo("through AAC: %.4f BPM, every beat within %.2f ms", grid.bpm(), worst);
+	QVERIFY2(std::abs(grid.bpm() - 128) < 0.05, qPrintable(QStringLiteral("%1 BPM").arg(grid.bpm())));
+	QVERIFY2(worst < 10, qPrintable(QStringLiteral("a beat %1 ms off").arg(worst)));
 }
 
 int run_beats_tests(int argc, char **argv) {

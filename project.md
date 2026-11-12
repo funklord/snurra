@@ -298,7 +298,14 @@ snare, hat and chord pattern at 87.5, 128, 140 and 127.3 BPM -- tempo
 within 0.003 BPM, every beat within 2.7 ms of the grid (which sits 1.6
 to 2.4 ms early); white noise, a steady tone and hits at random times
 get no grid (fold 1.4, 2.4, 3.3). Without the exact search, every one
-fails. **Set aside by the holder the same day** ("for now we should
+fails. A steady tone through a lossy codec read as a beat (seen in the
+player on a test video: 4 bars, and the waveform full of ticks): the
+codec's frames ripple the onsets at their own period, which a fold
+finds as clearly as a drum (AAC 25, MP3 19) -- but faintly. So a beat
+must also be loud enough: onset strength 50 a line on average, where
+made drums give 1640 to 1770, the encoded tones 0.7 to 6.3, white noise
+7. A made 128 BPM pattern through AAC is still found, 128.003 BPM, every
+beat within 3.1 ms. **Set aside by the holder the same day** ("for now we should
 just use the same method used by mixxx, this is sidequest"): this is
 Mixxx's shape -- a detection function, a tempo, one constant grid fitted
 to the whole track, Mixxx's default -- so it stays, and measuring it on
@@ -680,7 +687,10 @@ controls; each tile very compact but resizeable).
   still behaves as a tile. Measured offscreen: bytes a quarter here play
   and hold; junk bytes say failed; deleted while a reader waits (the
   control: two threads calling 568 times in 300 ms), nothing calls the
-  bytes after.
+  bytes after. **BeerSSH plays through it** (2026-11-12, beerssh
+  `a696f52`, snurra pinned at `6fa8d4f`): a tile above its file list,
+  an 8 s tone played to the end on the sound card under Xvfb against a
+  loopback sshd; no API change asked.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

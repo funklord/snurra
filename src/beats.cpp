@@ -21,6 +21,11 @@ constexpr double PRIOR_WIDTH = 0.9; /* in octaves, one standard deviation */
  * random times 3.3 -- the best of many periods and phases searched, so
  * chance alone climbs above 1. */
 constexpr double CLEAR = 6;
+/* Onset strength a beat line, on average, for a beat to count. Measured:
+ * made drums 1640 to 1770; a steady tone through AAC 6.3, MP3 4.8, Opus
+ * 0.7; white noise 7. In log magnitude a rise is relative, so a quiet
+ * track's beats score near a loud one's. */
+constexpr double AUDIBLE = 50;
 /* At half the tempo, the weaker of a beat's two lines under this share of
  * the stronger: the lines alternate strong and weak, and the strong ones
  * are the beat -- kick and snare on the quarters, hats alone between. */
@@ -255,7 +260,12 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 		}
 	}
 	grid.confidence = chosen.mean > 0 ? chosen.peak / chosen.mean : 0;
-	if (grid.confidence < CLEAR) return snurra_beat_grid{ 0, 0, grid.confidence, rate };
+	/* And loud enough to be a beat: the onset strength a line, on
+	 * average. A codec's frames ripple a steady tone at their own period,
+	 * which a fold finds as clearly as a drum (AAC 25, MP3 19) -- but
+	 * faintly. */
+	const double per_beat = fold_at(strength, period, chosen.phase).peak / (double(strength.size()) / period);
+	if (grid.confidence < CLEAR || per_beat < AUDIBLE) return snurra_beat_grid{ 0, 0, grid.confidence, rate };
 	grid.period = period * HOP;
 	grid.first = std::fmod(chosen.phase * HOP + WINDOW / 2.0, grid.period);
 	return grid;
