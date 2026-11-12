@@ -367,8 +367,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_position = new QSlider(Qt::Horizontal, m_controls);
 	m_position->setAccessibleName(tr("Position"));
 	m_position->setRange(0, int(qMax<qint64>(1, state.duration_us / 100000)));
-	transport->addWidget(m_position, 1);
+	transport->addStretch(1);
 	strip->addLayout(transport);
+	/* The position, a row of its own: beside the buttons it was squeezed
+	 * to nothing. */
+	strip->addWidget(m_position);
 	m_level = new QSlider(Qt::Horizontal, m_controls);
 	m_level->setAccessibleName(tr("Level"));
 	m_level->setRange(0, 100);
@@ -880,7 +883,11 @@ void snurra_tile::mousePressEvent(QMouseEvent *event) {
 }
 
 bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
-	if (watched == m_above && event->type() == QEvent::Resize) fit_video_drawer();
+	/* After the event, not in it: a height set inside the drawer's own
+	 * resize is undone by its layout, which then handles the older size --
+	 * the picture was left at half its drawer. */
+	if (watched == m_above && event->type() == QEvent::Resize)
+		QMetaObject::invokeMethod(this, [this] { fit_video_drawer(); }, Qt::QueuedConnection);
 	if (watched == m_tempo && event->type() == QEvent::MouseButtonDblClick) {
 		set_tempo(1);
 		return true;
