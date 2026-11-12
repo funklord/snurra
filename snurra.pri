@@ -60,8 +60,11 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/tile_state.h \
     $$SNURRA_ROOT/include/snurra/wire.h
 
-# Outputs: ALSA on Linux; QAudioSink wherever Qt Multimedia is, which on
-# Android is the only one so far (AAudio and PortAudio are to come).
+# Outputs: ALSA on Linux, AAudio on Android (above); QAudioSink wherever
+# Qt Multimedia is. Leaving it out on Android saves nothing: the kit's
+# FFmpeg links Qt's FFmpeg stub, which links Qt Multimedia, which brings
+# Qt Quick, QML and PDF -- 27 MB of an 80 MB APK, measured 2026-11-12
+# (project.md sec 3).
 linux:!android {
     SOURCES += $$SNURRA_ROOT/src/output_alsa.cpp
     PKGCONFIG += alsa

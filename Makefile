@@ -32,6 +32,14 @@ all: $(BIN)
 $(BUILD_DIR)/Makefile: snurra.pro snurra.pri
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
+	@# qmake's rules depend on sources alone, so a change to the flags,
+	@# defines or libraries -- snurra.pri's, say -- left objects and the
+	@# binary built the old way standing (measured 2026-11-12: Qt
+	@# Multimedia stayed linked into the Android library, and an object
+	@# kept a define snurra.pri no longer set). A new Makefile takes them
+	@# with it: qmake's own clean, which names its files, and the binary.
+	$(MAKE) -C $(BUILD_DIR) clean
+	rm -f $(BIN)
 
 $(BIN): $(BUILD_DIR)/Makefile FORCE
 	$(MAKE) -C $(BUILD_DIR)
@@ -90,19 +98,31 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied:
 	for d in $(FFMPEG_DIRS); do cp -r $(FFMPEG_HEADERS)/$$d $(ANDROID_BUILD_DIR)/ffmpeg-include/; done
 	touch $@
 
-$(ANDROID_BUILD_DIR)/Makefile: android-check snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied
+# The preflight runs before, but does not date the Makefile: a phony
+# prerequisite would regenerate it, and rebuild everything, every time.
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
 	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \
 	        SNURRA_FFMPEG_INCLUDE=$(abspath $(ANDROID_BUILD_DIR)/ffmpeg-include) \
 	        SNURRA_VERSION=$(VERSION) SNURRA_VERSION_CODE=$(ANDROID_VERSION_CODE) \
 	        SNURRA_TARGET_API=$(ANDROID_TARGET_API)
+	$(MAKE) -C $(ANDROID_BUILD_DIR) clean
+	rm -f $(ANDROID_BUILD_DIR)/lib$(TARGET)_$(ANDROID_ABI).so
 
 # Qt's generated `apk` is build-and-install, then androiddeployqt; only the
 # second is replaced, to pass --android-platform, which the generated rule
-# hardcodes away. bbq-predictor also clears androiddeployqt's staged
-# libraries first, since it adds and never removes; snurra ships none of
-# its own, so there is nothing for a stale one to be.
-android: android-fresh $(ANDROID_BUILD_DIR)/Makefile
+# hardcodes away. androiddeployqt's staged libraries are cleared first, as
+# bbq-predictor does: it adds and never removes, so a dependency dropped
+# stays in every later APK (measured 2026-11-12: 72 libraries of the
+# morning's build were still staged that afternoon). The staging tree is the build's own; only its .so files go,
+# each named, and only under a build directory that is set and relative.
+ANDROID_STAGED_LIBS = $(ANDROID_BUILD_DIR)/android-build/libs
+
+android-staged-fresh:
+	@case "$(ANDROID_BUILD_DIR)" in ""|/*|*..*) echo "android: unsafe ANDROID_BUILD_DIR '$(ANDROID_BUILD_DIR)'" >&2; exit 1;; esac
+	@if [ -d "$(ANDROID_STAGED_LIBS)" ]; then find "$(ANDROID_STAGED_LIBS)" -type f -name '*.so' -print -delete; fi
+
+android: android-fresh android-staged-fresh $(ANDROID_BUILD_DIR)/Makefile
 	$(MAKE) -C $(ANDROID_BUILD_DIR) apk_install_target
 	$(ANDROID_DEPLOY_QT) \
 	        --input $(ANDROID_BUILD_DIR)/android-$(TARGET)-deployment-settings.json \
@@ -160,5 +180,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test check-mk install uninstall android style style-tool hooks help FORCE
+.PHONY: all tests-build test check-mk install uninstall android android-staged-fresh style style-tool hooks help FORCE
 FORCE:

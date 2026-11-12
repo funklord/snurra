@@ -51,8 +51,21 @@ and everything above it knows nothing of SFTP or fuzznet.
 - ~~The decoding and output backend.~~ **Settled 2026-11-12 by building
   it:** FFmpeg's libraries decode into snurra's own engine (sec 3a, 4),
   since `QMediaPlayer` cannot be a deck in a mixer and libmpv is not
-  small. What FFmpeg adds to an Android APK is still unmeasured, and is
-  the number to take before the Android build.
+  small. **What FFmpeg adds to an Android APK, measured 2026-11-12**: the
+  x86_64 debug APK is 79.6 MB, of which the kit's FFmpeg is 18.8 MB
+  (libavcodec alone 14.4, every decoder FFmpeg has), and a further 27 MB
+  is Qt Quick, QML, PDF, SQLite, TIFF, SVG and Qt Multimedia -- none of
+  it snurra's. They come with the kit's FFmpeg, not with snurra:
+  androiddeployqt shows libavformat needing Qt's FFmpeg stub, which
+  needs Qt Multimedia, which brings the rest; a build with snurra's own
+  Qt Multimedia taken out deployed all of it still, so that change was
+  not kept. **The option, its cost, and whose it is:** an FFmpeg of
+  snurra's own for Android, configured with the audio demuxers and
+  decoders sec 4 tests and nothing else, would drop most of 45 MB per
+  ABI, for a cross build of FFmpeg per ABI kept in the tree's tooling
+  (as bbq-predictor keeps OpenSSL's) and a second FFmpeg to keep current.
+  The holder's to decide, since it is every consumer's APK too -- BeerSSH
+  links snurra.pri.
 - ~~The source interface's shape.~~ **Settled 2026-11-12 by building it**
   (`snurra_bytes`, sec 4): ranges, not a prefix -- a read at an offset
   says how much is there, `has()` asks for a range, and `want()` tells the
