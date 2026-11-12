@@ -4,6 +4,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QPainter>
 #include <QRandomGenerator>
 #include <QSlider>
@@ -13,11 +14,14 @@
 #include <QVBoxLayout>
 
 #include "snurra/deck.h"
+#include "snurra/peaks.h"
 
 /*
- * A stand-in for the waveform until there is audio to draw: bars from the
- * source's name, so the same file always looks the same, and the playhead
- * where the position is. A click seeks there.
+ * The waveform: the source's peaks, read on a thread of their own and
+ * filled in left to right as they come; until they do, and for what has
+ * no audio to read, a stand-in of bars from the source's name, so the
+ * same file always looks the same. The playhead where the position is;
+ * a click seeks there.
  */
 class snurra_waveform : public QWidget {
 public:
@@ -27,6 +31,16 @@ public:
 		setMinimumHeight(fontMetrics().height() * 2);
 		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 		setCursor(Qt::IBeamCursor);
+	}
+
+	/* Columns [first, first + values) of `columns`, as they are read. */
+	void set_peaks(int columns, int first, const std::vector<float> &values) {
+		if (int(m_peaks.size()) != columns) m_peaks.assign(size_t(columns), -1.0f);
+		for (size_t i = 0; i < values.size() && first + int(i) < columns; ++i) {
+			m_peaks[size_t(first) + i] = values[i];
+			m_loudest = qMax(m_loudest, values[i]);
+		}
+		update();
 	}
 
 	void set_fraction(double fraction) {
@@ -41,9 +55,32 @@ protected:
 	void paintEvent(QPaintEvent *) override {
 		QPainter painter(this);
 		const int h = height();
-		const double step = double(width()) / m_bars.size();
 		const QColor played = palette().color(QPalette::Highlight);
 		const QColor ahead = palette().color(QPalette::Mid);
+		if (!m_peaks.empty()) {
+			/* A line a pixel, the loudest of the columns under it, scaled
+			 * to the loudest read so far -- a shape to see, as Mixxx's
+			 * visual gain gives: a quiet master, or a tone at an eighth of
+			 * full scale, was otherwise two pixels of flat line. Not yet
+			 * read, a baseline. */
+			const float scale = 1.0f / qMax(m_loudest, 1e-3f);
+			const int w = qMax(1, width());
+			const int columns = int(m_peaks.size());
+			for (int x = 0; x < w; ++x) {
+				const int from = int(int64_t(x) * columns / w);
+				const int to = qMax(from + 1, int(int64_t(x + 1) * columns / w));
+				float loudest = -1;
+				for (int c = from; c < to && c < columns; ++c) loudest = qMax(loudest, m_peaks[size_t(c)]);
+				painter.setPen((x + 0.5) / w <= m_fraction ? played : ahead);
+				const double half = loudest < 0 ? 0.5 : qMin(1.0f, loudest * scale) * (h - 2) / 2.0 + 0.5;
+				painter.drawLine(QPointF(x + 0.5, h / 2.0 - half), QPointF(x + 0.5, h / 2.0 + half));
+			}
+			painter.setPen(palette().color(QPalette::Text));
+			const int at = int(m_fraction * width());
+			painter.drawLine(at, 0, at, h);
+			return;
+		}
+		const double step = double(width()) / m_bars.size();
 		for (int i = 0; i < m_bars.size(); ++i) {
 			const double x = i * step;
 			const double bar = m_bars.at(i) * (h - 2);
@@ -61,6 +98,8 @@ protected:
 
 private:
 	QList<double> m_bars;
+	std::vector<float> m_peaks;   /* -1: not read yet */
+	float m_loudest = 0;
 	double m_fraction = 0;
 };
 
@@ -143,7 +182,23 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_controls(state.controls);
 	set_playing(state.playing);
 	tick();
+
+	/* The waveform's peaks, read from a source of their own and handed
+	 * over on this thread -- to the waveform, which a queued call never
+	 * reaches once it has gone. */
+	constexpr int COLUMNS = 1024;
+	QPointer<snurra_waveform> waveform = m_waveform;
+	m_peaks = std::make_unique<snurra_peaks>(
+	        state.source, m_deck->rate(), COLUMNS, [waveform](int first, const std::vector<float> &values) {
+		        QMetaObject::invokeMethod(
+		                waveform, [waveform, first, values] {
+			                if (waveform) waveform->set_peaks(COLUMNS, first, values);
+		                },
+		                Qt::QueuedConnection);
+	        });
 }
+
+snurra_tile::~snurra_tile() = default;
 
 /* The deck's frames as the shared clock's microseconds, and back. */
 static qint64 frames_to_us(int64_t frames, int rate) {

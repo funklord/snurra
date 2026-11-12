@@ -3,12 +3,15 @@
 
 #include <QWidget>
 
+#include <memory>
+
 #include "snurra/tile_state.h"
 
 class QLabel;
 class QSlider;
 class QToolButton;
 class snurra_deck;
+class snurra_peaks;
 class snurra_waveform;
 
 /*
@@ -28,6 +31,7 @@ public:
 	/* `deck` is the engine's, and outlives the tile when a handover's
 	 * fade is still sounding after the tile has gone. */
 	snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent = nullptr);
+	~snurra_tile() override;
 	snurra_deck *deck() const { return m_deck; }
 
 	/* As it is now, sampled this moment, for a handover. */
@@ -68,6 +72,9 @@ private:
 	QSlider *m_level;
 	QPoint m_press;
 	bool m_dragging = false;
+	/* Last, so it is destroyed first: its thread is joined before the
+	 * waveform it hands peaks to goes. */
+	std::unique_ptr<snurra_peaks> m_peaks;
 };
 
 #endif

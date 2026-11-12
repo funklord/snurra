@@ -491,9 +491,19 @@ controls; each tile very compact but resizeable).
   ignores the drop fails it. Not shown: that a Wayland compositor
   carries it the same way; none is installed here.
 - **A tile:** a title that is the handle, a handle for the controls,
-  close; a waveform (a stand-in drawn from the source's name, so a file
-  always looks the same, with the playhead, and a click seeks); the
+  close; a waveform, with the playhead, where a click seeks; the
   controls, when out: play/pause, the deck's position, a level.
+- **The waveform is the file's, built 2026-11-12** (`src/peaks.cpp`): the
+  loudest sample of either channel in each of 1024 columns, read on a
+  thread of its own from a source of its own -- never the deck's -- and
+  filled in left to right as it comes; drawn a line a pixel, scaled to
+  the loudest read so far, as Mixxx's visual gain does (a tone at an
+  eighth of full scale was two pixels of flat line). Until then, and for
+  a name with no audio, the stand-in bars from the name. `deck_test`
+  checks the columns exactly (silent, half, quarter, silent read as
+  0, 0, 0.5, 0.5, 0.25, 0.25, 0, 0) and that a tile closed mid-read stops
+  at once; without the stop, it read all sixty seconds. Seen in Xvfb: a
+  swelling tone draws its diamond. Not yet for bytes still arriving.
   About 26 characters wide, 14 at least, frameless with a size grip.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
@@ -571,8 +581,8 @@ controls; each tile very compact but resizeable).
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
-  consumer embedding snurra hands a deck its bytes); a real waveform;
-  the train's and stack's own mixing (sec 3b).
+  consumer embedding snurra hands a deck its bytes); the train's and
+  stack's own mixing (sec 3b).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -589,5 +599,6 @@ first; the analysis licences (sec 3e).
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox
 20261112T0229Z); the drag and drop tried on a real Wayland compositor;
-a real waveform; a handover between an ALSA output and a hw: one (two
-devices, two clocks -- drift, not only latency, then matters).
+the train (sec 3b layer 3): tiles side by side played in sequence, the
+overlap the crossfade; a handover between an ALSA output and a hw: one
+(two devices, two clocks -- drift, not only latency, then matters).

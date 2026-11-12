@@ -26,6 +26,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/marker.cpp \
     $$SNURRA_ROOT/src/node.cpp \
     $$SNURRA_ROOT/src/output.cpp \
+    $$SNURRA_ROOT/src/peaks.cpp \
     $$SNURRA_ROOT/src/snap.cpp \
     $$SNURRA_ROOT/src/source.cpp \
     $$SNURRA_ROOT/src/tile.cpp \
@@ -38,6 +39,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/marker.h \
     $$SNURRA_ROOT/include/snurra/node.h \
     $$SNURRA_ROOT/include/snurra/output.h \
+    $$SNURRA_ROOT/include/snurra/peaks.h \
     $$SNURRA_ROOT/include/snurra/snap.h \
     $$SNURRA_ROOT/include/snurra/source.h \
     $$SNURRA_ROOT/include/snurra/spsc.h \

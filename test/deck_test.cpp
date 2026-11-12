@@ -8,6 +8,7 @@
  * not here waits there and asks for it; and what began before any bytes
  * starts at the beginning, not where the clock had got to.
  */
+#include <QElapsedTimer>
 #include <QFile>
 #include <QProcess>
 #include <QStandardPaths>
@@ -21,6 +22,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/deck.h"
+#include "snurra/peaks.h"
 #include "snurra/source.h"
 
 namespace {
@@ -200,6 +202,8 @@ private slots:
 	void a_seek_in_bytes_all_here_lands_as_in_a_file();
 	void a_play_before_any_bytes_begins_at_the_beginning_data() { formats_data(); }
 	void a_play_before_any_bytes_begins_at_the_beginning();
+	void the_waveform_shows_where_it_is_loud();
+	void a_waveform_closed_while_reading_stops_at_once();
 
 private:
 	snurra_deck::start_t start_for(std::shared_ptr<snurra_bytes> bytes, const QString &name) const;
@@ -384,6 +388,77 @@ void deck_test::a_play_before_any_bytes_begins_at_the_beginning() {
 	blocks.insert(blocks.end(), more.begin(), more.end());
 	const QString fault = check_continuous(blocks, reference, 0);
 	QVERIFY2(fault.isEmpty(), qPrintable(fault));
+}
+
+/* A WAV whose sample at `frame` is `level(frame)`, 16-bit, both channels. */
+template <typename level_t>
+static QByteArray wav_of(int frames, level_t level) {
+	QByteArray pcm(frames * 4, Qt::Uninitialized);
+	for (int i = 0; i < frames; ++i) {
+		const qint16 v = qint16(level(i));
+		std::memcpy(pcm.data() + 4 * i, &v, 2);
+		std::memcpy(pcm.data() + 4 * i + 2, &v, 2);
+	}
+	QByteArray wav = make_wav(0);
+	const quint32 riff = quint32(36 + pcm.size());
+	const quint32 data = quint32(pcm.size());
+	std::memcpy(wav.data() + 4, &riff, 4);
+	std::memcpy(wav.data() + 40, &data, 4);
+	return wav + pcm;
+}
+
+void deck_test::the_waveform_shows_where_it_is_loud() {
+	/*
+	 * Silent, half scale, quarter scale, silent -- a second each, read as
+	 * eight columns: exactly those, in order, in pieces that cover them.
+	 */
+	const QString path = m_dir.filePath(QStringLiteral("loud.wav"));
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(wav_of(RATE * 4, [](int i) {
+		const int second = i / RATE;
+		const int sign = (i / 50) % 2 ? 1 : -1;
+		return second == 1 ? sign * 16384 : second == 2 ? sign * 8192 : 0;
+	}));
+	file.close();
+	std::unique_ptr<snurra_source> source = snurra_open_source(path, RATE, 0);
+	QCOMPARE(source->length(), int64_t(RATE * 4));
+	int next = 0;
+	const std::vector<float> peaks
+	        = snurra_peaks_of(*source, source->length(), 8, [&next](int first, const std::vector<float> &values) {
+		          if (first != next) return false;
+		          next += int(values.size());
+		          return true;
+	          });
+	QCOMPARE(next, 8);
+	const std::vector<float> expected{ 0, 0, 0.5f, 0.5f, 0.25f, 0.25f, 0, 0 };
+	QCOMPARE(peaks, expected);
+
+	/* A piece that says stop stops it. */
+	std::unique_ptr<snurra_source> again = snurra_open_source(path, RATE, 0);
+	const std::vector<float> stopped
+	        = snurra_peaks_of(*again, again->length(), 1024, [](int, const std::vector<float> &) { return false; });
+	QVERIFY2(stopped.size() < 1024, "a piece's stop was not heeded");
+}
+
+void deck_test::a_waveform_closed_while_reading_stops_at_once() {
+	/* A tile closed while its waveform is read must not wait for the
+	 * whole file: sixty seconds, closed at once. */
+	const QString path = m_dir.filePath(QStringLiteral("long.wav"));
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(wav_of(RATE * 60, [](int i) { return (i % 100) * 300 - 15000; }));
+	file.close();
+	std::atomic<int> pieces{ 0 };
+	QElapsedTimer timer;
+	{
+		snurra_peaks reading(path, RATE, 1024, [&pieces](int, const std::vector<float> &) { ++pieces; });
+		QTRY_VERIFY_WITH_TIMEOUT(pieces.load() > 0, 5000);
+		timer.start();
+	}
+	const qint64 took = timer.elapsed();
+	QVERIFY2(took < 500, qPrintable(QStringLiteral("closing took %1 ms").arg(took)));
+	QVERIFY2(pieces.load() < 16, "it read the whole file before stopping");
 }
 
 int run_deck_tests(int argc, char **argv) {
