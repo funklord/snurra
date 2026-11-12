@@ -193,6 +193,10 @@ does the same with a tile's playback:
   since a byte stream cannot be handed across mid-read.
 - **Pulled out**, a tile leaves the same way in reverse, into a new
   process.
+- **Files dropped from a file manager** (2026-11-12): onto a window, a
+  tile each, where the drop's side says -- at the right edge the first
+  lane's train goes on, at the bottom a new lane starts -- paused, their
+  controls in, as a launch's later files.
 - **The snap gesture between processes:** on X11 a tile can find the
   others' windows and snap edge to edge as it is moved; on Wayland a
   program cannot learn other windows' positions, so the gesture there

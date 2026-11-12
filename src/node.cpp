@@ -4,7 +4,9 @@
 #include <QCursor>
 #include <QDrag>
 #include <QDragEnterEvent>
+#include <QFileInfo>
 #include <QMimeData>
+#include <QUrl>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPixmap>
@@ -966,14 +968,23 @@ static bool from_a_peer(const QMimeData *mime, const QString &own) {
 	return !path.isEmpty() && path != own;
 }
 
+/* Files a file manager drags: the local ones snurra could open. */
+static QStringList files_in(const QMimeData *mime) {
+	QStringList files;
+	if (!mime || !mime->hasUrls()) return files;
+	for (const QUrl &url : mime->urls())
+		if (url.isLocalFile() && QFileInfo(url.toLocalFile()).isFile()) files << url.toLocalFile();
+	return files;
+}
+
 void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
-	if (!from_a_peer(event->mimeData(), m_path)) return;
+	if (!from_a_peer(event->mimeData(), m_path) && files_in(event->mimeData()).isEmpty()) return;
 	event->acceptProposedAction();
 	hint_drop(true, side_at(event->position().toPoint()));
 }
 
 void snurra_node::dragMoveEvent(QDragMoveEvent *event) {
-	if (!from_a_peer(event->mimeData(), m_path)) return;
+	if (!from_a_peer(event->mimeData(), m_path) && files_in(event->mimeData()).isEmpty()) return;
 	event->acceptProposedAction();
 	hint_drop(true, side_at(event->position().toPoint()));
 }
@@ -984,6 +995,12 @@ void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
 
 void snurra_node::dropEvent(QDropEvent *event) {
 	hint_drop(false);
+	const QStringList files = files_in(event->mimeData());
+	if (!files.isEmpty() && !from_a_peer(event->mimeData(), m_path)) {
+		add_files(files, side_at(event->position().toPoint()));
+		event->acceptProposedAction();
+		return;
+	}
 	if (!from_a_peer(event->mimeData(), m_path)) return;
 	const QString data = QString::fromUtf8(event->mimeData()->data(QLatin1String(TILE_MIME)));
 	snurra_wire::message merge;
@@ -1001,6 +1018,34 @@ void snurra_node::dropEvent(QDropEvent *event) {
 	connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
 	socket->connectToServer(data.section(QLatin1Char('\n'), 0, 0));
 	event->acceptProposedAction();
+}
+
+/*
+ * Files dropped from a file manager (project.md sec 3b): a tile each, where
+ * the drop's side says -- to the right, the first lane's train goes on;
+ * below, a new lane, a stack. Paused and their controls in, as a later
+ * file of a launch opens (sec 3c).
+ */
+void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) {
+	int last_row = -1;
+	int last_column = -1;
+	for (snurra_tile *tile : m_tiles) {
+		last_row = qMax(last_row, tile->row());
+		if (tile->row() == 0) last_column = qMax(last_column, tile->column());
+	}
+	int row = side == snurra_wire::BELOW ? last_row + 1 : 0;
+	int column = side == snurra_wire::BELOW ? 0 : last_column + 1;
+	for (const QString &file : files) {
+		snurra_tile_state state;
+		state.source = QFileInfo(file).absoluteFilePath();
+		state.duration_us = 180000000;
+		state.sampled_at_us = snurra_clock_us();
+		state.controls = false;
+		state.playing = false;
+		state.row = row;
+		state.column = column++;
+		add_tile(state);
+	}
 }
 
 void snurra_node::mousePressEvent(QMouseEvent *event) {

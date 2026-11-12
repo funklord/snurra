@@ -6,6 +6,7 @@
  * plays, holds where the bytes stop and goes on when they come, and closing
  * it leaves no deck behind in the engine, whichever goes first.
  */
+#include <QMimeData>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -39,6 +40,7 @@ private slots:
 	void a_nudge_moves_one_lane_and_stays();
 	void a_lane_at_a_tempo_keeps_the_groups_time();
 	void sync_matches_a_beat_to_another();
+	void files_dropped_on_a_window_join_it();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -336,6 +338,53 @@ static QString kick_file(QTemporaryDir &dir, const QString &name, double bpm, do
 		return int(20000 * std::sin(2 * M_PI * 55 * t) * std::exp(-t / 0.09));
 	}));
 	return path;
+}
+
+/* Files a file manager drags onto a window (project.md sec 3b): dropped
+ * at its right edge, they go on the first lane's train; at its bottom, a
+ * new lane. Paused, controls in, as a launch's later files. */
+void embed_test::files_dropped_on_a_window_join_it() {
+	QTemporaryDir dir;
+	QStringList paths;
+	for (const QString &name : { QStringLiteral("one.wav"), QStringLiteral("two.wav"), QStringLiteral("three.wav") }) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(48000));
+		paths << file.fileName();
+	}
+	snurra_node node;
+	node.add_tile(placed(QStringLiteral("first"), 0, 0));
+	node.resize(400, 200);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	auto drop = [&node](const QStringList &files, const QPoint &at) {
+		QMimeData mime;
+		QList<QUrl> urls;
+		for (const QString &file : files) urls << QUrl::fromLocalFile(file);
+		mime.setUrls(urls);
+		/* As a drag arrives: enter first -- Qt delivers a drop only to the
+		 * widget that took the enter. */
+		QDragEnterEvent enter(at, Qt::CopyAction, &mime, Qt::LeftButton, {});
+		QCoreApplication::sendEvent(&node, &enter);
+		if (!enter.isAccepted()) return false;
+		QDropEvent event(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, {});
+		QCoreApplication::sendEvent(&node, &event);
+		return event.isAccepted();
+	};
+	QVERIFY(drop({ paths[0], paths[1] }, QPoint(node.width() - 2, node.height() / 2)));
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 3, 2000);
+	QVERIFY(drop({ paths[2] }, QPoint(node.width() / 2, node.height() - 2)));
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 4, 2000);
+	QList<QPair<int, int>> places;
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) {
+		if (tile->state().source.startsWith(dir.path())) {
+			places << qMakePair(tile->row(), tile->column());
+			QVERIFY(!tile->playing());
+			QVERIFY(!tile->controls());
+		}
+	}
+	std::sort(places.begin(), places.end());
+	QCOMPARE(places, (QList<QPair<int, int>>{ { 0, 1 }, { 0, 2 }, { 1, 0 } }));
 }
 
 /*

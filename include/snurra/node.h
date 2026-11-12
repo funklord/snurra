@@ -57,6 +57,10 @@ public:
 
 	int tile_count() const { return int(m_tiles.size()); }
 
+	/* Files dropped from a file manager: a tile each, to the right a
+	 * train, below a stack (project.md sec 3b). */
+	void add_files(const QStringList &files, snurra_wire::side_t side);
+
 	/* The normal look, drawers out of a window not a rectangle; or the
 	 * square one (project.md sec 3b). */
 	bool drawers_look() const { return m_drawers_look; }
