@@ -122,6 +122,10 @@ public:
 	/* What it was given could not be opened: it plays silence instead. */
 	bool failed() const { return m_failed.load(std::memory_order_acquire); }
 
+	/* A failed deck's stand-in silence made `frames` long -- a picture's
+	 * length, for a file with no sound, so it ends with its picture. */
+	void set_stand_in_length(int64_t frames) { m_stand_in_length.store(frames, std::memory_order_release); }
+
 	/* Its reader stopped and joined: nothing reads its source or its bytes
 	 * after this returns, and the callback finds no more blocks -- silence.
 	 * For a host that must know its bytes are no longer called (embed.h). */
@@ -208,6 +212,7 @@ private:
 	std::atomic<bool> m_locked{ false };
 	std::atomic<bool> m_finished{ false };
 	std::atomic<bool> m_failed{ false };
+	std::atomic<int64_t> m_stand_in_length{ -1 };   /* -1: as it is */
 
 	/* The callback's own. */
 	int64_t m_position = 0;

@@ -911,7 +911,12 @@ void snurra_tile::tick() {
 	 * for it to have looked. */
 	const bool picture_known = m_settled && (!m_video || m_video->opened());
 	const bool picture = m_video && m_video->has_video();
-	if (!m_failed_said && m_deck->failed() && picture_known && picture) m_failed_said = true;   /* a picture alone */
+	if (!m_failed_said && m_deck->failed() && picture_known && picture) {
+		/* A picture alone: not a failure, and as long as the picture --
+		 * the stand-in silence's three minutes ran on past a 3 s GIF. */
+		m_failed_said = true;
+		if (m_video->length_us() > 0) m_deck->set_stand_in_length(us_to_frames(m_video->length_us(), m_deck->rate()));
+	}
 	if (!m_failed_said && m_deck->failed() && picture_known) {
 		m_failed_said = true;
 		/* Said, not stopped: the stand-in silence still behaves as a tile.

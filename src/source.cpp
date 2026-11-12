@@ -38,6 +38,10 @@ public:
 	void seek(int64_t frame) override { m_position = std::clamp<int64_t>(frame, 0, m_length); }
 	int64_t position() const override { return m_position; }
 	int64_t length() const override { return m_length; }
+	void set_length(int64_t frames) override {
+		m_length = std::max<int64_t>(0, frames);
+		m_position = std::min(m_position, m_length);
+	}
 
 protected:
 	virtual void sample(int64_t frame, float *lr) const = 0;

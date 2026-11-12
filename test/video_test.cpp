@@ -363,13 +363,17 @@ void video_test::a_picture_without_sound_is_not_a_failure() {
 	state.source = m_dir.filePath(QStringLiteral("silent.gif"));
 	state.playing = true;
 	state.controls = true;
-	state.duration_us = 3000000;
+	state.duration_us = 180000000;   /* as the player opens anything: three minutes until known */
 	snurra_tile *tile = node.add_tile(state);
 	QSignalSpy failed(tile, &snurra_tile::failed);
 	node.show();
 	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
 	QTest::qWait(500);
 	QCOMPARE(failed.count(), 0);
+	/* As long as its picture, not the stand-in silence's three minutes,
+	 * and done when the picture is. */
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->state().duration_us - 3000000) < 100000, 3000);
+	QTRY_VERIFY_WITH_TIMEOUT(!tile->playing(), 6000);
 
 	QFile junk(m_dir.filePath(QStringLiteral("notes.mp4")));
 	QVERIFY(junk.open(QIODevice::WriteOnly));

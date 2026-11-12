@@ -277,6 +277,13 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		if (!codec || avcodec_parameters_to_context(codec, stream->codecpar) < 0) return false;
 		codec->thread_count = 0;   /* as many as FFmpeg finds useful */
 		if (avcodec_open2(codec, decoder, nullptr) < 0) return false;
+		/* The picture's length: its stream's, else the file's. */
+		int64_t length = 0;
+		if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+			length = av_rescale_q(stream->duration, stream->time_base, MICROSECONDS);
+		else if (format->duration != AV_NOPTS_VALUE && format->duration > 0)
+			length = av_rescale_q(format->duration, AV_TIME_BASE_Q, MICROSECONDS);
+		m_length_us.store(length, std::memory_order_release);
 		const AVRational rate = av_guess_frame_rate(format, stream, nullptr);
 		std::lock_guard<std::mutex> lock(m_mutex);
 		if (rate.num > 0 && rate.den > 0) m_frame_us = av_rescale_q(1, av_inv_q(rate), MICROSECONDS);

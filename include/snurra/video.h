@@ -50,6 +50,9 @@ public:
 	bool has_video() const { return m_has_video.load(std::memory_order_acquire); }
 	/* Whether the reader has looked, picture or none. */
 	bool opened() const { return m_opened.load(std::memory_order_acquire); }
+	/* The picture's length, in microseconds from the sound's zero; 0 when
+	 * the file does not say. */
+	int64_t length_us() const { return m_length_us.load(std::memory_order_acquire); }
 	QSize size() const;
 
 	/* Called on the reader's thread once it has opened, with or without a
@@ -79,6 +82,7 @@ private:
 	std::function<void(bool)> m_on_open;
 	std::atomic<bool> m_has_video{ false };
 	std::atomic<bool> m_opened{ false };
+	std::atomic<int64_t> m_length_us{ 0 };
 };
 
 #endif

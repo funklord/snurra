@@ -214,6 +214,13 @@ void snurra_deck::read_loop() {
 	bool ended = false;
 	bool gave_any = false;   /* a frame, ever: a source ending without one could not be read */
 	while (!m_stop.load(std::memory_order_relaxed)) {
+		/* A stand-in told its length: on this thread, the source's own. */
+		const int64_t told = m_stand_in_length.exchange(-1, std::memory_order_acq_rel);
+		if (told >= 0 && m_source->stand_in()) {
+			m_source->set_length(told);
+			m_length.store(told, std::memory_order_relaxed);
+			ended = false;
+		}
 		const uint64_t now = m_generation.load(std::memory_order_acquire);
 		if (now != generation) {
 			generation = now;

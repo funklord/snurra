@@ -79,6 +79,9 @@ public:
 	/* The silence put in place of what could not be opened, so a tile for
 	 * it still behaves as a tile: true for that alone. */
 	virtual bool stand_in() const { return false; }
+	/* A stand-in's length, told it from elsewhere -- a picture's, when the
+	 * file has no sound. Nothing for a real source. */
+	virtual void set_length(int64_t frames) { (void)frames; }
 };
 
 /*
