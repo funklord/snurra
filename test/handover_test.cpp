@@ -1239,6 +1239,20 @@ void handover_test::mplayers_keys_drive_the_tile() {
 	key(QStringLiteral("m"));
 	QCOMPARE(now().level, 100);
 
+	/* mplayer's speed keys, on the tempo. */
+	QCOMPARE(now().tempo, 1.0f);
+	key(QStringLiteral("bracketright"));
+	QVERIFY(qAbs(now().tempo - 1.1f) < 1e-4f);
+	key(QStringLiteral("bracketleft"));
+	QVERIFY(qAbs(now().tempo - 1.0f) < 1e-4f);
+	key(QStringLiteral("braceright"));
+	QVERIFY(qAbs(now().tempo - 2.0f) < 1e-4f);
+	key(QStringLiteral("braceleft"));
+	key(QStringLiteral("braceleft"));
+	QVERIFY(qAbs(now().tempo - 0.5f) < 1e-4f);
+	key(QStringLiteral("BackSpace"));
+	QCOMPARE(now().tempo, 1.0f);
+
 	/* waitForFinished() is false for a process already finished, which
 	 * is what a prompt quit is by the time it is asked. */
 	key(QStringLiteral("q"));

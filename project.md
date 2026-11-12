@@ -850,8 +850,10 @@ controls; each tile very compact but resizeable).
   at 1.2 and its level within 0.09 dB through every join -- without the
   search, 434 Hz and 1 dB dips; a lane at +10 % sought with its group
   to 10 s stands at 11 s of its track and goes on 1.10 times as fast.
-  Not yet: a wider tempo range, keys for tempo, pitch shifting on its
-  own, and key detection. **Sync** (2026-11-12): a tile's button sets
+  mplayer's speed keys drive it (2026-11-12): ] and [ by 10 %, each the
+  other's inverse, } and { double and halve, backspace back to 1 --
+  tested by key presses through X. Not yet: pitch shifting on its own,
+  and key detection. **Sync** (2026-11-12): a tile's button sets
   its tempo so its beat runs at the leader's -- the first other tile
   playing with a grid, at that tile's tempo; a double or half if nearer
   -- then bends its phase onto the leader's, the shorter way round, as a

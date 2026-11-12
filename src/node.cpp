@@ -1014,7 +1014,8 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
  * or p plays and pauses, the arrows jump -- left and right the track's
  * small step, down and up its large one (sec 4), Ctrl a nudge -- page up
  * and down ten minutes, 9 and 0 (and / and *) take the level down and up by
- * mplayer's 3, m mutes, q and escape quit. On the tile last touched, or
+ * mplayer's 3, m mutes, ] [ } { and backspace set the tempo as
+ * mplayer's speed, q and escape quit. On the tile last touched, or
  * the first with its controls out, or the first. A tile played from the
  * keyboard has its controls pulled out first: what plays is what can be
  * stopped (sec 3c).
@@ -1053,6 +1054,14 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 	case Qt::Key_0:
 	case Qt::Key_Asterisk: tile->set_level(tile->level() + 3); break;
 	case Qt::Key_M: tile->toggle_mute(); break;
+	/* mplayer's speed keys, on the tempo (sec 4): ] and [ by its 10 %,
+	 * one the other's inverse; } and { double and halve; backspace back
+	 * to as recorded. */
+	case Qt::Key_BracketRight: tile->set_tempo(tile->tempo() * 1.1f); break;
+	case Qt::Key_BracketLeft: tile->set_tempo(tile->tempo() / 1.1f); break;
+	case Qt::Key_BraceRight: tile->set_tempo(tile->tempo() * 2); break;
+	case Qt::Key_BraceLeft: tile->set_tempo(tile->tempo() / 2); break;
+	case Qt::Key_Backspace: tile->set_tempo(1); break;
 	case Qt::Key_Q:
 	case Qt::Key_Escape: {
 		const QList<snurra_tile *> all = m_tiles;
