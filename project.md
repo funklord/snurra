@@ -750,8 +750,23 @@ controls; each tile very compact but resizeable).
   sharing mode not supported") and low latency, and snurra said so
   ("shared (exclusive asked) ... not low latency", bursts of 960, a
   buffer of 1920), its server reporting 128 ms against QAudioSink's 132.
-  **Low latency is not shown**: that needs a phone. A stream AAudio
-  closes underneath (a route change) stops; reopening it is not built.
+  **Low latency is not shown**: that needs a phone. **A stream AAudio
+  closes underneath is reopened** (2026-11-12): the error callback marks
+  it dead, and a watcher thread of the output's own -- never an AAudio
+  thread, as AAudio.h and Oboe have it -- closes it and opens another on
+  whatever the route is, at the engine's rate or not at all (it tries
+  again every half second), with the heard clock restarted; the decks
+  never know. On the emulator no real disconnect can be made: killing
+  the audio server, its legacy path restored the AudioTrack itself, no
+  error raised (snurra's track active again, 0 underruns). So
+  `--output aaudio:drop=<ms>` takes the error callback's own path that
+  long after the start: stream s#1 closed, s#2 opened and started 9 ms
+  later, snurra's track the only one active, 97152 frames counted in the
+  next 2 s, 0 underruns. A route change on a phone (headphones pulled)
+  is what remains to see. Seen once and not since: the first launch
+  after a cold boot (an older install replaced) opened no audio at all
+  -- no snurra line, no audio thread, Qt's main loop idle; three fresh
+  installs, one without arguments, all opened AAudio. Unexplained.
 - **The stack plays as one, built 2026-11-12** (sec 3b, step 4): a
   tile's button, waveform and the keys ask the window, which plays,
   pauses or seeks every lane at once (`snurra_node::start_group_at`):
@@ -787,6 +802,6 @@ first; the analysis licences (sec 3e).
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox
 20261112T0229Z); the drag and drop tried on a real Wayland compositor;
-AAudio's low latency measured on a phone, and its stream reopened on a
-route change; a handover between an ALSA output and a hw: one (two devices, two clocks
+AAudio's low latency measured on a phone, and its reopen after a route
+change heard there (sec 4); a handover between an ALSA output and a hw: one (two devices, two clocks
 -- drift, not only latency, then matters).

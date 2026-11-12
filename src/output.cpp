@@ -127,6 +127,7 @@ std::unique_ptr<snurra_output> snurra_open_output(const QString &spec) {
 #if SNURRA_AAUDIO
 	if (spec == QLatin1String("aaudio")) return snurra_open_output_aaudio(false);
 	if (spec == QLatin1String("aaudio:exclusive")) return snurra_open_output_aaudio(true);
+	if (spec.startsWith(QLatin1String("aaudio:drop="))) return snurra_open_output_aaudio(false, spec.mid(12).toInt());
 #endif
 #if SNURRA_QT_AUDIO
 	if (spec == QLatin1String("qt")) return snurra_open_output_qt(QString());

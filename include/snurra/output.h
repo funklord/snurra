@@ -105,6 +105,10 @@ private:
 std::unique_ptr<snurra_output> snurra_open_output(const QString &spec);
 std::unique_ptr<snurra_output> snurra_open_output_alsa(const QString &device);
 std::unique_ptr<snurra_output> snurra_open_output_qt(const QString &device);
-std::unique_ptr<snurra_output> snurra_open_output_aaudio(bool exclusive);
+/* `drop_ms` > 0: a test's disconnect, that long after the start, taken
+ * down the error callback's own path -- a route change cannot be made on
+ * an emulator, whose legacy path restores itself even when the audio
+ * server dies. */
+std::unique_ptr<snurra_output> snurra_open_output_aaudio(bool exclusive, int drop_ms = 0);
 
 #endif

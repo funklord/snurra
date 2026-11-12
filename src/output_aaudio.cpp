@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <ctime>
+#include <thread>
 
 #include "snurra/clock.h"
 
@@ -27,14 +29,19 @@ namespace {
  * own rules for the callback (AAudio.h): no allocation, no locks, no I/O;
  * AAudioStream_get*() is allowed, and is all this calls.
  *
- * A stream AAudio closes underneath -- headphones pulled, a route change --
- * reports an error on another thread, which may not close it either; it
- * is marked dead and the callback stops calling the engine. Reopening on
- * the new route is not built yet.
+ * A stream AAudio closes underneath -- headphones pulled, a route change,
+ * the audio server restarting -- reports an error on another thread, which
+ * may not close it either (AAudio.h); it is marked dead and the callback
+ * stops calling the engine. A watcher of this output's own, outside every
+ * AAudio callback, then closes it and opens a new one on whatever the
+ * route now is, as Oboe does, and the engine goes on in it: the decks
+ * never knew. The new stream is measured afresh (the heard clock
+ * restarted), and must come at the same rate, the engine's; until one
+ * opens, the watcher tries again every half second.
  */
 class aaudio_output : public snurra_output {
 public:
-	explicit aaudio_output(bool exclusive) : m_exclusive(exclusive) {}
+	aaudio_output(bool exclusive, int drop_ms) : m_exclusive(exclusive), m_drop_ms(drop_ms) {}
 	~aaudio_output() override {
 		stop();
 		if (m_stream) AAudioStream_close(m_stream);
@@ -82,10 +89,15 @@ public:
 	bool start(render_t render) override {
 		if (!m_stream) return false;
 		m_render = std::move(render);
-		return AAudioStream_requestStart(m_stream) == AAUDIO_OK;
+		if (AAudioStream_requestStart(m_stream) != AAUDIO_OK) return false;
+		m_watching.store(true);
+		m_watcher = std::thread([this] { watch(); });
+		return true;
 	}
 
 	void stop() override {
+		m_watching.store(false);
+		if (m_watcher.joinable()) m_watcher.join();
 		if (!m_stream) return;
 		AAudioStream_requestStop(m_stream);
 		/* After this the callback is not called again. */
@@ -110,8 +122,47 @@ private:
 		return AAUDIO_CALLBACK_RESULT_CONTINUE;
 	}
 
-	static void error(AAudioStream *, void *user, aaudio_result_t) {
-		static_cast<aaudio_output *>(user)->m_dead.store(true, std::memory_order_relaxed);
+	static void error(AAudioStream *, void *user, aaudio_result_t error) {
+		aaudio_output *self = static_cast<aaudio_output *>(user);
+		self->m_error.store(error, std::memory_order_relaxed);
+		self->m_dead.store(true, std::memory_order_release);
+	}
+
+	/* The watcher: a dead stream replaced, on no AAudio thread. */
+	void watch() {
+		bool said = false;
+		const auto started = std::chrono::steady_clock::now();
+		while (m_watching.load()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(m_stream ? 100 : 500));
+			if (m_drop_ms > 0 && m_stream
+			    && std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(m_drop_ms)) {
+				m_drop_ms = 0;
+				qWarning("snurra: aaudio dropping the stream, as asked");
+				error(m_stream, this, AAUDIO_ERROR_DISCONNECTED);
+			}
+			if (!m_dead.load(std::memory_order_acquire) || !m_watching.load()) continue;
+			if (m_stream) {
+				qWarning("snurra: aaudio stream lost (%s), reopening",
+				         AAudio_convertResultToText(m_error.load(std::memory_order_relaxed)));
+				AAudioStream_requestStop(m_stream);
+				AAudioStream_close(m_stream);   /* no callback after this returns */
+				m_stream = nullptr;
+			}
+			const int rate = m_rate;
+			if (!open() || m_rate != rate) {
+				if (m_stream) AAudioStream_close(m_stream);
+				m_stream = nullptr;
+				m_rate = rate;
+				if (!said) qWarning("snurra: aaudio will not reopen at %d Hz yet; trying again", rate);
+				said = true;
+				continue;
+			}
+			said = false;
+			m_clock.restart();
+			m_dead.store(false, std::memory_order_release);
+			if (AAudioStream_requestStart(m_stream) != AAUDIO_OK) m_dead.store(true, std::memory_order_release);
+			else qInfo("snurra: aaudio reopened");
+		}
 	}
 
 	/* When the first frame of this callback will be heard: frames written
@@ -128,10 +179,14 @@ private:
 	}
 
 	bool m_exclusive;
+	int m_drop_ms;
 	AAudioStream *m_stream = nullptr;
 	render_t m_render;
 	snurra_heard_clock m_clock;
 	std::atomic<bool> m_dead{ false };
+	std::atomic<aaudio_result_t> m_error{ AAUDIO_OK };
+	std::atomic<bool> m_watching{ false };
+	std::thread m_watcher;
 	int m_rate = 0;
 	int m_period = 1;
 	int m_buffer = 0;
@@ -139,8 +194,8 @@ private:
 
 }
 
-std::unique_ptr<snurra_output> snurra_open_output_aaudio(bool exclusive) {
-	auto output = std::make_unique<aaudio_output>(exclusive);
+std::unique_ptr<snurra_output> snurra_open_output_aaudio(bool exclusive, int drop_ms) {
+	auto output = std::make_unique<aaudio_output>(exclusive, drop_ms);
 	if (!output->open()) return nullptr;
 	return output;
 }
