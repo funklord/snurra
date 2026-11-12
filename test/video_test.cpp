@@ -262,7 +262,9 @@ void video_test::the_video_drawer_opens_upward_and_shows_what_is_heard() {
 	QCOMPARE(worse, 0);
 	QVERIFY2(same > behind, "the picture was mostly a frame behind");
 
-	tile->set_full_screen(true);
+	/* mplayer's f, to the window, as a key press. */
+	QTest::keyClick(&node, Qt::Key_F);
+	QVERIFY2(tile->full_screen(), "f did not show the picture full screen");
 	QWidget *full = nullptr;
 	QTRY_VERIFY_WITH_TIMEOUT(([&] {
 		                         for (QWidget *top : QApplication::topLevelWidgets())

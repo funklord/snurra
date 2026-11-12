@@ -140,6 +140,8 @@ public:
 	void set_video_open(bool open);
 	bool video_open() const;
 	void set_full_screen(bool full);
+	void toggle_full_screen() { set_full_screen(!full_screen()); }
+	bool full_screen() const { return bool(m_full); }
 
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
