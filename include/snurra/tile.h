@@ -107,6 +107,12 @@ public:
 	qint64 offset_us() const { return m_state.offset_us; }
 	void set_offset_us(qint64 offset) { m_state.offset_us = offset; }
 
+	/* Track frames a frame out (1: as recorded), and key lock (sec 4). */
+	void set_tempo(float tempo);
+	float tempo() const { return m_state.tempo; }
+	void set_key_lock(bool on);
+	bool key_lock() const { return m_state.key_lock; }
+
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
 	 * through the deck, and edited on the waveform while the envelope
 	 * control (in the controls, sec 3c) is on. */
@@ -187,6 +193,9 @@ private:
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
+	QSlider *m_tempo = nullptr;
+	QLabel *m_tempo_label = nullptr;
+	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;
 	std::unique_ptr<snurra_beats> m_beats;

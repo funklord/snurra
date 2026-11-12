@@ -3,6 +3,7 @@
 
 #include <QString>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "snurra/spsc.h"
+#include "snurra/stretch.h"
 
 class snurra_bytes;
 class snurra_source;
@@ -56,6 +58,14 @@ public:
 	 * it, and the deck never sounds a block from where it was. */
 	void set_playing(bool playing) { m_playing.store(playing, std::memory_order_release); }
 	void set_level(float level) { m_level.store(level, std::memory_order_relaxed); }
+
+	/* Track frames a frame out (1: as recorded), and whether the pitch
+	 * stays as the tempo moves -- key lock -- or moves with it, as a
+	 * turntable's (stretch.h). Heard from the next period on. */
+	void set_tempo(float tempo) { m_tempo.store(std::clamp(tempo, 0.25f, 4.0f), std::memory_order_relaxed); }
+	float tempo() const { return m_tempo.load(std::memory_order_relaxed); }
+	void set_key_lock(bool on) { m_key_lock.store(on, std::memory_order_relaxed); }
+	bool key_lock() const { return m_key_lock.load(std::memory_order_relaxed); }
 	void seek(int64_t frame);
 
 	/* Plays `frame` at `us` on the shared clock and on from there, silent
@@ -160,6 +170,8 @@ private:
 	/* Controls. */
 	std::atomic<bool> m_playing;
 	std::atomic<float> m_level;
+	std::atomic<float> m_tempo{ 1 };
+	std::atomic<bool> m_key_lock{ false };
 	std::atomic<uint64_t> m_generation{ 1 };   /* bumped by every seek */
 	std::atomic<int64_t> m_seek_target{ 0 };
 	std::atomic<uint32_t> m_fade_sequence{ 0 };   /* a seqlock over the fade */
@@ -183,6 +195,7 @@ private:
 	std::atomic<uint32_t> m_published_sequence{ 0 };
 	std::atomic<int64_t> m_published_frame{ 0 };
 	std::atomic<uint64_t> m_published_generation{ 1 };   /* the last seek rendered */
+	std::atomic<float> m_published_tempo{ 1 };
 	std::atomic<int64_t> m_published_us{ 0 };
 	std::atomic<int64_t> m_published_advanced{ 0 };
 	std::atomic<bool> m_locked{ false };
@@ -198,6 +211,10 @@ private:
 	block *m_current = nullptr;
 	int m_offset = 0;
 	float m_slew = 0;   /* play/pause and level, smoothed so neither clicks */
+	/* Off tempo 1, or key-locked: frames come through the stretch, and
+	 * m_position is where it reads the track, ahead of what is heard. */
+	bool m_speed = false;
+	snurra_stretch m_stretch;
 	fade_t m_fade_last{ 0, 0, 1, 1, false };
 	envelope_snapshot m_envelope_last;
 };

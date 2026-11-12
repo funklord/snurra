@@ -126,6 +126,8 @@ private slots:
 	void a_play_before_any_bytes_begins_at_the_beginning();
 	void a_deck_started_at_a_time_sounds_its_frame_then();
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
+	void a_tempo_without_key_lock_reads_between_the_frames();
+	void key_lock_keeps_the_pitch_as_the_tempo_moves();
 	void an_envelope_is_heard_on_the_tracks_own_frames();
 	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
@@ -423,6 +425,106 @@ void deck_test::an_envelope_is_heard_on_the_tracks_own_frames() {
 	QCOMPARE(first, int64_t(RATE / 2));
 	QVERIFY2(checked > RATE * 3 / 2, "too few frames were read back");
 	QVERIFY2(worst < 1e-5, qPrintable(QStringLiteral("a gain off its line by %1").arg(worst)));
+}
+
+/*
+ * Varispeed (project.md sec 4): on the ramp, whose left channel names its
+ * frame, every frame out at tempo 1.05 is 1.05 frames on from the last --
+ * a line read between frames exactly -- and a change of tempo is heard in
+ * the very next period.
+ */
+void deck_test::a_tempo_without_key_lock_reads_between_the_frames() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
+	deck.set_tempo(1.05f);
+	std::vector<double> frames;
+	auto collect = [&frames](const std::vector<rendered_t> &blocks) {
+		for (const rendered_t &block : blocks)
+			for (int64_t i = 0; i < block.advanced; ++i)
+				frames.push_back(double(block.samples[size_t(2 * i)]) / block.samples[size_t(2 * i + 1)] * SNURRA_RAMP_SCALE);
+	};
+	collect(play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE; }));
+	const size_t at_105 = frames.size();
+	deck.set_tempo(0.9f);
+	collect({ render(deck, present) });
+	double worst = 0;
+	for (size_t i = 1; i < frames.size(); ++i) {
+		const double step = i < at_105 ? 1.05 : 0.9;
+		if (i == at_105) continue;   /* the change itself, between the two periods */
+		worst = std::max(worst, std::abs(frames[i] - frames[i - 1] - step));
+	}
+	qInfo("varispeed: %zu frames out, each the tempo on from the last to %.2g", frames.size(), worst);
+	QVERIFY2(frames.size() > size_t(RATE), "too few frames out");
+	/* The ramp's own resolution: near frame 50000 its sample, a float about
+	 * 0.003, is resolved to 2^-32, which is 0.004 of a frame. */
+	QVERIFY2(worst < 5e-3, qPrintable(QStringLiteral("a step off the tempo by %1 frames").arg(worst)));
+}
+
+/* Frequency from upward zero crossings, between the first and the last. */
+static double frequency(const std::vector<float> &mono) {
+	int64_t first = -1;
+	int64_t last = -1;
+	int crossings = 0;
+	for (size_t i = 1; i < mono.size(); ++i)
+		if (mono[i - 1] < 0 && mono[i] >= 0) {
+			const double at = double(i - 1) + mono[i - 1] / double(mono[i - 1] - mono[i]);
+			if (first < 0) first = int64_t(at);
+			last = int64_t(at);
+			++crossings;
+		}
+	return crossings > 1 ? (crossings - 1) * double(RATE) / double(last - first) : 0;
+}
+
+/*
+ * Key lock (project.md sec 4): a 440 Hz tone at tempo 1.2 stays 440 Hz --
+ * varispeed, the control, makes it 528 -- while the track goes 1.2 times as
+ * fast, and its level holds through every join of segments: no dip, no
+ * doubling.
+ */
+void deck_test::key_lock_keeps_the_pitch_as_the_tempo_moves() {
+	auto run = [this](bool key_lock, double &hz, double &speed, double &level_low, double &level_high) {
+		snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:440"));
+		start.fallback_length = RATE * 20;
+		snurra_deck deck(start);
+		int64_t present = snurra_clock_us();
+		play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
+		deck.set_key_lock(key_lock);
+		deck.set_tempo(1.2f);
+		render(deck, present);   /* in */
+		int64_t from_frame = 0, from_us = 0, ignored = 0;
+		deck.last_rendered(from_frame, from_us, ignored);
+		std::vector<float> mono;
+		const std::vector<rendered_t> blocks = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > 2 * RATE; });
+		for (const rendered_t &block : blocks)
+			for (int64_t i = 0; i < block.advanced; ++i) mono.push_back(block.samples[size_t(2 * i)]);
+		int64_t to_frame = 0, to_us = 0;
+		deck.last_rendered(to_frame, to_us, ignored);
+		hz = frequency(mono);
+		speed = double(to_frame - from_frame) / double(mono.size() - size_t(blocks.back().advanced));
+		/* The level in 10 ms windows, against the tone's own: 0.2 peak. */
+		level_low = 1e9;
+		level_high = 0;
+		const size_t window = RATE / 100;
+		for (size_t w = 0; w + window <= mono.size(); w += window) {
+			double sum = 0;
+			for (size_t i = w; i < w + window; ++i) sum += double(mono[i]) * mono[i];
+			const double db = 10 * std::log10(sum / double(window) / (0.2 * 0.2 / 2));
+			level_low = std::min(level_low, db);
+			level_high = std::max(level_high, db);
+		}
+	};
+	double hz = 0, speed = 0, low = 0, high = 0;
+	run(false, hz, speed, low, high);
+	qInfo("varispeed 1.2: %.2f Hz, the track at %.4f, level %.2f to %.2f dB", hz, speed, low, high);
+	QVERIFY2(std::abs(hz - 528) < 1, qPrintable(QStringLiteral("varispeed at %1 Hz, not 528").arg(hz)));
+	run(true, hz, speed, low, high);
+	qInfo("key lock 1.2: %.2f Hz, the track at %.4f, level %.2f to %.2f dB", hz, speed, low, high);
+	QVERIFY2(std::abs(hz - 440) < 1, qPrintable(QStringLiteral("key lock at %1 Hz, not 440").arg(hz)));
+	QVERIFY2(std::abs(speed - 1.2) < 0.01, qPrintable(QStringLiteral("the track went at %1, not 1.2").arg(speed)));
+	QVERIFY2(low > -1 && high < 1, qPrintable(QStringLiteral("the level went from %1 to %2 dB").arg(low).arg(high)));
 }
 
 void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {

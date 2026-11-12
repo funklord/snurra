@@ -374,6 +374,28 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_level->setRange(0, 100);
 	m_level->setValue(state.level);
 	strip->addWidget(m_level);
+	/* The tempo, a DJ's +-8 % in tenths of a per cent, and key lock: with
+	 * it on the pitch stays as the tempo moves (sec 4). A double-click
+	 * puts the tempo back. */
+	QHBoxLayout *speed = new QHBoxLayout;
+	m_tempo = new QSlider(Qt::Horizontal, m_controls);
+	m_tempo->setObjectName(QStringLiteral("snurra-tempo"));
+	m_tempo->setAccessibleName(tr("Tempo"));
+	m_tempo->setRange(-80, 80);
+	m_tempo->installEventFilter(this);
+	speed->addWidget(m_tempo, 1);
+	m_tempo_label = new QLabel(m_controls);
+	m_tempo_label->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("-8.0 %")));
+	speed->addWidget(m_tempo_label);
+	m_key_lock = new QToolButton(m_controls);
+	m_key_lock->setObjectName(QStringLiteral("snurra-key-lock"));
+	m_key_lock->setAutoRaise(true);
+	m_key_lock->setCheckable(true);
+	m_key_lock->setText(tr("key"));
+	m_key_lock->setAccessibleName(tr("Key lock"));
+	m_key_lock->setToolTip(tr("Key lock: the pitch stays as the tempo moves"));
+	speed->addWidget(m_key_lock);
+	strip->addLayout(speed);
 	column->addWidget(m_controls);
 
 	/*
@@ -398,6 +420,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		set_envelope(envelope);
 	};
 	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
+	connect(m_tempo, &QSlider::valueChanged, this, [this](int tenths) { set_tempo(1.0f + float(tenths) / 1000.0f); });
+	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
 		m_deck->set_level(float(level) / 100);
@@ -413,6 +437,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_controls(state.controls);
 	set_playing(state.playing);
 	set_envelope(state.envelope);
+	set_tempo(state.tempo);
+	set_key_lock(state.key_lock);
 	tick();
 
 	read_peaks(nullptr);
@@ -746,6 +772,24 @@ void snurra_tile::take_drawers_out() {
 	m_column->removeWidget(m_controls);
 }
 
+void snurra_tile::set_tempo(float tempo) {
+	m_state.tempo = std::clamp(tempo, 0.25f, 4.0f);
+	m_deck->set_tempo(m_state.tempo);
+	const int tenths = int(std::lround((m_state.tempo - 1) * 1000));
+	m_tempo->blockSignals(true);
+	m_tempo->setValue(tenths);
+	m_tempo->blockSignals(false);
+	m_tempo_label->setText(QStringLiteral("%1%2 %").arg(tenths > 0 ? QStringLiteral("+") : QString()).arg(tenths / 10.0, 0, 'f', 1));
+}
+
+void snurra_tile::set_key_lock(bool on) {
+	m_state.key_lock = on;
+	m_deck->set_key_lock(on);
+	m_key_lock->blockSignals(true);
+	m_key_lock->setChecked(on);
+	m_key_lock->blockSignals(false);
+}
+
 int64_t snurra_tile::frame_now() const {
 	return m_deck->position_at(snurra_clock_us());
 }
@@ -837,6 +881,10 @@ void snurra_tile::mousePressEvent(QMouseEvent *event) {
 
 bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
 	if (watched == m_above && event->type() == QEvent::Resize) fit_video_drawer();
+	if (watched == m_tempo && event->type() == QEvent::MouseButtonDblClick) {
+		set_tempo(1);
+		return true;
+	}
 	if (event->type() == QEvent::MouseButtonPress) emit touched(this);
 	if (watched != m_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {

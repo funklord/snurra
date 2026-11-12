@@ -44,6 +44,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/peaks.cpp \
     $$SNURRA_ROOT/src/snap.cpp \
     $$SNURRA_ROOT/src/source.cpp \
+    $$SNURRA_ROOT/src/stretch.cpp \
     $$SNURRA_ROOT/src/tile.cpp \
     $$SNURRA_ROOT/src/video.cpp \
     $$SNURRA_ROOT/src/wire.cpp
@@ -61,6 +62,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/snap.h \
     $$SNURRA_ROOT/include/snurra/source.h \
     $$SNURRA_ROOT/include/snurra/spsc.h \
+    $$SNURRA_ROOT/include/snurra/stretch.h \
     $$SNURRA_ROOT/include/snurra/tile.h \
     $$SNURRA_ROOT/include/snurra/tile_state.h \
     $$SNURRA_ROOT/include/snurra/video.h \

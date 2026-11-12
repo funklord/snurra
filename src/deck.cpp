@@ -8,7 +8,12 @@
 #include "snurra/source.h"
 
 snurra_deck::snurra_deck(const start_t &start)
-    : m_rate(start.rate), m_blocks(new block[BLOCKS]), m_playing(start.playing), m_level(start.level) {
+    : m_rate(start.rate), m_blocks(new block[BLOCKS]), m_playing(start.playing), m_level(start.level),
+      m_stretch(start.rate, [this](float &left, float &right) {
+	      if (!next_frame(left, right)) return false;
+	      ++m_position;
+	      return true;
+      }) {
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
 
 	/*
@@ -196,7 +201,8 @@ int64_t snurra_deck::position_at(int64_t us) const {
 	last_rendered(frame, at, advanced);
 	/* Carried along the clock, but never past what was rendered moving: a
 	 * paused or starved deck stays put. */
-	const int64_t along = advanced > 0 ? snurra_us_to_frames(us - at, m_rate) : 0;
+	const double tempo = m_published_tempo.load(std::memory_order_relaxed);
+	const int64_t along = advanced > 0 ? int64_t(std::llround(double(snurra_us_to_frames(us - at, m_rate)) * tempo)) : 0;
 	return std::max<int64_t>(0, frame + along);
 }
 
@@ -291,6 +297,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		}
 		m_locked.store(!m_anchored, std::memory_order_release);
 		m_finished.store(false, std::memory_order_relaxed);
+		m_speed = false;   /* the stretch begins again from the new place */
 		/* Paused, a seek is heard as nothing: the slew down to silence was
 		 * for the old position, and would otherwise sound the new one's
 		 * first 5 ms -- and move it -- if the pause came in this period. */
@@ -317,7 +324,13 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	const float step = 1.0f / (0.005f * float(m_rate));   /* 5 ms from silence to full */
 	const bool ended = m_ended_generation.load(std::memory_order_acquire) == int64_t(m_seen_generation);
 
-	const int64_t first = m_position;
+	const float tempo = m_tempo.load(std::memory_order_relaxed);
+	const bool key_lock = m_key_lock.load(std::memory_order_relaxed);
+	if (!m_speed && !m_anchored && (tempo != 1.0f || key_lock)) {
+		m_speed = true;
+		m_stretch.reset(m_position);
+	}
+	const int64_t first = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
 	int64_t advanced = 0;
 	for (int i = 0; i < frames; ++i) {
 		if (m_slew < target) m_slew = std::min(target, m_slew + step);
@@ -326,7 +339,8 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 
 		float left = 0;
 		float right = 0;
-		const bool have = next_frame(left, right);
+		const int64_t heard = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
+		const bool have = m_speed ? m_stretch.next(left, right, tempo, key_lock) : next_frame(left, right);
 		if (!have) {
 			if (m_anchored) {
 				/* Not yet in step: the clock moves on regardless. */
@@ -345,10 +359,10 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 			m_locked.store(true, std::memory_order_release);
 		}
 		const int64_t us = present_us + int64_t(i) * 1000000 / m_rate;
-		const float gain = m_slew * fade_gain(fade, us) * envelope_gain(envelope, segment, m_position);
+		const float gain = m_slew * fade_gain(fade, us) * envelope_gain(envelope, segment, heard);
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
-		++m_position;
+		if (!m_speed) ++m_position;   /* the stretch moved it as it read */
 		++advanced;
 	}
 
@@ -356,6 +370,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	m_published_frame.store(first, std::memory_order_relaxed);
 	m_published_us.store(present_us, std::memory_order_relaxed);
 	m_published_advanced.store(advanced, std::memory_order_relaxed);
+	m_published_tempo.store(m_speed ? tempo : 1.0f, std::memory_order_relaxed);
 	m_published_sequence.fetch_add(1, std::memory_order_release);
 	m_published_generation.store(m_seen_generation, std::memory_order_release);
 }

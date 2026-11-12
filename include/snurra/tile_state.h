@@ -46,6 +46,11 @@ struct snurra_tile_state {
 	 * nudge's, so a lane lined up by ear stays lined up (sec 4). */
 	qint64 offset_us = 0;
 
+	/* Track frames a frame out, and whether the pitch stays as it moves
+	 * (key lock): the deck's (sec 4). */
+	float tempo = 1;
+	bool key_lock = false;
+
 	/* Where it is at `now`, carried along from the sample -- either way,
 	 * since a sample's time can be just ahead, when it is heard. */
 	qint64 position_now(qint64 now = snurra_clock_us()) const {
@@ -56,7 +61,7 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	return out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us;
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock;
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -64,7 +69,7 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 row = 0;
 	qint32 column = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us;
+	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock;
 	state.level = level;
 	state.row = row;
 	state.column = column;

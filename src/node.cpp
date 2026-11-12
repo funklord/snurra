@@ -371,13 +371,16 @@ void snurra_node::run_trains() {
 		const int64_t length = deck->length();
 		const int64_t next_length = next->deck()->length();
 		if (length <= 0 || next_length <= 0) continue;
+		/* In frames out: a tile at a tempo plays its length in length /
+		 * tempo of them, and the overlap is counted out, where both sound. */
+		const double tempo = deck->tempo();
 		int64_t frame = 0;
 		int64_t at = 0;
 		int64_t advanced = 0;
 		deck->last_rendered(frame, at, advanced);
 		if (advanced <= 0) continue;   /* starved or paused: no moment to aim at */
-		const int64_t overlap = train_overlap(length, next_length, rate);
-		const qint64 start = at + snurra_frames_to_us(length - overlap - frame, rate);
+		const int64_t overlap = train_overlap(int64_t(double(length) / tempo), int64_t(double(next_length) / next->deck()->tempo()), rate);
+		const qint64 start = at + snurra_frames_to_us(int64_t(std::llround((double(length) - double(overlap) * tempo - double(frame)) / tempo)), rate);
 		if (start - now > LEAD_US || start < now) continue;
 		const qint64 fade_us = snurra_frames_to_us(overlap, rate);
 		next->deck()->start_at(0, start);
@@ -413,11 +416,17 @@ int64_t snurra_node::lane_start(snurra_tile *tile) const {
 	const QList<snurra_tile *> tiles = lane(tile->row());
 	int64_t start = 0;
 	for (int i = 0; i < tiles.size() && tiles.at(i) != tile; ++i) {
-		const int64_t length = tiles.at(i)->length_frames();
-		const int64_t next = i + 1 < tiles.size() ? tiles.at(i + 1)->length_frames() : 0;
+		const int64_t length = timeline_length(tiles.at(i));
+		const int64_t next = i + 1 < tiles.size() ? timeline_length(tiles.at(i + 1)) : 0;
 		start += length - train_overlap(length, next, rate);
 	}
 	return start;
+}
+
+/* A tile's length on its lane's timeline, in frames out: its track's
+ * length at its tempo. */
+int64_t snurra_node::timeline_length(snurra_tile *tile) const {
+	return int64_t(double(tile->length_frames()) / tile->deck()->tempo());
 }
 
 void snurra_node::play_group(snurra_tile *from, bool playing) {
@@ -440,14 +449,16 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
 	const QList<snurra_tile *> tiles = lane(row);
 	int64_t start = 0;
 	for (int i = 0; i < tiles.size(); ++i) {
-		const int64_t length = tiles.at(i)->length_frames();
-		const int64_t next = i + 1 < tiles.size() ? tiles.at(i + 1)->length_frames() : 0;
+		const int64_t length = timeline_length(tiles.at(i));
+		const int64_t next = i + 1 < tiles.size() ? timeline_length(tiles.at(i + 1)) : 0;
 		const int64_t own = length - train_overlap(length, next, m_engine->rate());
 		/* Inside an overlap belongs to the next: a seek into a crossfade
 		 * comes in on the track it goes to. A length not known yet is
 		 * taken as long enough. */
 		if (length <= 0 || time < start + own) {
-			frame = std::max<int64_t>(0, time - start + snurra_us_to_frames(tiles.at(i)->offset_us(), m_engine->rate()));
+			const double tempo = tiles.at(i)->deck()->tempo();
+			frame = std::max<int64_t>(0, std::llround(double(time - start) * tempo)
+			                                     + snurra_us_to_frames(tiles.at(i)->offset_us(), m_engine->rate()));
 			return tiles.at(i);
 		}
 		start += own;
@@ -456,7 +467,8 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
 }
 
 void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
-	const int64_t time = lane_start(from) + snurra_us_to_frames(position_us - from->offset_us(), m_engine->rate());
+	const int64_t time = lane_start(from) + std::llround(double(snurra_us_to_frames(position_us - from->offset_us(), m_engine->rate()))
+	                                                    / from->deck()->tempo());
 	for (snurra_tile *tile : m_tiles) {
 		if (tile->playing()) {
 			start_group_at(time);
@@ -486,7 +498,8 @@ void snurra_node::start_group_at(int64_t time) {
 /* The group's time where `tile` is now: its place in its lane, less how
  * far a nudge put its track ahead of the lane. */
 int64_t snurra_node::time_of(snurra_tile *tile) const {
-	return lane_start(tile) + tile->frame_now() - snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+	return lane_start(tile)
+	       + std::llround(double(tile->frame_now() - snurra_us_to_frames(tile->offset_us(), m_engine->rate())) / tile->deck()->tempo());
 }
 
 /*

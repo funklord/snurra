@@ -791,6 +791,29 @@ controls; each tile very compact but resizeable).
   height exactly, and closing it restores every number; with the drawers
   left inside the tiles, B's waveform falls 24 px below A's and it fails.
   Not yet: seen on a compositing desktop.
+- **Tempo and key lock, built 2026-11-12** (the holder: key lock next).
+  A deck has a tempo -- track frames a frame out -- and key lock, both
+  heard from the next period, since the stretch runs in the callback,
+  not in the reader half a second ahead (`snurra_stretch`, allocation-
+  free once built). Without key lock, varispeed: Catmull-Rom between the
+  track's frames, so the pitch moves with the tempo. With it, WSOLA,
+  SoundTouch's method, which Mixxx uses for its cheaper key lock: 40 ms
+  segments taken a tempo's step apart, each placed within 15 ms where
+  its first 8 ms best match the last's end, crossfaded there. Neither
+  library is installed here; this is snurra's own. At tempo 1 with no
+  key lock a deck takes the plain path, so every exactness measured
+  above stands. The tile: a tempo slider of +-8 % in tenths (a
+  double-click resets it) and a key button, carried by a handover. In a
+  window a lane's timeline counts each tile at its tempo -- seeks, group
+  starts and when a train's next begins. Measured: varispeed 1.05 on the
+  ramp, every frame out 1.05 on from the last to the ramp's own
+  resolution (0.004), and a change heard the next period; a 440 Hz tone
+  at 1.2 is 528 Hz in varispeed and 440.01 Hz with key lock, the track
+  at 1.2 and its level within 0.09 dB through every join -- without the
+  search, 434 Hz and 1 dB dips; a lane at +10 % sought with its group
+  to 10 s stands at 11 s of its track and goes on 1.10 times as fast.
+  Not yet: a wider tempo range, keys for tempo, pitch shifting on its
+  own, and key detection.
 - **Jumps and nudge, built 2026-11-12** (the holder's steps): one pair
   of buttons in the controls, labelled with the track's step -- 4 bars
   where the beat detector found a grid (16 beats, so a jump keeps the

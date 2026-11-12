@@ -37,6 +37,7 @@ private slots:
 	void a_jump_is_the_tracks_step();
 	void a_jump_on_a_beat_is_whole_bars();
 	void a_nudge_moves_one_lane_and_stays();
+	void a_lane_at_a_tempo_keeps_the_groups_time();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -319,6 +320,32 @@ void embed_test::a_nudge_moves_one_lane_and_stays() {
 	QTest::qWait(100);
 	QCOMPARE(upper->state().position_us, qint64(10000000));
 	QCOMPARE(lower->state().position_us, qint64(10010000));
+}
+
+/*
+ * Tempo in a stack (project.md sec 4): the lower lane at +10 %. A seek of
+ * the group to 10 s puts the upper at 10 s of its track and the lower at
+ * 11 s; played on, the lower's track goes 1.1 times as fast.
+ */
+void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
+	snurra_node node;
+	snurra_tile_state a = placed(QStringLiteral("a"), 0, 0);
+	snurra_tile_state b = placed(QStringLiteral("b"), 1, 0);
+	a.duration_us = b.duration_us = 60000000;
+	snurra_tile *upper = node.add_tile(a);
+	snurra_tile *lower = node.add_tile(b);
+	lower->set_tempo(1.1f);
+	upper->jump(1, false);   /* the group, paused, to 10 s */
+	QTest::qWait(100);
+	QCOMPARE(upper->state().position_us, qint64(10000000));
+	QCOMPARE(lower->state().position_us, qint64(11000000));
+	upper->request_playing(true);
+	QTest::qWait(1200);
+	const double up = double(upper->state().position_now() - 10000000);
+	const double down = double(lower->state().position_now() - 11000000);
+	qInfo("played: upper %.0f us, lower %.0f us, %.4f times", up, down, down / up);
+	QVERIFY2(up > 500000, "the group did not play");
+	QVERIFY2(std::abs(down / up - 1.1) < 0.01, qPrintable(QStringLiteral("the lower went %1 times as fast").arg(down / up)));
 }
 
 /*
