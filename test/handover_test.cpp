@@ -535,6 +535,23 @@ void handover_test::a_tile_pulled_out_crosses_over_in_step_without_a_gap() {
  * Skipped where there is no loopback card, no arecord, or no subdevice
  * free -- the machine's own default may be using one.
  */
+/* Shared memory in this test's key range (0x5e00....) with nothing
+ * attached, by key and id, from /proc -- no parsing of a tool's output. */
+static QStringList dmix_segments() {
+	QStringList found;
+	QFile file(QStringLiteral("/proc/sysvipc/shm"));
+	if (!file.open(QIODevice::ReadOnly)) return found;
+	const QList<QByteArray> lines = file.readAll().split('\n');
+	for (qsizetype i = 1; i < lines.size(); ++i) {
+		const QList<QByteArray> fields = lines.at(i).simplified().split(' ');
+		if (fields.size() < 7) continue;
+		const qint64 key = fields.at(0).toLongLong();
+		const qint64 attached = fields.at(6).toLongLong();
+		if ((key >> 16) == 0x5e00 && attached == 0) found << QStringLiteral("%1/%2").arg(key, 0, 16).arg(QString::fromLatin1(fields.at(1)));
+	}
+	return found;
+}
+
 void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	if (!QFile::exists(QStringLiteral("/proc/asound/Loopback"))) QSKIP("no snd-aloop card");
 	const QString arecord = QStandardPaths::findExecutable(QStringLiteral("arecord"));
@@ -565,6 +582,7 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 		                   .arg(sub)
 		                   .toUtf8());
 	}
+	const QStringList dmix_segments_before = dmix_segments();
 	QProcessEnvironment extra;
 	extra.insert(QStringLiteral("ALSA_CONFIG_PATH"), config);
 	const QString output = QStringLiteral("alsa:snurra_test");
@@ -591,8 +609,8 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	QVERIFY2(recorder.waitForFinished(8000), "arecord did not finish");
 	const snurra_wire::message status = ask(socket_of(b), status_request());
 	QCOMPARE(status.states.size(), 2);
-	b->kill();
-	b->waitForFinished(3000);
+	b->terminate();
+	QVERIFY2(b->waitForFinished(3000), "the taker did not end on SIGTERM");
 
 	QFile file(recorded);
 	QVERIFY(file.open(QIODevice::ReadOnly));
@@ -679,6 +697,21 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	         qPrintable(QStringLiteral("the gains summed to %1: a gap or a doubling").arg(worst_gain)));
 	/* Whole frames on each side: one apart is the floor's rounding.
 	 * Measured 2026-11-12, twelve runs: 0.02 frames every time. */
+	/*
+	 * A cleanup is proved by counting what it left: a dmix frees its shared
+	 * memory when its last client closes, and only then. Counted as what
+	 * is new in this test's key range since it began, rather than by the
+	 * key configured -- alsa-lib does not use that key as given (one run
+	 * configured ...6640 and left ...6d40), and a check for the wrong key
+	 * passed over a leak.
+	 */
+	const QStringList left_behind = dmix_segments();
+	QVERIFY2(QFile::exists(QStringLiteral("/proc/sysvipc/shm")), "cannot list shared memory");
+	QStringList new_ones;
+	for (const QString &segment : left_behind)
+		if (!dmix_segments_before.contains(segment)) new_ones << segment;
+	QVERIFY2(new_ones.isEmpty(),
+	         qPrintable(QStringLiteral("the dmix's shared memory was left behind: %1").arg(new_ones.join(QLatin1Char(' ')))));
 	QVERIFY2(highest - lowest <= 1.05,
 	         qPrintable(QStringLiteral("the frame heard moved by %1 frames across the handover").arg(highest - lowest)));
 }

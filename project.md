@@ -451,6 +451,15 @@ controls; each tile very compact but resizeable).
     that was two truncations summed. The wrapped ramp (modulo 2^16)
     reads to 1/128 of a frame.
   - Underruns are counted and said on stderr when the output stops.
+  - **A killed player leaked the dmix's shared memory**: two segments and
+    a semaphore set a run, 90 and 45 of them by the time it was noticed,
+    since a dmix frees them only when its last client closes. snurra now
+    ends its event loop on SIGTERM and SIGINT (`src/main.cpp`), so the
+    engine closes its output; the test ends the taker so and counts what
+    is new in its key range from `/proc/sysvipc/shm`, and fails on any.
+    Counted by difference, not by the configured key: alsa-lib did not
+    use that key as given, and a check for it passed over a leak until a
+    SIGKILL sabotage showed it.
   Sabotaged: `snd_pcm_delay` again (2.66 frames, caught), the giver
   cutting at the fade (gains 0.0001). An 82-frame excursion inside one
   fade, once, before the filter, was not seen again in 24 runs and left

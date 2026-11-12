@@ -2,10 +2,48 @@
 #include <QCommandLineParser>
 #include <QCursor>
 #include <QFileInfo>
+#include <QSocketNotifier>
+
+#include <csignal>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "clock.h"
 #include "node.h"
 #include "wire.h"
+
+namespace {
+
+int quit_pipe[2] = { -1, -1 };
+
+void ask_to_quit(int) {
+	const char byte = 0;
+	(void)!write(quit_pipe[1], &byte, 1);
+}
+
+/*
+ * SIGTERM and SIGINT end the event loop rather than the process, so the
+ * engine closes its output: a shared ALSA device (dmix) frees its shared
+ * memory only when its last client closes, and a player killed at logout
+ * left two segments and a semaphore set behind each time. The handler
+ * only writes a byte; the loop reads it.
+ */
+void quit_on_signals(QCoreApplication &app) {
+	if (pipe(quit_pipe) != 0) return;
+	fcntl(quit_pipe[0], F_SETFD, FD_CLOEXEC);
+	fcntl(quit_pipe[1], F_SETFD, FD_CLOEXEC);
+	fcntl(quit_pipe[1], F_SETFL, O_NONBLOCK);
+	QSocketNotifier *notifier = new QSocketNotifier(quit_pipe[0], QSocketNotifier::Read, &app);
+	QObject::connect(notifier, &QSocketNotifier::activated, &app, [] { QCoreApplication::quit(); });
+	struct sigaction action {};
+	action.sa_handler = ask_to_quit;
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = SA_RESTART;
+	sigaction(SIGTERM, &action, nullptr);
+	sigaction(SIGINT, &action, nullptr);
+}
+
+}
 
 /*
  * snurra: one tile per process (project.md sec 3b). Started with a file,
@@ -16,6 +54,7 @@
 int main(int argc, char *argv[]) {
 	QApplication app(argc, argv);
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
+	quit_on_signals(app);
 
 	QCommandLineParser parser;
 	parser.addHelpOption();
