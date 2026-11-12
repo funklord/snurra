@@ -118,6 +118,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.playing = state.playing;
 	start.level = float(state.level) / 100;
 	start.held = held;
+	start.anchored = held;   /* in step with a giver: only a handover's taker */
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);

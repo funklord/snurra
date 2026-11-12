@@ -327,6 +327,71 @@ decks in step are within half a frame of each other and no closer --
 closer would need the taker resampled by a fraction, which nothing yet
 asks for.
 
+**Bytes still arriving, built 2026-11-12** -- the library's centre
+(sec 1). `snurra_bytes` (`src/source.h`) is what a consumer implements to
+have snurra play from its transport: read at an offset without blocking
+(how many are here, 0 for not yet, -1 past the end), `has` for a range,
+`want` for where the reader goes next -- fuzznet's playhead -- and
+`wait`. FFmpeg reads it through custom I/O on the deck's reader thread,
+which may block: a missing byte blocks the reader, the deck has no
+blocks, and the output plays silence with the position held, so the
+callback still never waits. A seek or a close interrupts the wait. A
+deck takes `bytes` in its `start_t`. fuzzypickles' contract, held to the
+sample (`deck_test`, WAV, FLAC, MP3, over a transport whose ranges the
+test sets, driven as an output drives it):
+
+- where the bytes stop, it holds, silent, and on arrival goes on from the
+  very next frame, sample for sample the file;
+- a seek into what is not here waits at the target and asks for it, and
+  lands on the target when the bytes come;
+- a play before any bytes waits, and begins at frame 0;
+- bytes all here seek exactly as the file does.
+
+What building it found and fixed:
+
+- **Every playing deck was anchored**, so a newly opened file skipped
+  what passed while it opened -- its first 80 ms on ALSA -- and one still
+  arriving would skip all it waited for. Only a handover's taker anchors
+  now (`start_t::anchored`).
+- **Seeks were in the right place with the wrong sound.** A lossy
+  codec's frame overlaps the last, and MP3 borrows bits from earlier
+  frames, so a decoder restarted at the target differs for a frame or
+  two. A seek now decodes from a pre-roll -- four codec frames, or the
+  codec's own (Opus 80 ms), and a resampler's history -- and drops it.
+  `codec_test` requires every sample after a seek to equal played
+  through: exact for WAV, FLAC, ALAC, MP3, AAC, Opus and Vorbis; MP2 and
+  AC3 within two 16-bit steps, since their decoders dither from a state
+  no seek can rebuild (eight times the pre-roll changed nothing).
+  Without the pre-roll, Opus and an MP3 seek over bytes fail.
+- **WAV over arriving bytes never started**: FFmpeg's WAV reader seeks
+  past the audio for trailing chunks, and stream analysis reads five
+  seconds to estimate what the header says. Bytes not all here open as a
+  stream, unseekable, with a fifth of a second of analysis; a format that
+  cannot (MP4 indexed at the end) opens seekable and waits, which is
+  honest -- it cannot play before its index arrives.
+- **A short forward seek is read through, not seeked**, so the reader
+  now says where it waits whenever it waits.
+- **A packet cut short by a wait given up comes back marked corrupt**;
+  it is dropped rather than decoded into the stream.
+
+**What it costs, and is not fixed:** an exact seek in an arriving MP3
+without a TOC needs the bytes before the target -- FFmpeg's accurate MP3
+seek reads forward from the last frame it knows, since a CBR stream's
+byte positions are not exact -- so it asks from the edge of what is
+here, and waits for all of it. A fast seek (estimate, then refine) would
+trade exactness for time; not built, and the DJ requirement argues
+against it as a default. The length of bytes not all here is the
+duration's estimate, not the last packets'.
+
+**Sanitizers, 2026-11-12:** the whole suite under ThreadSanitizer, and
+under AddressSanitizer with UBSan, both built out of tree with qmake's
+`CONFIG+=sanitizer CONFIG+=sanitize_thread` (or `sanitize_address
+sanitize_undefined`), the snurra the tests start included: no report.
+Each was shown live first by a deliberate race and a deliberate heap
+overread, both reported. `test/main.cpp` sets
+`QTEST_DISABLE_STACK_DUMP`: QtTest's crash handler re-faulted and
+re-attached gdb 361 times in 281 s on a fixture's overflow.
+
 **Codecs keep time, measured** (`codec_test`, the holder 2026-11-12:
 every codec added gets tests of how it keeps time against other files,
 so timing faults are found and fixed before anything depends on them). A
@@ -470,9 +535,10 @@ controls; each tile very compact but resizeable).
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
-- **Not yet:** a source still arriving (fuzznet, SFTP) through the same
-  timing tests; Wayland's drag-and-drop merge; a real waveform; the
-  train's and stack's own mixing (sec 3b).
+- **Not yet:** a tile for bytes (the window opens tiles by name; a
+  consumer embedding snurra hands a deck its bytes); Wayland's
+  drag-and-drop merge; a real waveform; the train's and stack's own
+  mixing (sec 3b); the `.pri` and `.mk` a consumer vendors with (sec 2).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -486,7 +552,7 @@ Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
 over SSH as the other trees are. Open, the holder's: audio or video
 first; the analysis licences (sec 3e).
 
-Next: the Wayland merge by drag and drop; the timing tests run over a
-source that arrives in pieces, once there is one; a handover between an
-ALSA output and a hw: one (two devices, two clocks -- drift, not only
-latency, then matters).
+Next: the `.pri`/`.mk` for consumers, so BeerSSH and fuzzypickles can
+link snurra and hand it their bytes; the Wayland merge by drag and drop;
+a real waveform; a handover between an ALSA output and a hw: one (two
+devices, two clocks -- drift, not only latency, then matters).

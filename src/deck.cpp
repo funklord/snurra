@@ -11,11 +11,14 @@ snurra_deck::snurra_deck(const start_t &start)
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
 
 	/*
-	 * Anchored, the first block is read from where the anchor will be when
-	 * it is needed, and the callback places it by the clock; not playing,
-	 * a deck just waits where it was.
+	 * Anchored -- a handover's taker, which must sound in step with the
+	 * giver -- the first block is read from where the anchor will be when
+	 * it is needed, and the callback places it by the clock. Any other deck
+	 * starts where it was asked: anchoring every playing deck made a newly
+	 * opened file skip what passed while it opened, its first 80 ms on
+	 * ALSA, and a file still arriving would skip all it waited for.
 	 */
-	m_anchored = start.playing;
+	m_anchored = start.playing && start.anchored;
 	m_anchor_frame = start.anchor_frame;
 	m_anchor_us = start.anchor_us;
 	int64_t first = start.anchor_frame;
@@ -32,11 +35,20 @@ snurra_deck::snurra_deck(const start_t &start)
 	m_slew = start.playing ? start.level : 0;
 	if (start.held) fade(INT64_MAX, 0, 0, 0);
 
-	/* The source is opened on the reader's thread: opening may block. */
+	/* The source is opened on the reader's thread: opening may block --
+	 * bytes still arriving block until the format can be known. */
 	const QString name = start.source;
 	const int64_t fallback = start.fallback_length;
-	m_reader = std::thread([this, name, fallback] {
-		m_source = snurra_open_source(name, m_rate, fallback);
+	std::shared_ptr<snurra_bytes> bytes = start.bytes;
+	m_reader = std::thread([this, name, fallback, bytes] {
+		/* A wait for bytes is given up for a seek elsewhere or a close. */
+		auto interrupted = [this] {
+			return m_stop.load(std::memory_order_relaxed)
+			       || m_generation.load(std::memory_order_acquire) != m_reader_generation;
+		};
+		m_reader_generation = m_generation.load(std::memory_order_acquire);
+		if (bytes) m_source = snurra_open_source(bytes, name, m_rate, interrupted);
+		if (!m_source) m_source = snurra_open_source(bytes ? QString() : name, m_rate, fallback);
 		m_length.store(m_source->length(), std::memory_order_relaxed);
 		read_loop();
 	});
@@ -85,8 +97,7 @@ float snurra_deck::fade_gain(const fade_t &fade, int64_t us) const {
 	return fade.from + (fade.to - fade.from) * t;
 }
 
-void snurra_deck::last_rendered(int64_t &frame, int64_t &us, bool &moving) const {
-	int64_t advanced = 0;
+void snurra_deck::last_rendered(int64_t &frame, int64_t &us, int64_t &advanced) const {
 	for (;;) {
 		const uint32_t before = m_published_sequence.load(std::memory_order_acquire);
 		if (before & 1) continue;
@@ -96,17 +107,16 @@ void snurra_deck::last_rendered(int64_t &frame, int64_t &us, bool &moving) const
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (m_published_sequence.load(std::memory_order_relaxed) == before) break;
 	}
-	moving = advanced > 0;
 }
 
 int64_t snurra_deck::position_at(int64_t us) const {
 	int64_t frame = 0;
 	int64_t at = 0;
-	bool moving = false;
-	last_rendered(frame, at, moving);
+	int64_t advanced = 0;
+	last_rendered(frame, at, advanced);
 	/* Carried along the clock, but never past what was rendered moving: a
 	 * paused or starved deck stays put. */
-	const int64_t along = moving ? snurra_us_to_frames(us - at, m_rate) : 0;
+	const int64_t along = advanced > 0 ? snurra_us_to_frames(us - at, m_rate) : 0;
 	return std::max<int64_t>(0, frame + along);
 }
 
@@ -120,6 +130,7 @@ void snurra_deck::read_loop() {
 		const uint64_t now = m_generation.load(std::memory_order_acquire);
 		if (now != generation) {
 			generation = now;
+			m_reader_generation = now;
 			m_source->seek(m_seek_target.load(std::memory_order_relaxed));
 			ended = false;
 		}

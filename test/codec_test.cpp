@@ -149,6 +149,12 @@ struct codec_t {
 	const char *extension;
 	QStringList arguments;
 	bool timed;   /* carries its priming and padding, so plays as written */
+	/* How far a sample after a seek may differ from played through: 0,
+	 * except where the decoder dithers from a state a seek cannot rebuild
+	 * -- AC3 by its spec, FFmpeg's MPEG audio decoder in rounding to 16
+	 * bits. Two 16-bit steps, -90 dB; eight times the pre-roll changed
+	 * nothing, so it is not the pre-roll. */
+	double sample_tolerance = 0;
 };
 
 /* A quarter of a frame at 48 kHz: 5 microseconds. */
@@ -183,6 +189,7 @@ void codec_test::every_codec_keeps_time_data() {
 	QTest::addColumn<QStringList>("arguments");
 	QTest::addColumn<int>("rate");
 	QTest::addColumn<bool>("timed");
+	QTest::addColumn<double>("sample_tolerance");
 
 	const QList<codec_t> codecs{
 		{ "wav-s16", "wav", { "-c:a", "pcm_s16le" }, true },
@@ -192,14 +199,14 @@ void codec_test::every_codec_keeps_time_data() {
 		{ "aac", "m4a", { "-c:a", "aac", "-b:a", "192k" }, true },          /* the edit list */
 		{ "opus", "opus", { "-c:a", "libopus", "-b:a", "128k" }, true },    /* pre-skip, granules */
 		{ "vorbis", "ogg", { "-c:a", "libvorbis", "-q:a", "6" }, true },
-		{ "mp2", "mp2", { "-c:a", "mp2", "-b:a", "256k" }, false },         /* raw: no word of either */
-		{ "ac3", "ac3", { "-c:a", "ac3", "-b:a", "256k" }, false },
+		{ "mp2", "mp2", { "-c:a", "mp2", "-b:a", "256k" }, false, 2.0 / 32768 },   /* raw: no word of either */
+		{ "ac3", "ac3", { "-c:a", "ac3", "-b:a", "256k" }, false, 2.0 / 32768 },
 	};
 	for (const codec_t &codec : codecs) {
 		for (int rate : { 48000, 44100 }) {
 			QTest::newRow(qPrintable(QStringLiteral("%1@%2").arg(QLatin1String(codec.name)).arg(rate)))
 			        << QString::fromLatin1(codec.name) << QString::fromLatin1(codec.extension) << codec.arguments
-			        << rate << codec.timed;
+			        << rate << codec.timed << codec.sample_tolerance;
 		}
 	}
 }
@@ -210,6 +217,7 @@ void codec_test::every_codec_keeps_time() {
 	QFETCH(QStringList, arguments);
 	QFETCH(int, rate);
 	QFETCH(bool, timed);
+	QFETCH(double, sample_tolerance);
 
 	const QString reference = m_dir.filePath(QStringLiteral("reference-%1.wav").arg(rate));
 	const QString encoded = m_dir.filePath(QStringLiteral("%1-%2.%3").arg(codec).arg(rate).arg(extension));
@@ -238,11 +246,16 @@ void codec_test::every_codec_keeps_time() {
 		highest = std::max(highest, offsets.back());
 	}
 
-	/* After seeks to frames that fall between packets, chirps included. */
+	/* After seeks to frames that fall between packets, chirps included --
+	 * and every sample after one the same as played through: a seek that
+	 * lands in the right place with the wrong sound is a glitch on a cue. */
 	double worst_seek = 0;
+	double worst_sample = 0;
 	for (double at : { 1.013, 2.4567, 3.30001, 4.77 }) {
 		const int64_t from = int64_t(at * RATE);
 		const std::vector<float> after = decode(*source, from, RATE / 2);
+		for (size_t i = 0; i < after.size() && size_t(from) + i < through.size(); ++i)
+			worst_sample = std::max(worst_sample, double(std::abs(after[i] - through[size_t(from) + i])));
 		for (int k = 0; k < chirp_count(); ++k) {
 			const double found = find_chirp(after, from, k);
 			if (std::isnan(found)) continue;
@@ -252,9 +265,9 @@ void codec_test::every_codec_keeps_time() {
 	}
 
 	const double expected_length = SECONDS * RATE;
-	qInfo("%-12s played through: %+.2f frames at worst; after a seek: %+.2f from played through; "
-	      "length says %lld, plays %zu, written %.0f",
-	      qPrintable(QStringLiteral("%1@%2").arg(codec).arg(rate)), worst, worst_seek,
+	qInfo("%-12s played through: %+.2f frames at worst; after a seek: %+.2f from played through, "
+	      "samples apart by %.2g; length says %lld, plays %zu, written %.0f",
+	      qPrintable(QStringLiteral("%1@%2").arg(codec).arg(rate)), worst, worst_seek, worst_sample,
 	      (long long)source->length(), through.size(), expected_length);
 
 	if (timed)
@@ -266,6 +279,8 @@ void codec_test::every_codec_keeps_time() {
 	QVERIFY2(std::abs(worst_seek) <= PRECISION,
 	         qPrintable(QStringLiteral("after a seek, a chirp lands %1 frames from where it plays through")
 	                            .arg(worst_seek, 0, 'f', 2)));
+	QVERIFY2(worst_sample <= sample_tolerance,
+	         qPrintable(QStringLiteral("after a seek, a sample differs from played through by %1").arg(worst_sample)));
 	QVERIFY2(qAbs(source->length() - int64_t(through.size())) <= 1,
 	         qPrintable(QStringLiteral("the length says %1 frames and %2 play").arg(source->length()).arg(through.size())));
 	if (timed)

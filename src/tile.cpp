@@ -160,10 +160,10 @@ snurra_tile_state snurra_tile::state() const {
 	snurra_tile_state now = m_state;
 	int64_t frame = 0;
 	int64_t at = 0;
-	bool moving = false;
-	m_deck->last_rendered(frame, at, moving);
+	int64_t advanced = 0;
+	m_deck->last_rendered(frame, at, advanced);
 	now.position_us = frames_to_us(frame, m_deck->rate());
-	now.sampled_at_us = moving ? at : snurra_clock_us();
+	now.sampled_at_us = advanced > 0 ? at : snurra_clock_us();
 	return now;
 }
 

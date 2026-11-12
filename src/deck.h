@@ -10,6 +10,7 @@
 
 #include "spsc.h"
 
+class snurra_bytes;
 class snurra_source;
 
 /*
@@ -30,7 +31,8 @@ class snurra_source;
 class snurra_deck {
 public:
 	struct start_t {
-		QString source;
+		QString source;                       /* a name; or, with bytes, a hint at their kind */
+		std::shared_ptr<snurra_bytes> bytes;  /* from a transport, still arriving or not */
 		int rate = 48000;
 		int64_t fallback_length = 0;   /* frames, for a source that says none */
 		int64_t anchor_frame = 0;      /* heard at anchor_us */
@@ -38,6 +40,7 @@ public:
 		bool playing = false;
 		float level = 1;
 		bool held = false;             /* silent until a fade brings it in */
+		bool anchored = false;         /* in step with the anchor's clock: a handover's taker */
 		int64_t lead_us = 0;           /* how far ahead the first block is needed */
 	};
 
@@ -59,10 +62,10 @@ public:
 	int64_t position_at(int64_t us) const;
 
 	/* What the callback last rendered, exactly: `frame` is heard at `us`,
-	 * and it was moving (playing, and not starved). A handover passes this
-	 * pair on as it is, since any other moment would be rounded to a frame
-	 * once here and again by the taker. */
-	void last_rendered(int64_t &frame, int64_t &us, bool &moving) const;
+	 * and `advanced` frames from it went out (0: paused or starved). A
+	 * handover passes the pair on as it is, since any other moment would be
+	 * rounded to a frame once here and again by the taker. */
+	void last_rendered(int64_t &frame, int64_t &us, int64_t &advanced) const;
 	int64_t length() const { return m_length.load(std::memory_order_relaxed); }
 	int rate() const { return m_rate; }
 
@@ -123,6 +126,7 @@ private:
 	/* From the reader. */
 	std::atomic<int64_t> m_length{ 0 };
 	std::atomic<int64_t> m_ended_generation{ -1 };
+	uint64_t m_reader_generation = 0;   /* the reader's own */
 
 	/* From the callback: where it was, published under a seqlock. */
 	std::atomic<uint32_t> m_published_sequence{ 0 };

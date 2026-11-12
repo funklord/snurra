@@ -4,6 +4,8 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <numeric>
 #include <cmath>
 #include <vector>
@@ -102,13 +104,77 @@ public:
 		swr_free(&m_swr);
 		avcodec_free_context(&m_codec);
 		avformat_close_input(&m_format);
+		if (m_io) av_freep(&m_io->buffer);
+		avio_context_free(&m_io);
 		av_packet_free(&m_packet);
 		av_frame_free(&m_frame);
 	}
 
 	bool open(const QString &path) {
 		if (avformat_open_input(&m_format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
-		if (avformat_find_stream_info(m_format, nullptr) < 0) return false;
+		return open_streams(true);
+	}
+
+	/*
+	 * Over bytes that may still be arriving: FFmpeg reads through
+	 * read_bytes() below, which waits for what is missing, so this blocks
+	 * until the format is known -- the deferred start -- and the decoding
+	 * after it stalls where the bytes stop.
+	 */
+	bool open(std::shared_ptr<snurra_bytes> bytes, const QString &name, std::function<bool()> interrupted) {
+		m_bytes = std::move(bytes);
+		m_interrupted = std::move(interrupted);
+		constexpr int BUFFER = 65536;
+		uint8_t *buffer = static_cast<uint8_t *>(av_malloc(BUFFER));
+		if (!buffer) return false;
+		m_io = avio_alloc_context(buffer, BUFFER, 0, this, &ffmpeg_source::read_bytes, nullptr, &ffmpeg_source::seek_bytes);
+		if (!m_io) {
+			av_free(buffer);
+			return false;
+		}
+		m_bytes->want(0);
+		/*
+		 * Bytes not all here are opened as a stream, unseekable: FFmpeg's WAV
+		 * reader, given a seekable input, seeks past the audio to look for
+		 * trailing chunks and waits there -- for the whole file, before
+		 * playing any of it. A format that cannot open so (MP4 with its index
+		 * at the end) is opened again seekable, and waits, which is honest:
+		 * it cannot play before that index arrives. Seeking is turned on once
+		 * open, for the seeks a person makes.
+		 */
+		const bool whole = m_bytes->size() > 0 && m_bytes->has(0, m_bytes->size());
+		for (bool seekable : { whole, true }) {
+			m_io->seekable = seekable ? AVIO_SEEKABLE_NORMAL : 0;
+			m_io_position = 0;
+			avio_seek(m_io, 0, SEEK_SET);
+			m_io->eof_reached = 0;
+			m_io->error = 0;
+			m_format = avformat_alloc_context();
+			if (!m_format) return false;
+			m_format->pb = m_io;
+			m_format->flags |= AVFMT_FLAG_CUSTOM_IO;
+			/* Not all here: the stream analysis reads up to five seconds of
+			 * audio to estimate what headers already say, and would wait
+			 * for them; a fifth of a second is enough to know the codec. */
+			if (!whole) {
+				m_format->max_analyze_duration = AV_TIME_BASE / 5;
+				m_format->probesize = 65536;
+			}
+			if (avformat_open_input(&m_format, QFile::encodeName(name).constData(), nullptr, nullptr) == 0
+			    && avformat_find_stream_info(m_format, nullptr) >= 0) {
+				m_io->seekable = AVIO_SEEKABLE_NORMAL;
+				return open_streams(false);
+			}
+			avformat_close_input(&m_format);
+			if (seekable || (m_interrupted && m_interrupted())) return false;
+		}
+		return false;
+	}
+
+	void set_interrupt(std::function<bool()> interrupted) override { m_interrupted = std::move(interrupted); }
+
+	bool open_streams(bool find_info) {
+		if (find_info && avformat_find_stream_info(m_format, nullptr) < 0) return false;
 		const AVCodec *codec = nullptr;
 		m_stream = av_find_best_stream(m_format, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
 		if (m_stream < 0 || !codec) return false;
@@ -117,6 +183,29 @@ public:
 		if (!m_codec || avcodec_parameters_to_context(m_codec, stream->codecpar) < 0) return false;
 		if (avcodec_open2(m_codec, codec, nullptr) < 0) return false;
 		if (!make_resampler()) return false;
+
+		/*
+		 * How far before a target a seek starts decoding. A lossy codec's
+		 * frame overlaps the one before it (MDCT overlap-add), and MP3 also
+		 * borrows bits from earlier frames, so a decoder restarted at the
+		 * target gives different samples for a frame or two: the right
+		 * place, the wrong sound -- a glitch on a cue, and two different
+		 * signals summed in a handover's crossfade. So four codec frames
+		 * before it, or the codec's own seek pre-roll where it states one
+		 * (Opus: 80 ms); and a resampler's filter needs its history too.
+		 * Played-through and seeked must give the same samples.
+		 */
+		{
+			const AVCodecDescriptor *descriptor = avcodec_descriptor_get(m_codec->codec_id);
+			const AVCodecParameters *parameters = stream->codecpar;
+			int64_t preroll_in = 0;
+			if (descriptor && (descriptor->props & AV_CODEC_PROP_LOSSY)) {
+				const int64_t frame = parameters->frame_size > 0 ? parameters->frame_size : 2048;
+				preroll_in = std::max<int64_t>(parameters->seek_preroll, 4 * frame);
+			}
+			if (m_codec->sample_rate != m_rate) preroll_in += 256;
+			m_preroll = m_codec->sample_rate > 0 ? av_rescale(preroll_in, m_rate, m_codec->sample_rate) : 0;
+		}
 		m_packet = av_packet_alloc();
 		m_frame = av_frame_alloc();
 		if (!m_packet || !m_frame) return false;
@@ -125,13 +214,18 @@ public:
 			m_length = av_rescale_q(stream->duration, stream->time_base, AVRational{ 1, m_rate });
 		else if (m_format->duration > 0)
 			m_length = av_rescale(m_format->duration, m_rate, AV_TIME_BASE);
-		find_end();
+		/* Only from bytes all here: read for its end, a file still
+		 * arriving would wait for its last bytes before playing its first. */
+		if (!m_bytes || (m_bytes->size() > 0 && m_bytes->has(std::max<int64_t>(0, m_bytes->size() - 262144),
+		                                                     std::min<int64_t>(m_bytes->size(), 262144))))
+			find_end();
 		seek(0);
 		return true;
 	}
 
 	int read(float *out, int frames) override {
-		while (pending_frames() < size_t(frames) && !m_ended) decode_some();
+		m_waiting = false;
+		while (pending_frames() < size_t(frames) && !m_ended && !m_waiting) decode_some();
 		int n = int(std::min(pending_frames(), size_t(frames)));
 		/* Not past the end the packets say: a codec's padding is not audio. */
 		if (m_exact_length) n = int(std::max<int64_t>(0, std::min<int64_t>(n, m_length - m_position)));
@@ -151,14 +245,23 @@ public:
 
 	void seek(int64_t frame) override {
 		const AVStream *stream = m_format->streams[m_stream];
-		int64_t ts = av_rescale_q(frame, AVRational{ 1, m_rate }, stream->time_base);
+		/* From a pre-roll before the target, decoded and dropped, so the
+		 * target's samples are the ones played-through gives (see m_preroll). */
+		int64_t ts = av_rescale_q(std::max<int64_t>(0, frame - m_preroll), AVRational{ 1, m_rate }, stream->time_base);
 		if (stream->start_time != AV_NOPTS_VALUE) ts += stream->start_time;
+		/* A wait given up leaves the byte reader in error; a seek starts
+		 * it afresh. */
+		if (m_format->pb) {
+			m_format->pb->error = 0;
+			m_format->pb->eof_reached = 0;
+		}
 		av_seek_frame(m_format, m_stream, ts, AVSEEK_FLAG_BACKWARD);
 		avcodec_flush_buffers(m_codec);
 		make_resampler();
 		m_pending.clear();
 		m_pending_from = 0;
 		m_ended = false;
+		m_waiting = false;
 		m_draining = false;
 		m_position = frame;
 		m_trim_to = frame;
@@ -253,9 +356,21 @@ private:
 		/* The decoder wants input. */
 		for (;;) {
 			const int read = av_read_frame(m_format, m_packet);
+			if (read < 0 && m_interrupted && m_interrupted()) {
+				/* A wait for bytes given up: not the end, only a pause. */
+				m_waiting = true;
+				return;
+			}
 			if (read < 0) {
 				avcodec_send_packet(m_codec, nullptr);
 				m_draining = true;
+				return;
+			}
+			/* A packet cut short by a wait given up comes back marked
+			 * corrupt; decoded, it would put garbage in the stream. */
+			if ((m_packet->flags & AV_PKT_FLAG_CORRUPT) && m_interrupted && m_interrupted()) {
+				av_packet_unref(m_packet);
+				m_waiting = true;
 				return;
 			}
 			const bool ours = m_packet->stream_index == m_stream;
@@ -377,6 +492,55 @@ private:
 		return skip;
 	}
 
+	/* FFmpeg's reads, from bytes that may still be arriving: what is not
+	 * here yet is waited for, and the wait given up when interrupted. */
+	static int read_bytes(void *opaque, uint8_t *buffer, int size) {
+		ffmpeg_source *self = static_cast<ffmpeg_source *>(opaque);
+		for (;;) {
+			const int64_t n = self->m_bytes->read(self->m_io_position, buffer, size);
+			if (n > 0) {
+				self->m_io_position += n;
+				return int(n);
+			}
+			if (n < 0) return AVERROR_EOF;
+			if (self->m_interrupted && self->m_interrupted()) return AVERROR_EXIT;
+			/* Waiting, say where: FFmpeg reads through a short seek rather
+			 * than seeking, so a seek alone does not tell the transport. */
+			if (self->m_wanted != self->m_io_position) {
+				self->m_wanted = self->m_io_position;
+				self->m_bytes->want(self->m_io_position);
+			}
+			self->m_bytes->wait(20);
+		}
+	}
+
+	static int64_t seek_bytes(void *opaque, int64_t offset, int whence) {
+		ffmpeg_source *self = static_cast<ffmpeg_source *>(opaque);
+		const int64_t size = self->m_bytes->size();
+		whence &= ~AVSEEK_FORCE;
+		if (whence == AVSEEK_SIZE) return size >= 0 ? size : AVERROR(ENOSYS);
+		int64_t to = offset;
+		if (whence == SEEK_CUR) to = self->m_io_position + offset;
+		else if (whence == SEEK_END) {
+			if (size < 0) return AVERROR(ENOSYS);
+			to = size + offset;
+		} else if (whence != SEEK_SET) {
+			return AVERROR(EINVAL);
+		}
+		if (to < 0) return AVERROR(EINVAL);
+		self->m_io_position = to;
+		self->m_wanted = to;
+		self->m_bytes->want(to);
+		return to;
+	}
+
+	std::shared_ptr<snurra_bytes> m_bytes;
+	std::function<bool()> m_interrupted;
+	AVIOContext *m_io = nullptr;
+	int64_t m_io_position = 0;
+	int64_t m_wanted = -1;   /* the last offset told to the transport */
+	bool m_waiting = false;   /* the last read gave up a wait for bytes */
+
 	int m_rate;
 	AVFormatContext *m_format = nullptr;
 	AVCodecContext *m_codec = nullptr;
@@ -394,10 +558,22 @@ private:
 	bool m_place_next = false;
 	int64_t m_trim_to = 0;
 	int64_t m_skip = 0;   /* frames still to drop to reach m_trim_to */
+	int64_t m_preroll = 0;   /* frames decoded and dropped before a seek's target */
 	int64_t m_front_pts = AV_NOPTS_VALUE;   /* the first packet after a seek */
 	int64_t m_front_duration = 0;
 };
 
+}
+
+void snurra_bytes::wait(int ms) {
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
+std::unique_ptr<snurra_source> snurra_open_source(std::shared_ptr<snurra_bytes> bytes, const QString &name, int rate,
+                                                  std::function<bool()> interrupted) {
+	auto source = std::make_unique<ffmpeg_source>(rate);
+	if (!source->open(std::move(bytes), name, std::move(interrupted))) return nullptr;
+	return source;
 }
 
 std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length) {
