@@ -3,7 +3,7 @@
 # TARGETS
 #   make            the player, in $(BUILD_DIR)/snurra
 #   make test       build and run the handover tests (never built by plain make)
-#   make style      the style gate: whitespace, indentation, and the docs
+#   make style      the style gate: its own suite, whitespace, indentation, the docs
 #   make hooks      install the commit-msg hook
 #   make help       this list
 #
@@ -44,10 +44,12 @@ test: $(BIN) tests-build
 
 # The gate's own suite first, since a gate's pass means something only once
 # the gate is known to work; both are copied from ~/.claude/tool/.
-style:
-	python3 tool/test_style_gate.py
+style: style-tool
 	python3 tool/style_gate.py check
 	python3 tool/style_gate.py docs
+
+style-tool:
+	python3 tool/test_style_gate.py
 
 hooks:
 	@dir=$$(git rev-parse --git-common-dir 2>/dev/null); \
@@ -59,5 +61,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test style hooks help FORCE
+.PHONY: all tests-build test style style-tool hooks help FORCE
 FORCE:
