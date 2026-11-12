@@ -6,8 +6,8 @@
 #include <QPointer>
 #include <QWidget>
 
-#include "tile_state.h"
-#include "wire.h"
+#include "snurra/tile_state.h"
+#include "snurra/wire.h"
 
 class QGridLayout;
 class QLocalServer;

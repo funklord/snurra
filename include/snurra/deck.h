@@ -8,7 +8,7 @@
 #include <memory>
 #include <thread>
 
-#include "spsc.h"
+#include "snurra/spsc.h"
 
 class snurra_bytes;
 class snurra_source;

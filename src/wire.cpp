@@ -1,4 +1,4 @@
-#include "wire.h"
+#include "snurra/wire.h"
 
 #include <QDataStream>
 #include <QDir>

@@ -1,4 +1,4 @@
-#include "node.h"
+#include "snurra/node.h"
 
 #include <QCoreApplication>
 #include <QGridLayout>
@@ -15,12 +15,12 @@
 
 #include <algorithm>
 
-#include "clock.h"
-#include "deck.h"
-#include "engine.h"
-#include "marker.h"
-#include "snap.h"
-#include "tile.h"
+#include "snurra/clock.h"
+#include "snurra/deck.h"
+#include "snurra/engine.h"
+#include "snurra/marker.h"
+#include "snurra/snap.h"
+#include "snurra/tile.h"
 
 namespace {
 

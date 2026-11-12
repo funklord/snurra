@@ -8,9 +8,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "clock.h"
-#include "node.h"
-#include "wire.h"
+#include "snurra/clock.h"
+#include "snurra/node.h"
+#include "snurra/wire.h"
 
 namespace {
 

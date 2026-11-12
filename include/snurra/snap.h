@@ -5,7 +5,7 @@
 #include <QRect>
 #include <QString>
 
-#include "wire.h"
+#include "snurra/wire.h"
 
 /*
  * Where a dragged window would join another (project.md sec 3b, 3d): one

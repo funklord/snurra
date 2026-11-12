@@ -1,4 +1,4 @@
-#include "tile.h"
+#include "snurra/tile.h"
 
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -12,7 +12,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "deck.h"
+#include "snurra/deck.h"
 
 /*
  * A stand-in for the waveform until there is audio to draw: bars from the

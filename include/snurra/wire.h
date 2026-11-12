@@ -9,7 +9,7 @@
 
 #include <functional>
 
-#include "tile_state.h"
+#include "snurra/tile_state.h"
 
 /*
  * The messages between snurra processes (project.md sec 3b), framed as a

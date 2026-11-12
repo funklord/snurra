@@ -1,4 +1,4 @@
-#include "source.h"
+#include "snurra/source.h"
 
 #include <QFile>
 #include <QFileInfo>

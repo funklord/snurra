@@ -3,7 +3,7 @@
 
 #include <QWidget>
 
-#include "tile_state.h"
+#include "snurra/tile_state.h"
 
 class QLabel;
 class QSlider;

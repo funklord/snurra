@@ -38,7 +38,7 @@
 #include <memory>
 #include <vector>
 
-#include "../src/source.h"
+#include "snurra/source.h"
 
 namespace {
 

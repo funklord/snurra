@@ -1,4 +1,4 @@
-#include "snap.h"
+#include "snurra/snap.h"
 
 snurra_snap snurra_find_snap(const QRect &mine, const QHash<QString, QRect> &peers) {
 	snurra_snap best;

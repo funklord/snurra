@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "deck.h"
+#include "snurra/deck.h"
 
 class QTimer;
 class snurra_output;

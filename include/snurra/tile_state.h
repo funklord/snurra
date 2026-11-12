@@ -4,7 +4,7 @@
 #include <QDataStream>
 #include <QString>
 
-#include "clock.h"
+#include "snurra/clock.h"
 
 /*
  * What a tile is playing, as it moves between processes (project.md

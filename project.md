@@ -35,7 +35,14 @@ and everything above it knows nothing of SFTP or fuzznet.
 - **Prefix `snurra_`** for everything the library exports; module-private
   names unprefixed (code-style.md).
 - **Vendored by its consumers** as a submodule, with a `.pri` for qmake
-  and a `.mk` for hand-written Makefiles, as softkeys is.
+  and a `.mk` for hand-written Makefiles, as softkeys is. Built
+  2026-11-12: `snurra.pri` compiles the library into the consumer, moc
+  included, and `snurra.mk` derives its lists from the tree; `make
+  check-mk` builds the player from the `.mk` alone and runs the tests
+  against it ($SNURRA_BIN). Headers are in `include/snurra/` and included
+  as `"snurra/deck.h"`, measured against the consumers first: BeerSSH has
+  a `wire.h` and fuzzypickles a `clock.h`, which a bare `src/` on their
+  include path would have made a matter of include order.
 - **No licence yet.** Absent on purpose until the holder decides; not a
   gap to fill.
 
@@ -538,7 +545,7 @@ controls; each tile very compact but resizeable).
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
   consumer embedding snurra hands a deck its bytes); Wayland's
   drag-and-drop merge; a real waveform; the train's and stack's own
-  mixing (sec 3b); the `.pri` and `.mk` a consumer vendors with (sec 2).
+  mixing (sec 3b).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -552,7 +559,8 @@ Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
 over SSH as the other trees are. Open, the holder's: audio or video
 first; the analysis licences (sec 3e).
 
-Next: the `.pri`/`.mk` for consumers, so BeerSSH and fuzzypickles can
-link snurra and hand it their bytes; the Wayland merge by drag and drop;
+Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
+bytes -- their sessions' to take up, signalled in their trees; the
+Wayland merge by drag and drop;
 a real waveform; a handover between an ALSA output and a hw: one (two
 devices, two clocks -- drift, not only latency, then matters).

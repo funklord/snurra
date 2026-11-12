@@ -1,10 +1,10 @@
-#include "deck.h"
+#include "snurra/deck.h"
 
 #include <algorithm>
 #include <chrono>
 
-#include "clock.h"
-#include "source.h"
+#include "snurra/clock.h"
+#include "snurra/source.h"
 
 snurra_deck::snurra_deck(const start_t &start)
     : m_rate(start.rate), m_blocks(new block[BLOCKS]), m_playing(start.playing), m_level(start.level) {

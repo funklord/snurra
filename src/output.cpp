@@ -1,4 +1,4 @@
-#include "output.h"
+#include "snurra/output.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "clock.h"
+#include "snurra/clock.h"
 
 namespace {
 

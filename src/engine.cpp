@@ -1,11 +1,11 @@
-#include "engine.h"
+#include "snurra/engine.h"
 
 #include <QTimer>
 
 #include <cstdio>
 
-#include "clock.h"
-#include "output.h"
+#include "snurra/clock.h"
+#include "snurra/output.h"
 
 snurra_engine::snurra_engine(QObject *parent) : QObject(parent) {
 	const QByteArray wanted = qgetenv("SNURRA_OUTPUT");

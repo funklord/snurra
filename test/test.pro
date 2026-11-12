@@ -10,6 +10,8 @@ SOURCES += main.cpp handover_test.cpp codec_test.cpp deck_test.cpp ../src/snap.c
 # The codec tests decode through snurra's own source.
 CONFIG += link_pkgconfig
 PKGCONFIG += libavformat libavcodec libswresample libavutil
-HEADERS += ../src/snap.h ../src/wire.h ../src/tile_state.h ../src/clock.h ../src/source.h ../src/deck.h ../src/spsc.h
+INCLUDEPATH += ../include
+HEADERS += ../include/snurra/snap.h ../include/snurra/wire.h ../include/snurra/tile_state.h \
+           ../include/snurra/clock.h ../include/snurra/source.h ../include/snurra/deck.h ../include/snurra/spsc.h
 isEmpty(SNURRA_BIN): SNURRA_BIN = $$OUT_PWD/../build/snurra
 DEFINES += SNURRA_BIN=\\\"$$SNURRA_BIN\\\"

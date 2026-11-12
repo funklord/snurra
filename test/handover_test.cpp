@@ -18,9 +18,9 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-#include "../src/snap.h"
-#include "../src/source.h"
-#include "../src/wire.h"
+#include "snurra/snap.h"
+#include "snurra/source.h"
+#include "snurra/wire.h"
 
 class handover_test : public QObject {
 	Q_OBJECT
@@ -89,7 +89,9 @@ QProcess *handover_test::start(const QStringList &args, const QString &output, c
 	for (const QString &key : extra.keys()) env.insert(key, extra.value(key));
 	process->setProcessEnvironment(env);
 	process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
-	process->start(QStringLiteral(SNURRA_BIN), args);
+	/* $SNURRA_BIN runs these against another build of the player:
+	 * `make check-mk`'s, from snurra.mk alone. */
+	process->start(qEnvironmentVariable("SNURRA_BIN", QStringLiteral(SNURRA_BIN)), args);
 	m_processes << process;
 	return process;
 }

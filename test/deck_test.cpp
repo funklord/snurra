@@ -19,9 +19,9 @@
 #include <thread>
 #include <vector>
 
-#include "../src/clock.h"
-#include "../src/deck.h"
-#include "../src/source.h"
+#include "snurra/clock.h"
+#include "snurra/deck.h"
+#include "snurra/source.h"
 
 namespace {
 

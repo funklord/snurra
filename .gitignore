@@ -1,5 +1,6 @@
 /build/
 /build-test/
+/build-mk/
 __pycache__/
 /.claude/go.md
 .qmake.stash
