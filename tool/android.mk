@@ -1,3 +1,5 @@
+# Copied from ~/.claude/tool/android.mk -- the source. Keep in sync;
+# fix drift the moment you notice it.
 # =============================================================================
 # android.mk -- the shared Android vocabulary for private projects
 #
