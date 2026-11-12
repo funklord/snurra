@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copied from ~/.claude/tool/commit-msg -- the source. Keep in sync;
+# fix drift the moment you notice it. Install with `make hooks`.
 # Commit message checks, following kernel practice.
 #
 # The copy that runs lives in .git/hooks, which is untracked; this one is in

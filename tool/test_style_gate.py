@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copied from ~/.claude/tool/test_style_gate.py -- the source. Keep in sync;
+# fix drift the moment you notice it.
 """Regression tests for the style gate and the commit-msg hook beside it,
 each one a fault that shipped.
 
