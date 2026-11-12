@@ -124,6 +124,12 @@ private:
 	int64_t time_of(snurra_tile *tile) const;
 	int64_t timeline_length(snurra_tile *tile) const;
 	void nudge_lane(snurra_tile *tile, qint64 delta_us);
+public:
+	/* Sync (project.md sec 4): `tile`'s tempo set so its beat runs at the
+	 * leader's -- the first other tile playing with a grid -- and its
+	 * phase bent onto the leader's, as a nudge. False with no leader. */
+	bool sync(snurra_tile *tile);
+private:
 
 	bool m_drawers_look = false;
 	bool m_fitting = false;   /* a re-fit is queued */

@@ -398,6 +398,16 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_lock->setAccessibleName(tr("Key lock"));
 	m_key_lock->setToolTip(tr("Key lock: the pitch stays as the tempo moves"));
 	speed->addWidget(m_key_lock);
+	/* Sync: this tile's beat to another playing one's, once both have a
+	 * grid (sec 4). */
+	m_sync = new QToolButton(m_controls);
+	m_sync->setObjectName(QStringLiteral("snurra-sync"));
+	m_sync->setAutoRaise(true);
+	m_sync->setText(tr("sync"));
+	m_sync->setAccessibleName(tr("Sync"));
+	m_sync->setToolTip(tr("Match this tile's beat to another playing tile's: its tempo, then its phase"));
+	m_sync->setEnabled(false);
+	speed->addWidget(m_sync);
 	strip->addLayout(speed);
 	column->addWidget(m_controls);
 
@@ -425,6 +435,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
 	connect(m_tempo, &QSlider::valueChanged, this, [this](int tenths) { set_tempo(1.0f + float(tenths) / 1000.0f); });
 	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
+	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
 		m_deck->set_level(float(level) / 100);
@@ -470,6 +481,7 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
+	if (m_sync) m_sync->setEnabled(grid.valid() && m_grouped);
 	const double length = double(length_frames());
 	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
 	else m_waveform->set_beats(0, 0);

@@ -113,6 +113,10 @@ public:
 	void set_key_lock(bool on);
 	bool key_lock() const { return m_state.key_lock; }
 
+	/* Sync (project.md sec 4): asks the window to match this tile's beat to
+	 * another's -- tempo, then phase. */
+	void request_sync() { emit sync_requested(this); }
+
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
 	 * through the deck, and edited on the waveform while the envelope
 	 * control (in the controls, sec 3c) is on. */
@@ -153,6 +157,7 @@ signals:
 	void play_requested(snurra_tile *tile, bool playing);
 	void seek_requested(snurra_tile *tile, qint64 position_us);
 	void nudge_requested(snurra_tile *tile, qint64 delta_us);
+	void sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
 	/* A drawer opened, closed or changed height: the window re-fits. */
 	void drawers_changed(snurra_tile *tile);
@@ -197,6 +202,7 @@ private:
 	QSlider *m_tempo = nullptr;
 	QLabel *m_tempo_label = nullptr;
 	QToolButton *m_key_lock = nullptr;
+	QToolButton *m_sync = nullptr;
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;
 	std::unique_ptr<snurra_beats> m_beats;

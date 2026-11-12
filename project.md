@@ -507,6 +507,20 @@ overread, both reported. `test/main.cpp` sets
 `QTEST_DISABLE_STACK_DUMP`: QtTest's crash handler re-faulted and
 re-attached gdb 361 times in 281 s on a fixture's overflow.
 
+**Sanitizers again, 2026-11-12, after the session's new threads** (the
+stretch in the callback, the picture's, beats' and bytes' readers, the
+facade): ThreadSanitizer found a use after free in the player at exit
+(fixed 408996a) and, through its timing, a train's next tile sounding
+early (fixed ff46f88). What it reports since all comes through
+libraries not built with it -- Qt's own handover of a queued call or an
+X11 event between its threads (the waveform's columns posted to the
+main thread show as snurra's), and FFmpeg's frame threads and atomic
+reference counts -- each read in full; a suppressions file was written
+and dropped, since `race:` matches a library anywhere in a stack and so
+would hide snurra's own races run through Qt. Under it the ALSA
+handover test measured 1.0 frame against its 0.25 bar, the callback
+several times slower; it passes without.
+
 **Codecs keep time, measured** (`codec_test`, the holder 2026-11-12:
 every codec added gets tests of how it keeps time against other files,
 so timing faults are found and fixed before anything depends on them). A
@@ -833,7 +847,13 @@ controls; each tile very compact but resizeable).
   search, 434 Hz and 1 dB dips; a lane at +10 % sought with its group
   to 10 s stands at 11 s of its track and goes on 1.10 times as fast.
   Not yet: a wider tempo range, keys for tempo, pitch shifting on its
-  own, and key detection.
+  own, and key detection. **Sync** (2026-11-12): a tile's button sets
+  its tempo so its beat runs at the leader's -- the first other tile
+  playing with a grid, at that tile's tempo; a double or half if nearer
+  -- then bends its phase onto the leader's, the shorter way round, as a
+  nudge kept in the lane's offset. Measured: 126 BPM synced to 120,
+  tempo 0.95234, beats 0.57 ms apart once the bend is out; without the
+  bend, 224 ms.
 - **Jumps and nudge, built 2026-11-12** (the holder's steps): one pair
   of buttons in the controls, labelled with the track's step -- 4 bars
   where the beat detector found a grid (16 beats, so a jump keeps the

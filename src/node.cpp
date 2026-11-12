@@ -213,6 +213,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
 	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
+	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
 		/* What plays is what can be stopped (sec 3c): with no controls
@@ -521,6 +522,39 @@ void snurra_node::nudge_lane(snurra_tile *tile, qint64 delta_us) {
 	const int64_t frame = std::max<int64_t>(0, tile->frame_now() + snurra_us_to_frames(delta_us, m_engine->rate()));
 	if (tile->playing()) tile->deck()->bend(snurra_us_to_frames(delta_us, m_engine->rate()));
 	else tile->hold_at(frame);
+}
+
+bool snurra_node::sync(snurra_tile *tile) {
+	const snurra_beat_grid mine = tile->beats();
+	if (!mine.valid()) return false;
+	snurra_tile *leader = nullptr;
+	for (snurra_tile *other : m_tiles)
+		if (other != tile && other->playing() && other->beats().valid()) {
+			leader = other;
+			break;
+		}
+	if (!leader) return false;
+	const snurra_beat_grid theirs = leader->beats();
+	/* The beat heard, per second: a grid's BPM at its tile's tempo. Off by
+	 * more than a DJ's range, the double or the half is the beat meant --
+	 * 87.5 and 175 are one tempo. */
+	const double target = theirs.bpm() * leader->tempo();
+	double tempo = target / mine.bpm();
+	for (double octave : { 2.0, 0.5 })
+		if (std::abs(std::log2(tempo * octave)) < std::abs(std::log2(tempo))) tempo *= octave;
+	tile->set_tempo(float(tempo));
+	/* Then the phase: where each is within its beat, now, the shorter way
+	 * round, bent out as a nudge -- kept as the lane's offset too. */
+	auto phase = [](const snurra_beat_grid &grid, int64_t frame) {
+		const double beats = (double(frame) - grid.first) / grid.period;
+		return beats - std::floor(beats);
+	};
+	double shift = phase(theirs, leader->frame_now()) - phase(mine, tile->frame_now());
+	if (shift > 0.5) shift -= 1;
+	if (shift < -0.5) shift += 1;
+	const qint64 delta_us = qint64(snurra_frames_to_us(std::llround(shift * mine.period), m_engine->rate()));
+	if (delta_us != 0) nudge_lane(tile, delta_us);
+	return true;
 }
 
 void snurra_node::leave_if_empty() {

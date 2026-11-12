@@ -38,6 +38,7 @@ private slots:
 	void a_jump_on_a_beat_is_whole_bars();
 	void a_nudge_moves_one_lane_and_stays();
 	void a_lane_at_a_tempo_keeps_the_groups_time();
+	void sync_matches_a_beat_to_another();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -320,6 +321,60 @@ void embed_test::a_nudge_moves_one_lane_and_stays() {
 	QTest::qWait(100);
 	QCOMPARE(upper->state().position_us, qint64(10000000));
 	QCOMPARE(lower->state().position_us, qint64(10010000));
+}
+
+/* A kick every beat at `bpm`, the first at `first` seconds, 20 seconds. */
+static QString kick_file(QTemporaryDir &dir, const QString &name, double bpm, double first) {
+	const QString path = dir.filePath(name);
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) return QString();
+	const double period = 60.0 * 48000 / bpm;
+	file.write(make_wav_of(48000 * 20, [period, first](int i) {
+		const double since = double(i) - first * 48000;
+		if (since < 0) return 0;
+		const double t = std::fmod(since, period) / 48000;
+		return int(20000 * std::sin(2 * M_PI * 55 * t) * std::exp(-t / 0.09));
+	}));
+	return path;
+}
+
+/*
+ * Sync (project.md sec 4): two kicks stacked and playing, 120 BPM and 126,
+ * their beats apart. Sync on the 126: its tempo becomes 120/126, and once
+ * the bend has played out its beats fall on the 120's, to a millisecond.
+ */
+void embed_test::sync_matches_a_beat_to_another() {
+	QTemporaryDir dir;
+	const QString slow = kick_file(dir, QStringLiteral("slow.wav"), 120, 0.1);
+	const QString fast = kick_file(dir, QStringLiteral("fast.wav"), 126, 0.33);
+	snurra_node node;
+	snurra_tile_state a = placed(slow, 0, 0);
+	snurra_tile_state b = placed(fast, 1, 0);
+	a.duration_us = b.duration_us = 20000000;
+	snurra_tile *leader = node.add_tile(a);
+	snurra_tile *follower = node.add_tile(b);
+	QTRY_VERIFY_WITH_TIMEOUT(leader->beats().valid() && follower->beats().valid(), 15000);
+	leader->request_playing(true);
+	QTest::qWait(500);
+	QVERIFY(leader->playing() && follower->playing());
+	QVERIFY(node.sync(follower));
+	QVERIFY2(std::abs(follower->tempo() * follower->beats().bpm() - leader->tempo() * leader->beats().bpm()) < 0.01,
+	         qPrintable(QStringLiteral("tempo %1 makes %2 BPM against %3")
+	                            .arg(follower->tempo())
+	                            .arg(follower->tempo() * follower->beats().bpm())
+	                            .arg(leader->beats().bpm())));
+	QTest::qWait(3500);   /* half a beat at most, bent at a tenth: under 2.5 s */
+	auto phase_ms = [](snurra_tile *tile) {
+		const snurra_beat_grid grid = tile->beats();
+		const double beats = (double(tile->frame_now()) - grid.first) / grid.period;
+		return (beats - std::floor(beats)) * grid.period / 48000 / tile->tempo() * 1000;
+	};
+	double apart = phase_ms(follower) - phase_ms(leader);
+	const double beat_ms = 60000.0 / 120;
+	if (apart > beat_ms / 2) apart -= beat_ms;
+	if (apart < -beat_ms / 2) apart += beat_ms;
+	qInfo("sync: tempo %.5f, beats %.2f ms apart", follower->tempo(), apart);
+	QVERIFY2(std::abs(apart) < 1, qPrintable(QStringLiteral("the beats %1 ms apart").arg(apart)));
 }
 
 /*
