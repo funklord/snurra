@@ -345,8 +345,8 @@ controls only for the first (sec 3c), the drop marker (sec 3d). Not seen
 on a real X11 screen yet -- every test runs offscreen; trying the drag,
 the snap and the marker by hand is the first thing to do.
 
-Open, the holder's: where to push this repository (it has no remote);
-adding snurra to the private-projects list in the guidelines (theirs to
+Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
+over SSH as the other trees are. Open, the holder's: adding snurra to the private-projects list in the guidelines (theirs to
 change); audio or video first; the analysis licences (sec 3e).
 Next to build, in order: the Wayland merge by drag and drop; then audio
 (sec 3, 3a), starting with the output interface and the shared default,
