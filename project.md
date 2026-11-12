@@ -633,6 +633,20 @@ controls; each tile very compact but resizeable).
   handed over as each read finishes a column, since the wait is inside
   the next read -- handed 64 columns at a time, or on a timer, nothing
   showed until the bytes went on.
+- **A stable facade for hosts, asked by BeerSSH** (inbox 20261112T1444Z,
+  to be built): `include/snurra/embed.h` alone -- `snurra_media` (name,
+  path, shared bytes) and a pimpl'd `snurra_player` widget: `can_play`,
+  `open`, `count`, `close_all`, signals `emptied` and `failed` -- with
+  `SNURRA_EMBED_VERSION` raised per additive release, nothing ever
+  removed or renamed. Its promises: the engine is inside (the process's
+  one); bytes stall, never fail; a host's bytes may be read from any
+  snurra thread at once (so the facade passes them as the peak bytes
+  too); deleting the player at any moment retires its decks and keeps
+  the bytes alive until no snurra thread can call them; several opens
+  make a train inside the one widget. BeerSSH vendors snurra pinned,
+  builds it only with `BSSH_MEDIA=1`, and switches to it by
+  `__has_include("snurra/embed.h")`, so the header appearing is all it
+  needs.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
