@@ -8,7 +8,9 @@
 
 #include "snurra/tile_state.h"
 
+class QHBoxLayout;
 class QLabel;
+class QTimer;
 class QVBoxLayout;
 class QSlider;
 class QToolButton;
@@ -16,6 +18,8 @@ class snurra_bytes;
 class snurra_deck;
 class snurra_engine;
 class snurra_peaks;
+class snurra_video;
+class snurra_video_view;
 class snurra_waveform;
 
 /*
@@ -107,6 +111,13 @@ public:
 	QWidget *drawer_above() const { return m_above; }
 	QWidget *drawer_below() const { return m_controls; }
 
+	/* The upward drawer, the video, for a track that has a picture:
+	 * opened and closed by its button on the title, or here; and the
+	 * picture full screen. */
+	void set_video_open(bool open);
+	bool video_open() const;
+	void set_full_screen(bool full);
+
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
 
@@ -121,6 +132,8 @@ signals:
 	void play_requested(snurra_tile *tile, bool playing);
 	void seek_requested(snurra_tile *tile, qint64 position_us);
 	void controls_changed(snurra_tile *tile);
+	/* A drawer opened, closed or changed height: the window re-fits. */
+	void drawers_changed(snurra_tile *tile);
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
@@ -130,6 +143,10 @@ private:
 	void seek(qint64 position_us);
 	void tick();
 	void show_envelope();
+	void read_video(bool open);
+	void build_video_drawer(bool open);
+	void fit_video_drawer();
+	void show_video_frame();
 	void read_peaks(std::shared_ptr<snurra_bytes> bytes);
 
 	snurra_tile_state m_state;
@@ -142,6 +159,13 @@ private:
 	QPointer<QWidget> m_above;      /* the upward drawer */
 	QPointer<QWidget> m_controls;   /* the downward drawer */
 	bool m_drawers_out = false;
+	QHBoxLayout *m_top = nullptr;
+	std::unique_ptr<snurra_video> m_video;
+	snurra_video_view *m_view = nullptr;
+	QToolButton *m_maximize = nullptr;
+	QToolButton *m_video_toggle = nullptr;
+	QTimer *m_frames = nullptr;
+	QPointer<QWidget> m_full;   /* the picture full screen, while it is */
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

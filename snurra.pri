@@ -43,6 +43,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/snap.cpp \
     $$SNURRA_ROOT/src/source.cpp \
     $$SNURRA_ROOT/src/tile.cpp \
+    $$SNURRA_ROOT/src/video.cpp \
     $$SNURRA_ROOT/src/wire.cpp
 
 HEADERS += \
@@ -58,6 +59,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/spsc.h \
     $$SNURRA_ROOT/include/snurra/tile.h \
     $$SNURRA_ROOT/include/snurra/tile_state.h \
+    $$SNURRA_ROOT/include/snurra/video.h \
     $$SNURRA_ROOT/include/snurra/wire.h
 
 # Outputs: ALSA on Linux, AAudio on Android (above); QAudioSink wherever

@@ -123,6 +123,7 @@ private:
 	QList<int> rows() const;
 
 	bool m_drawers_look = false;
+	bool m_fitting = false;   /* a re-fit is queued */
 	QString m_path;
 	QLocalServer *m_server = nullptr;
 	QGridLayout *m_grid = nullptr;

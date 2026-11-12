@@ -5,6 +5,7 @@ int run_handover_tests(int argc, char **argv);
 int run_codec_tests(int argc, char **argv);
 int run_deck_tests(int argc, char **argv);
 int run_embed_tests(int argc, char **argv);
+int run_video_tests(int argc, char **argv);
 
 int main(int argc, char **argv) {
 	/*
@@ -21,5 +22,6 @@ int main(int argc, char **argv) {
 	const int codec = run_codec_tests(argc, argv);
 	const int deck = run_deck_tests(argc, argv);
 	const int embed = run_embed_tests(argc, argv);
-	return handover || codec || deck || embed ? 1 : 0;
+	const int video = run_video_tests(argc, argv);
+	return handover || codec || deck || embed || video ? 1 : 0;
 }

@@ -205,6 +205,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
 	tile->set_grouped(true);
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
+	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
 		/* What plays is what can be stopped (sec 3c): with no controls
@@ -267,12 +268,22 @@ void snurra_node::place_tiles() {
 
 /* The window as tall as what is open: a drawer opened adds its height, a
  * drawer closed gives it back; the width, which a person may have set,
- * stays. After the event loop, once the drawer's own show or hide is in
- * the layout. */
+ * stays. And the tiles stay where they are on the screen: a drawer that
+ * opens upward grows the window up, not the tiles down. After the event
+ * loop, once the drawer's own show or hide is in the layout. */
 void snurra_node::fit_to_drawers() {
-	QTimer::singleShot(0, this, [this] {
+	if (m_fitting) return;
+	m_fitting = true;
+	/* Where the first tile is now, before the layout has heard of the
+	 * drawer: Qt lays out on an event already queued ahead of this one. */
+	snurra_tile *first = m_tiles.isEmpty() ? nullptr : m_tiles.first();
+	const QPoint before = first ? first->mapTo(this, QPoint()) : QPoint();
+	QTimer::singleShot(0, this, [this, before, anchor = QPointer<snurra_tile>(first)] {
+		m_fitting = false;
 		layout()->activate();
 		resize(qMax(width(), minimumSizeHint().width()), sizeHint().height());
+		layout()->activate();
+		if (anchor && isWindow() && isVisible()) move(pos() - (anchor->mapTo(this, QPoint()) - before));
 	});
 }
 

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=snurra
-GenericName=Audio player
+GenericName=Media player
 Comment=A tiny player that opens where the file was clicked, and mixes
 Exec=snurra %F
 Icon=multimedia-audio-player
 Terminal=false
-Categories=AudioVideo;Audio;Player;
-MimeType=audio/mpeg;audio/x-mp3;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/x-opus+ogg;audio/wav;audio/x-wav;audio/aac;audio/x-aac;audio/mp4;audio/x-m4a;audio/ac3;audio/x-mp2;audio/x-aiff;audio/x-ape;audio/x-wavpack;
+Categories=AudioVideo;Audio;Video;Player;
+MimeType=audio/mpeg;audio/x-mp3;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/x-opus+ogg;audio/wav;audio/x-wav;audio/aac;audio/x-aac;audio/mp4;audio/x-m4a;audio/ac3;audio/x-mp2;audio/x-aiff;audio/x-ape;audio/x-wavpack;video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/ogg;video/x-flv;

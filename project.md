@@ -743,6 +743,33 @@ controls; each tile very compact but resizeable).
   height exactly, and closing it restores every number; with the drawers
   left inside the tiles, B's waveform falls 24 px below A's and it fails.
   Not yet: seen on a compositing desktop.
+- **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
+  in the drawer that opens upward). `snurra_video` decodes a file's
+  picture on a thread of its own, six frames ahead, and gives the last
+  frame whose time is not after the one asked -- times from the sound's
+  start, the zero the deck counts from, so a container that starts the
+  picture late or early is shown so; it seeks itself when asked behind
+  what it has or more than a second past it. The tile asks for the
+  frame at its deck's heard position every 16 ms while the drawer (or
+  the full-screen picture) shows. The drawer is the tile's width and the
+  picture's shape tall; it opens with the controls, so on the first
+  tile only, and the window grows up so the tiles stay still on screen;
+  a maximize button shows the picture full screen, Escape or a
+  double-click brings it back. Pictures are converted to RGB here, not
+  by libswscale, which this machine has no headers for and a tiny
+  player need not link: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
+  NV12/NV21, BT.601/709/2020, limited or full range; anything else
+  (10-bit included) shows no picture yet. Measured (`video_test`): H.264
+  with B-frames, the same with the picture 0.2 s late, MPEG-4 Part 2 and
+  MJPEG in Matroska, VP9 with Opus in WebM, each frame grey at a level
+  naming it: at 234 times forward, back and jumping, the frame shown is
+  the one ffprobe's frame times say a screen shows then, by time and by
+  picture, and never one from the future; counting from the picture's
+  own start instead fails four of the five (Matroska's 3 ms, WebM's
+  7 ms). In a window playing, 60 samples: 50 the frame heard, 10 one
+  behind (the 16 ms), none ahead; shown 80 ms early, all 60 ahead and
+  it fails. Not yet: a picture from bytes (BeerSSH, fuzzypickles), and
+  seen on a real screen.
 - **Envelopes, built 2026-11-12** (sec 3b, step 5): `snurra_deck::
   set_envelope` takes up to 64 points over the deck's frames, read by
   the callback under a seqlock as the fade is, and multiplies level,

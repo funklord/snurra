@@ -1,7 +1,9 @@
 #include "snurra/tile.h"
 
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPointer>
@@ -16,6 +18,7 @@
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
+#include "snurra/video.h"
 
 /*
  * The waveform: the source's peaks, read on a thread of their own and
@@ -204,6 +207,47 @@ private:
 	bool m_outside = false;
 };
 
+/*
+ * A picture, as large as fits and centred on black. `pts` is a property --
+ * the time of the frame shown -- so what is on screen can be checked
+ * against what is heard.
+ */
+class snurra_video_view : public QWidget {
+public:
+	explicit snurra_video_view(QWidget *parent = nullptr) : QWidget(parent) {
+		setAccessibleName(QStringLiteral("Video"));
+		setProperty("pts", qint64(INT64_MIN));
+	}
+	void show_frame(const snurra_video_frame &frame) {
+		if (!frame.valid() || frame.pts_us == property("pts").toLongLong()) return;
+		m_image = frame.image;
+		setProperty("pts", qint64(frame.pts_us));
+		update();
+	}
+	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
+
+protected:
+	void paintEvent(QPaintEvent *) override {
+		QPainter painter(this);
+		painter.fillRect(rect(), Qt::black);
+		if (m_image.isNull()) return;
+		const QSize fitted = m_image.size().scaled(size(), Qt::KeepAspectRatio);
+		const QRect at(QPoint((width() - fitted.width()) / 2, (height() - fitted.height()) / 2), fitted);
+		painter.setRenderHint(QPainter::SmoothPixmapTransform);
+		painter.drawImage(at, m_image);
+	}
+	void keyPressEvent(QKeyEvent *event) override {
+		if (event->key() == Qt::Key_Escape && on_leave) on_leave();
+		else QWidget::keyPressEvent(event);
+	}
+	void mouseDoubleClickEvent(QMouseEvent *) override {
+		if (on_leave) on_leave();
+	}
+
+private:
+	QImage m_image;
+};
+
 snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent)
     : QWidget(parent), m_state(state), m_deck(deck) {
 	setObjectName(QStringLiteral("snurra-tile"));
@@ -226,6 +270,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	column->addWidget(m_above);
 
 	QHBoxLayout *top = new QHBoxLayout;
+	m_top = top;
 	const QString name = QFileInfo(state.source).fileName();
 	m_title = new QLabel(name.isEmpty() ? state.source : name, this);
 	m_title->setObjectName(QStringLiteral("snurra-handle"));
@@ -329,6 +374,124 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	tick();
 
 	read_peaks(nullptr);
+	if (QFileInfo(state.source).isFile()) read_video(state.controls);
+}
+
+/*
+ * The upward drawer, for a track with a picture (project.md sec 3b): the
+ * picture, as wide as the tile and as tall as its shape makes it, with a
+ * maximize button; the drawer's own button on the title opens and closes
+ * it. It opens with the controls -- the first tile's -- and the others
+ * keep theirs closed, so a screen of tiles is not a screen of videos. The
+ * frame shown is the one for the deck's heard position, the clock the
+ * sound is placed by, looked at each 16 ms while it shows.
+ */
+void snurra_tile::read_video(bool open) {
+	m_video = std::make_unique<snurra_video>(m_state.source);
+	QPointer<snurra_tile> self = this;
+	m_video->set_on_open([self, open](bool has_video) {
+		if (!has_video) return;
+		QMetaObject::invokeMethod(
+		        self, [self, open] {
+			        if (self) self->build_video_drawer(open);
+		        },
+		        Qt::QueuedConnection);
+	});
+	/* Opened before the callback was set: asked again, here. */
+	if (m_video->has_video()) QMetaObject::invokeMethod(this, [this, open] { build_video_drawer(open); }, Qt::QueuedConnection);
+}
+
+void snurra_tile::build_video_drawer(bool open) {
+	if (m_view || !m_video) return;
+	QVBoxLayout *drawer = new QVBoxLayout(m_above);
+	drawer->setContentsMargins(2, 2, 2, 2);
+	m_view = new snurra_video_view(m_above);
+	drawer->addWidget(m_view);
+	m_maximize = new QToolButton(m_view);
+	m_maximize->setAutoRaise(true);
+	m_maximize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+	m_maximize->setAccessibleName(tr("Full screen"));
+	m_maximize->setToolTip(m_maximize->accessibleName());
+	m_maximize->setFocusPolicy(Qt::NoFocus);
+	connect(m_maximize, &QToolButton::clicked, this, [this] { set_full_screen(!m_full); });
+	m_above->installEventFilter(this);
+
+	m_video_toggle = new QToolButton(this);
+	m_video_toggle->setObjectName(QStringLiteral("snurra-video"));
+	m_video_toggle->setAutoRaise(true);
+	m_video_toggle->setCheckable(true);
+	m_video_toggle->setFocusPolicy(Qt::NoFocus);
+	m_video_toggle->setText(QStringLiteral("\u25b4"));
+	m_video_toggle->setAccessibleName(tr("Show the video"));
+	m_video_toggle->setToolTip(m_video_toggle->accessibleName());
+	m_top->insertWidget(1, m_video_toggle);
+	connect(m_video_toggle, &QToolButton::toggled, this, &snurra_tile::set_video_open);
+
+	m_frames = new QTimer(this);
+	m_frames->setInterval(16);
+	connect(m_frames, &QTimer::timeout, this, &snurra_tile::show_video_frame);
+	set_video_open(open);
+}
+
+void snurra_tile::set_video_open(bool open) {
+	if (!m_view) return;
+	m_video_toggle->blockSignals(true);
+	m_video_toggle->setChecked(open);
+	m_video_toggle->blockSignals(false);
+	fit_video_drawer();
+	/* Said before it shows: showing lays the window out at once, and the
+	 * window keeps the tiles still by where they were before. */
+	emit drawers_changed(this);
+	m_above->setVisible(open);
+	if (open || m_full) {
+		m_frames->start();
+		show_video_frame();
+	} else {
+		m_frames->stop();
+	}
+}
+
+bool snurra_tile::video_open() const { return m_above && m_above->isVisibleTo(m_above->parentWidget()) && m_view; }
+
+/* As tall as the picture's shape at the drawer's width. */
+void snurra_tile::fit_video_drawer() {
+	if (!m_view || !m_video) return;
+	const QSize picture = m_video->size();
+	if (picture.isEmpty()) return;
+	const int width = qMax(1, m_above->width() > 1 ? m_above->width() : this->width());
+	const int height = int(int64_t(width - 4) * picture.height() / picture.width()) + 4;
+	if (m_above->height() != height || m_above->minimumHeight() != height) {
+		m_above->setFixedHeight(height);
+		emit drawers_changed(this);
+	}
+	m_maximize->move(m_view->width() - m_maximize->sizeHint().width(), 0);
+}
+
+void snurra_tile::show_video_frame() {
+	if (!m_video) return;
+	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
+	const snurra_video_frame frame = m_video->frame_at(heard);
+	if (m_view) m_view->show_frame(frame);
+	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_frame(frame);
+}
+
+void snurra_tile::set_full_screen(bool full) {
+	if (full == bool(m_full) || !m_view) return;
+	if (!full) {
+		m_full->deleteLater();
+		m_full = nullptr;
+		if (!video_open()) m_frames->stop();
+		return;
+	}
+	snurra_video_view *view = new snurra_video_view;
+	view->setAttribute(Qt::WA_DeleteOnClose);
+	view->setWindowTitle(QFileInfo(m_state.source).fileName());
+	view->on_leave = [this] { set_full_screen(false); };
+	connect(this, &QObject::destroyed, view, &QObject::deleteLater);
+	m_full = view;
+	view->showFullScreen();
+	m_frames->start();
+	show_video_frame();
 }
 
 /* The waveform's peaks, read from a source of their own and handed over on
@@ -351,6 +514,8 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 
 snurra_tile::~snurra_tile() {
 	m_peaks.reset();   /* before the deck can go: the waveform first */
+	m_video.reset();   /* its reader, joined */
+	delete m_full.data();
 	/* Drawers a window took out are the tile's still, and go with it. */
 	if (m_drawers_out) {
 		delete m_above.data();
@@ -555,6 +720,7 @@ void snurra_tile::mousePressEvent(QMouseEvent *event) {
 }
 
 bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
+	if (watched == m_above && event->type() == QEvent::Resize) fit_video_drawer();
 	if (event->type() == QEvent::MouseButtonPress) emit touched(this);
 	if (watched != m_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {
