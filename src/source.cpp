@@ -48,6 +48,7 @@ private:
 class silence : public generated_source {
 public:
 	using generated_source::generated_source;
+	bool stand_in() const override { return true; }
 
 protected:
 	void sample(int64_t, float *lr) const override { lr[0] = lr[1] = 0; }

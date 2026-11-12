@@ -50,12 +50,18 @@ snurra_deck::snurra_deck(const start_t &start)
 		m_reader_generation = m_generation.load(std::memory_order_acquire);
 		if (bytes) m_source = snurra_open_source(bytes, name, m_rate, interrupted);
 		if (!m_source) m_source = snurra_open_source(bytes ? QString() : name, m_rate, fallback);
+		/* Not for a close that gave up the opening: that is not a failure. */
+		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);
 		m_length.store(m_source->length(), std::memory_order_relaxed);
 		read_loop();
 	});
 }
 
 snurra_deck::~snurra_deck() {
+	stop_reading();
+}
+
+void snurra_deck::stop_reading() {
 	m_stop.store(true);
 	if (m_reader.joinable()) m_reader.join();
 }
@@ -200,6 +206,7 @@ void snurra_deck::read_loop() {
 	uint64_t generation = 0;
 	block *spare = nullptr;
 	bool ended = false;
+	bool gave_any = false;   /* a frame, ever: a source ending without one could not be read */
 	while (!m_stop.load(std::memory_order_relaxed)) {
 		const uint64_t now = m_generation.load(std::memory_order_acquire);
 		if (now != generation) {
@@ -221,10 +228,12 @@ void snurra_deck::read_loop() {
 		spare->start = m_source->position();
 		spare->frames = m_source->read(spare->data, BLOCK_FRAMES);
 		if (spare->frames > 0) {
+			gave_any = true;
 			m_filled.push(spare);
 			spare = nullptr;
 		} else if (m_source->at_end()) {
 			ended = true;
+			if (!gave_any && spare->start == 0) m_failed.store(true, std::memory_order_release);
 			m_ended_generation.store(int64_t(generation), std::memory_order_release);
 		} else {
 			/* Not here yet: a source still arriving. */

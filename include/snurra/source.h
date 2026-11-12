@@ -75,6 +75,10 @@ public:
 	 * somewhere else, or the deck closing. The read then returns 0 and
 	 * the source is ready to seek. */
 	virtual void set_interrupt(std::function<bool()> interrupted) { (void)interrupted; }
+
+	/* The silence put in place of what could not be opened, so a tile for
+	 * it still behaves as a tile: true for that alone. */
+	virtual bool stand_in() const { return false; }
 };
 
 /*

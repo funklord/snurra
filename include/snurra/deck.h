@@ -103,6 +103,14 @@ public:
 	/* Played to the end of its source. */
 	bool ended() const { return m_finished.load(std::memory_order_relaxed); }
 
+	/* What it was given could not be opened: it plays silence instead. */
+	bool failed() const { return m_failed.load(std::memory_order_acquire); }
+
+	/* Its reader stopped and joined: nothing reads its source or its bytes
+	 * after this returns, and the callback finds no more blocks -- silence.
+	 * For a host that must know its bytes are no longer called (embed.h). */
+	void stop_reading();
+
 	/* ---- the output's callback ---- */
 
 	/* Adds this deck into `out` (interleaved stereo), the first frame of
@@ -179,6 +187,7 @@ private:
 	std::atomic<int64_t> m_published_advanced{ 0 };
 	std::atomic<bool> m_locked{ false };
 	std::atomic<bool> m_finished{ false };
+	std::atomic<bool> m_failed{ false };
 
 	/* The callback's own. */
 	int64_t m_position = 0;

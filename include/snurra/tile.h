@@ -141,6 +141,8 @@ signals:
 	void close_requested(snurra_tile *tile);
 	/* Pressed anywhere: the tile the keys act on. */
 	void touched(snurra_tile *tile);
+	/* What it was given could not be played: it holds silence. Once. */
+	void failed(snurra_tile *tile);
 	/* Grouped: what was asked of the tile, for the group to do. */
 	void play_requested(snurra_tile *tile, bool playing);
 	void seek_requested(snurra_tile *tile, qint64 position_us);
@@ -194,6 +196,7 @@ private:
 	 * has deleted its decks already, and is not to be called. */
 	QPointer<snurra_engine> m_owner;
 	bool m_grouped = false;
+	bool m_failed_said = false;
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
 	QPoint m_press;
 	bool m_dragging = false;

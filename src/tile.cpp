@@ -786,6 +786,13 @@ void snurra_tile::tick() {
 		set_beats(m_grid);
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
+	if (!m_failed_said && m_deck->failed()) {
+		m_failed_said = true;
+		/* Said, not stopped: the stand-in silence still behaves as a tile.
+		 * From the event loop: a source that fails at once fails within
+		 * the constructor's own tick, before anyone can be listening. */
+		QMetaObject::invokeMethod(this, [this] { emit failed(this); }, Qt::QueuedConnection);
+	}
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
 	m_state.position_us = now;
 	m_state.sampled_at_us = snurra_clock_us();

@@ -656,7 +656,7 @@ controls; each tile very compact but resizeable).
   the next read -- handed 64 columns at a time, or on a timer, nothing
   showed until the bytes went on.
 - **A stable facade for hosts, asked by BeerSSH** (inbox 20261112T1444Z,
-  to be built): `include/snurra/embed.h` alone -- `snurra_media` (name,
+  built 2026-11-12 as proposed, `include/snurra/embed.h`, `src/embed.cpp`): `include/snurra/embed.h` alone -- `snurra_media` (name,
   path, shared bytes) and a pimpl'd `snurra_player` widget: `can_play`,
   `open`, `count`, `close_all`, signals `emptied` and `failed` -- with
   `SNURRA_EMBED_VERSION` raised per additive release, nothing ever
@@ -668,7 +668,19 @@ controls; each tile very compact but resizeable).
   make a train inside the one widget. BeerSSH vendors snurra pinned,
   builds it only with `BSSH_MEDIA=1`, and switches to it by
   `__has_include("snurra/embed.h")`, so the header appearing is all it
-  needs.
+  needs. Two things it needed underneath: a deck that stops reading on
+  demand (`stop_reading`, joined) -- a retired deck's reader otherwise
+  lives until the engine sweeps it, and with another player holding the
+  engine it called the host's bytes 288 times in 300 ms after the
+  destructor returned; and a deck that says it failed -- opened as the
+  stand-in silence, or ending at its start without a frame (FFmpeg's MP3
+  reader, hinted by a name, takes garbage and gives nothing) -- which a
+  tile says once, from the event loop, since a source that fails at once
+  fails inside the tile's constructor. Said, not stopped: the silence
+  still behaves as a tile. Measured offscreen: bytes a quarter here play
+  and hold; junk bytes say failed; deleted while a reader waits (the
+  control: two threads calling 568 times in 300 ms), nothing calls the
+  bytes after.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

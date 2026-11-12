@@ -17,6 +17,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/engine.h"
+#include "snurra/embed.h"
 #include "snurra/node.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
@@ -36,6 +37,9 @@ private slots:
 	void a_jump_is_the_tracks_step();
 	void a_jump_on_a_beat_is_whole_bars();
 	void a_nudge_moves_one_lane_and_stays();
+	void a_player_plays_a_hosts_bytes_and_says_when_empty();
+	void a_player_says_what_it_cannot_play();
+	void a_player_deleted_at_once_never_calls_the_bytes_again();
 };
 
 static snurra_tile_state playing(const QString &name) {
@@ -315,6 +319,100 @@ void embed_test::a_nudge_moves_one_lane_and_stays() {
 	QTest::qWait(100);
 	QCOMPARE(upper->state().position_us, qint64(10000000));
 	QCOMPARE(lower->state().position_us, qint64(10010000));
+}
+
+/*
+ * The facade (embed.h), as BeerSSH uses it: a host's bytes, a quarter here,
+ * play and hold where they stop; closing every tile says emptied. Names say
+ * what snurra would try.
+ */
+void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
+	QCOMPARE(SNURRA_EMBED_VERSION, 1);
+	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
+	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
+	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));
+	QVERIFY(!snurra_player::can_play(QStringLiteral("README")));
+
+	auto bytes = std::make_shared<memory_bytes>(make_wav(48000 * 4));
+	bytes->arrive(0, bytes->size() / 4);
+	snurra_player player;
+	QSignalSpy emptied(&player, &snurra_player::emptied);
+	QVERIFY(!player.open(snurra_media{ QStringLiteral("nothing.wav"), QString(), nullptr }));
+	QVERIFY(player.open(snurra_media{ QStringLiteral("song.wav"), QString(), bytes }));
+	QCOMPARE(player.count(), 1);
+	snurra_tile *tile = player.findChild<snurra_tile *>();
+	QVERIFY(tile);
+	qint64 held = -1;
+	qint64 last = -2;
+	for (int i = 0; i < 60 && held < 0; ++i) {
+		QTest::qWait(100);
+		const qint64 now = tile->state().position_now();
+		if (now > 0 && now == last) held = now;
+		last = now;
+	}
+	QVERIFY2(held > 500000 && held < 1100000, qPrintable(QStringLiteral("held at %1 us").arg(held)));
+	player.close_all();
+	QCOMPARE(emptied.count(), 1);
+	QCOMPARE(player.count(), 0);
+}
+
+void embed_test::a_player_says_what_it_cannot_play() {
+	auto bytes = std::make_shared<memory_bytes>(QByteArray(100000, 'x'));
+	bytes->arrive(0, bytes->size());
+	snurra_player player;
+	QSignalSpy failed(&player, &snurra_player::failed);
+	QVERIFY(player.open(snurra_media{ QStringLiteral("junk.mp3"), QString(), bytes }));
+	QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 5000);
+	QCOMPARE(failed.first().at(0).toString(), QStringLiteral("junk.mp3"));
+	QVERIFY(!failed.first().at(1).toString().isEmpty());
+}
+
+/* Bytes that count calls, and note any made once the host was told none
+ * would come. */
+class watched_bytes : public memory_bytes {
+public:
+	using memory_bytes::memory_bytes;
+	int64_t read(int64_t offset, uint8_t *out, int64_t n) override {
+		if (closed.load()) ++after;
+		return memory_bytes::read(offset, out, n);
+	}
+	void wait(int ms) override {
+		if (closed.load()) ++after;
+		memory_bytes::wait(ms);
+	}
+	std::atomic<bool> closed{ false };
+	std::atomic<int> after{ 0 };
+};
+
+/* Deleted while a reader waits on bytes not here: once the destructor has
+ * returned, nothing calls the bytes again (embed.h). */
+void embed_test::a_player_deleted_at_once_never_calls_the_bytes_again() {
+	auto bytes = std::make_shared<watched_bytes>(make_wav(48000 * 4));
+	bytes->arrive(0, bytes->size() / 8);
+	/* Another player holds the engine, so its going does not join the
+	 * readers for this one. */
+	snurra_player other;
+	auto held = std::make_shared<memory_bytes>(make_wav(48000));
+	held->arrive(0, held->size());
+	QVERIFY(other.open(snurra_media{ QStringLiteral("held.wav"), QString(), held }));
+	auto player = std::make_unique<snurra_player>();
+	QVERIFY(player->open(snurra_media{ QStringLiteral("song.wav"), QString(), bytes }));
+	QTest::qWait(800);   /* playing, then waiting where the bytes stop */
+	/* The control: a reader waiting on bytes not here does call them. */
+	bytes->closed = true;
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	const int waiting = bytes->after.exchange(0);
+	bytes->closed = false;
+	qInfo("a waiting reader called the bytes %d times in 300 ms", waiting);
+	QVERIFY2(waiting > 0, "the reader was not waiting on the bytes: nothing to prove");
+	player.reset();
+	bytes->closed = true;
+	/* No event loop: nothing of snurra's can be swept up meanwhile, so a
+	 * reader still alive would be calling. */
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	QCOMPARE(bytes->after.load(), 0);
+	QTest::qWait(200);
+	QCOMPARE(bytes->after.load(), 0);
 }
 
 int run_embed_tests(int argc, char **argv) {
