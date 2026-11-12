@@ -1,6 +1,12 @@
 #include "snurra/node.h"
 
 #include <QCoreApplication>
+#include <QCursor>
+#include <QDrag>
+#include <QDragEnterEvent>
+#include <QMimeData>
+#include <QMouseEvent>
+#include <QPixmap>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QLocalServer>
@@ -48,11 +54,25 @@ QString new_token() {
 	return QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
+/* The MIME type of a tile in a drag: its process's socket, a newline,
+ * and its index there. */
+const char *const TILE_MIME = "application/x-snurra-tile";
+
 bool can_place_windows() {
 	/* X11 lets a program move its own windows and read others'; Wayland
 	 * does neither, so there a drag is the compositor's (project.md 3b). */
 	return QGuiApplication::platformName() == QLatin1String("xcb")
 	       || QGuiApplication::platformName() == QLatin1String("offscreen");
+}
+
+/*
+ * Tiles join by dragging one onto another -- a drag and drop, which the
+ * compositor carries between programs -- where a program can neither
+ * place its windows nor learn where the others are: Wayland (sec 3b).
+ * $SNURRA_DRAG=dnd chooses it anywhere, which is how it is tested, on X11.
+ */
+bool tiles_join_by_drop() {
+	return !can_place_windows() || qgetenv("SNURRA_DRAG") == "dnd";
 }
 
 }
@@ -71,6 +91,15 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	/* Resizeable, though frameless: the grip in the corner. */
 	QSizeGrip *grip = new QSizeGrip(this);
 	outer->addWidget(grip, 0, Qt::AlignRight | Qt::AlignBottom);
+
+	setAcceptDrops(true);
+	/* Where a tile dropped here would go: a strip along that edge, over the
+	 * tiles, taking no input so the drag goes on through it. */
+	m_drop_hint = new QWidget(this);
+	m_drop_hint->setAttribute(Qt::WA_TransparentForMouseEvents);
+	m_drop_hint->setAttribute(Qt::WA_StyledBackground);
+	m_drop_hint->setStyleSheet(QStringLiteral("background: palette(highlight);"));
+	m_drop_hint->hide();
 }
 
 snurra_node::~snurra_node() {
@@ -205,12 +234,12 @@ void snurra_node::offer(QLocalSocket *socket, const QString &token, snurra_wire:
 	send(socket, m);
 }
 
-void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side) {
-	if (m_tiles.isEmpty()) return;
+void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side, int index) {
+	if (m_tiles.isEmpty() || index >= m_tiles.size()) return;
 	QLocalSocket *socket = new QLocalSocket(this);
 	watch(socket);
 	const QString token = new_token();
-	const QList<snurra_tile *> tiles = m_tiles;
+	const QList<snurra_tile *> tiles = index < 0 ? m_tiles : QList<snurra_tile *>{ m_tiles.at(index) };
 	connect(socket, &QLocalSocket::connected, this, [this, socket, token, side, tiles] {
 		offer(socket, token, side, tiles);
 	});
@@ -447,7 +476,7 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		break;
 	}
 	case snurra_wire::MERGE_INTO:
-		merge_into(m.path, m.side);
+		merge_into(m.path, m.side, m.index);
 		break;
 	case snurra_wire::RELEASE:
 		release(m.index, m.frame.topLeft());
@@ -499,6 +528,10 @@ void snurra_node::mark(const QRect &landing, const QRect &shape) {
 }
 
 void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
+	if (tiles_join_by_drop()) {
+		drag_out(tile);
+		return;
+	}
 	if (m_drag_from.isNull()) {
 		m_drag_from = global;
 		m_window_from = pos();
@@ -524,6 +557,96 @@ void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
 	} else if (!m_system_move_started && windowHandle()) {
 		m_system_move_started = windowHandle()->startSystemMove();
 	}
+}
+
+/*
+ * The tile as a drag and drop: dropped on another snurra, that one asks
+ * this one to hand it over (dropEvent below), so the handover is the same
+ * as a snap's. Dropped on nothing, a tile in a group is pulled out -- where
+ * the pointer is on X11, wherever the compositor puts it on Wayland -- and
+ * a lone tile stays: its window moves by its frame.
+ */
+void snurra_node::drag_out(snurra_tile *tile) {
+	const int index = int(m_tiles.indexOf(tile));
+	if (index < 0) return;
+	QMimeData *mime = new QMimeData;
+	mime->setData(QLatin1String(TILE_MIME), (m_path + QLatin1Char('\n') + QString::number(index)).toUtf8());
+	QDrag *drag = new QDrag(tile);
+	drag->setMimeData(mime);
+	const QPixmap look = tile->grab();
+	drag->setPixmap(look.scaledToWidth(qMin(look.width(), 160)));
+	const Qt::DropAction done = drag->exec(Qt::MoveAction);
+	if (done == Qt::IgnoreAction && m_tiles.size() > 1 && m_tiles.contains(tile))
+		release(int(m_tiles.indexOf(tile)), can_place_windows() ? QCursor::pos() : QPoint());
+}
+
+snurra_wire::side_t snurra_node::side_at(const QPoint &local) const {
+	/* The nearer of the right edge and the bottom, as a share of each. */
+	const double right = double(width() - local.x()) / qMax(1, width());
+	const double below = double(height() - local.y()) / qMax(1, height());
+	return right <= below ? snurra_wire::RIGHT : snurra_wire::BELOW;
+}
+
+void snurra_node::hint_drop(bool show, snurra_wire::side_t side) {
+	if (!show) {
+		m_drop_hint->hide();
+		return;
+	}
+	const int thick = qMax(4, fontMetrics().height() / 2);
+	m_drop_hint->setGeometry(side == snurra_wire::RIGHT ? QRect(width() - thick, 0, thick, height())
+	                                                    : QRect(0, height() - thick, width(), thick));
+	m_drop_hint->raise();
+	m_drop_hint->show();
+}
+
+/* A drag of one of this process's own tiles is not a join. */
+static bool from_a_peer(const QMimeData *mime, const QString &own) {
+	if (!mime || !mime->hasFormat(QLatin1String(TILE_MIME))) return false;
+	const QString path = QString::fromUtf8(mime->data(QLatin1String(TILE_MIME))).section(QLatin1Char('\n'), 0, 0);
+	return !path.isEmpty() && path != own;
+}
+
+void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
+	if (!from_a_peer(event->mimeData(), m_path)) return;
+	event->acceptProposedAction();
+	hint_drop(true, side_at(event->position().toPoint()));
+}
+
+void snurra_node::dragMoveEvent(QDragMoveEvent *event) {
+	if (!from_a_peer(event->mimeData(), m_path)) return;
+	event->acceptProposedAction();
+	hint_drop(true, side_at(event->position().toPoint()));
+}
+
+void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
+	hint_drop(false);
+}
+
+void snurra_node::dropEvent(QDropEvent *event) {
+	hint_drop(false);
+	if (!from_a_peer(event->mimeData(), m_path)) return;
+	const QString data = QString::fromUtf8(event->mimeData()->data(QLatin1String(TILE_MIME)));
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = m_path;
+	merge.side = side_at(event->position().toPoint());
+	merge.index = data.section(QLatin1Char('\n'), 1, 1).toInt();
+	/* The giver is asked, as a snap asks it: the handover is its to make. */
+	QLocalSocket *socket = new QLocalSocket(this);
+	connect(socket, &QLocalSocket::connected, this, [this, socket, merge] {
+		send(socket, merge);
+		socket->disconnectFromServer();
+	});
+	connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+	connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
+	socket->connectToServer(data.section(QLatin1Char('\n'), 0, 0));
+	event->acceptProposedAction();
+}
+
+void snurra_node::mousePressEvent(QMouseEvent *event) {
+	/* The bare frame beside the tiles moves the window -- on Wayland the
+	 * only way to, the tiles' titles being drags of their own there. */
+	if (event->button() == Qt::LeftButton && windowHandle()) windowHandle()->startSystemMove();
 }
 
 void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {

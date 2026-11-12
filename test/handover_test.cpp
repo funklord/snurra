@@ -36,6 +36,7 @@ private slots:
 	void a_merge_crosses_over_in_step_without_a_gap();
 	void a_tile_pulled_out_crosses_over_in_step_without_a_gap();
 	void a_merge_between_two_alsa_outputs_is_heard_in_step();
+	void a_tile_dragged_onto_another_window_joins_it();
 
 private:
 	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"),
@@ -58,10 +59,20 @@ void handover_test::init() {
 }
 
 void handover_test::cleanup() {
-	for (QProcess *process : m_processes) {
+	/*
+	 * Last started first, so a client goes before its server; and asked
+	 * to stop before being made to: snurra closes its output on SIGTERM
+	 * (a dmix's shared memory goes with it), and Xvfb removes its socket
+	 * and lock -- both left behind by a SIGKILL.
+	 */
+	for (auto it = m_processes.rbegin(); it != m_processes.rend(); ++it) {
+		QProcess *process = *it;
 		if (process->state() != QProcess::NotRunning) {
-			process->kill();
-			process->waitForFinished(3000);
+			process->terminate();
+			if (!process->waitForFinished(3000)) {
+				process->kill();
+				process->waitForFinished(3000);
+			}
 		}
 		delete process;
 	}
@@ -721,6 +732,136 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	         qPrintable(QStringLiteral("the dmix's shared memory was left behind: %1").arg(new_ones.join(QLatin1Char(' ')))));
 	QVERIFY2(highest - lowest <= 0.25,
 	         qPrintable(QStringLiteral("the frame heard moved by %1 frames across the handover").arg(highest - lowest)));
+}
+
+/*
+ * Wayland's gesture (project.md sec 3b): a tile's title dragged onto
+ * another snurra's window, as a drag and drop, joins it. Wayland itself is
+ * not here, so the same drag and drop runs on X11 -- $SNURRA_DRAG=dnd -- in
+ * a private Xvfb, driven by xdotool through XTEST: a real button pressed,
+ * moved and let go, the way a hand does it. What is not shown is that a
+ * compositor carries it the same way.
+ */
+void handover_test::a_tile_dragged_onto_another_window_joins_it() {
+	const QString xvfb = QStandardPaths::findExecutable(QStringLiteral("Xvfb"));
+	const QString xdotool = QStandardPaths::findExecutable(QStringLiteral("xdotool"));
+	if (xvfb.isEmpty() || xdotool.isEmpty()) QSKIP("no Xvfb or xdotool");
+	int display = -1;
+	for (int n = 90; n < 130 && display < 0; ++n)
+		if (!QFile::exists(QStringLiteral("/tmp/.X11-unix/X%1").arg(n)) && !QFile::exists(QStringLiteral("/tmp/.X%1-lock").arg(n)))
+			display = n;
+	if (display < 0) QSKIP("no free X display number");
+	const QString name = QStringLiteral(":%1").arg(display);
+
+	QProcess *server = new QProcess;
+	m_processes << server;   /* ended in cleanup() with the rest */
+	server->start(xvfb, { name, QStringLiteral("-screen"), QStringLiteral("0"), QStringLiteral("1280x800x24"),
+	                      QStringLiteral("-nolisten"), QStringLiteral("tcp") });
+	QVERIFY(server->waitForStarted());
+	QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(QStringLiteral("/tmp/.X11-unix/X%1").arg(display)), 5000);
+
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	x11.insert(QStringLiteral("SNURRA_DRAG"), QStringLiteral("dnd"));
+	auto run = [&](const QStringList &args) {
+		QProcess tool;
+		QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+		env.insert(QStringLiteral("DISPLAY"), name);
+		tool.setProcessEnvironment(env);
+		tool.start(xdotool, args);
+		tool.waitForFinished(5000);
+		return QString::fromLocal8Bit(tool.readAllStandardOutput()).trimmed();
+	};
+	auto window_of = [&](QProcess *p) {
+		return run({ QStringLiteral("search"), QStringLiteral("--sync"), QStringLiteral("--onlyvisible"),
+		             QStringLiteral("--pid"), QString::number(p->processId()) })
+		        .section(QLatin1Char('\n'), 0, 0);
+	};
+
+	QProcess *a = start({ QStringLiteral("a.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ QStringLiteral("b.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	/* Both open at the pointer; set apart. */
+	run({ QStringLiteral("windowmove"), window_of(a), QStringLiteral("100"), QStringLiteral("100") });
+	run({ QStringLiteral("windowmove"), window_of(b), QStringLiteral("600"), QStringLiteral("300") });
+	QTest::qWait(300);
+
+	snurra_wire::message where;
+	where.type = snurra_wire::WHERE;
+	const QRect from = ask(socket_of(a), where).frame;
+	const QRect onto = ask(socket_of(b), where).frame;
+	QVERIFY2(from.isValid() && onto.isValid() && !from.intersects(onto),
+	         qPrintable(QStringLiteral("windows at %1,%2 and %3,%4").arg(from.x()).arg(from.y()).arg(onto.x()).arg(onto.y())));
+
+	/* Pressed on A's title, moved in steps, let go near B's right edge. */
+	{
+		const QPoint grab = from.topLeft() + QPoint(24, 12);
+		const QPoint drop(onto.right() - 8, onto.center().y());
+		run({ QStringLiteral("mousemove"), QString::number(grab.x()), QString::number(grab.y()) });
+		run({ QStringLiteral("mousedown"), QStringLiteral("1") });
+		for (int step = 1; step <= 20; ++step) {
+			const QPoint at = grab + (drop - grab) * step / 20;
+			run({ QStringLiteral("mousemove"), QString::number(at.x()), QString::number(at.y()) });
+			QTest::qWait(30);
+		}
+		QTest::qWait(200);
+		run({ QStringLiteral("mouseup"), QStringLiteral("1") });
+	}
+
+	QVERIFY2(a->waitForFinished(8000), "the dragged tile's process did not hand it over and go");
+	const snurra_wire::message joined = ask(socket_of(b), status_request());
+	QCOMPARE(joined.states.size(), 2);
+	snurra_tile_state moved;
+	for (const snurra_tile_state &state : joined.states)
+		if (state.source.endsWith(QLatin1String("a.flac"))) moved = state;
+	QVERIFY2(moved.source.endsWith(QLatin1String("a.flac")), "the dragged tile is not there");
+	QCOMPARE(moved.column, 1);   /* dropped by the right edge: next in the train */
+
+	/* A drag along the screen, pressed at `grab` and let go at `drop`. */
+	auto drag = [&](const QPoint &grab, const QPoint &drop) {
+		run({ QStringLiteral("mousemove"), QString::number(grab.x()), QString::number(grab.y()) });
+		run({ QStringLiteral("mousedown"), QStringLiteral("1") });
+		for (int step = 1; step <= 20; ++step) {
+			const QPoint at = grab + (drop - grab) * step / 20;
+			run({ QStringLiteral("mousemove"), QString::number(at.x()), QString::number(at.y()) });
+			QTest::qWait(30);
+		}
+		QTest::qWait(200);
+		run({ QStringLiteral("mouseup"), QStringLiteral("1") });
+	};
+
+	/* Dropped on nothing, a tile of a group is pulled out into a process
+	 * of its own -- the same gesture, with no window to land in. */
+	QTest::qWait(300);
+	const QRect group = ask(socket_of(b), where).frame;
+	const QPoint second_title(group.x() + group.width() / 2 + 24, group.y() + 12);
+	drag(second_title, QPoint(200, 650));
+	QString pulled;
+	QElapsedTimer waited;
+	waited.start();
+	while (pulled.isEmpty() && waited.elapsed() < 10000) {
+		for (const QString &path : sockets())
+			if (path != socket_of(b) && ask(path, status_request(), 500).states.size() == 1) pulled = path;
+		QTest::qWait(100);
+	}
+	QVERIFY2(!pulled.isEmpty(), "a tile dropped on nothing was not pulled out");
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(b), status_request()).states.size(), 1, 5000);
+	QVERIFY(ask(pulled, status_request()).states.value(0).source.endsWith(QLatin1String("a.flac")));
+
+	/* And dropped by the bottom edge, it becomes a lane below. */
+	QTest::qWait(300);
+	const QRect lone = ask(pulled, where).frame;
+	const QRect target = ask(socket_of(b), where).frame;
+	QVERIFY2(lone.isValid() && !lone.intersects(target), "the pulled-out window lies over the group");
+	drag(lone.topLeft() + QPoint(24, 12), QPoint(target.center().x(), target.bottom() - 6));
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(b), status_request()).states.size(), 2, 8000);
+	snurra_tile_state below;
+	for (const snurra_tile_state &state : ask(socket_of(b), status_request()).states)
+		if (state.source.endsWith(QLatin1String("a.flac"))) below = state;
+	QCOMPARE(below.row, 1);
+	QCOMPARE(below.column, 0);
 }
 
 int run_handover_tests(int argc, char **argv) {

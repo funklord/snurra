@@ -45,8 +45,9 @@ public:
 	/* `held`: its deck silent until a crossfade brings it in. */
 	snurra_tile *add_tile(const snurra_tile_state &state, bool held = false);
 
-	/* Hands every tile to the process at `peer`, to its right or below. */
-	void merge_into(const QString &peer, snurra_wire::side_t side);
+	/* Hands every tile -- or the one at `index` -- to the process at
+	 * `peer`, to its right or below. */
+	void merge_into(const QString &peer, snurra_wire::side_t side, int index = -1);
 
 	/* Pulls one tile out into a new process, placed at `at`. */
 	void release(int index, const QPoint &at);
@@ -55,6 +56,15 @@ public:
 	void adopt(const QString &from, const QString &token, int index, const QPoint &at);
 
 	int tile_count() const { return int(m_tiles.size()); }
+
+protected:
+	/* A tile dragged here from another snurra joins this one (Wayland's
+	 * gesture, sec 3b), and the bare frame moves the window. */
+	void dragEnterEvent(QDragEnterEvent *event) override;
+	void dragMoveEvent(QDragMoveEvent *event) override;
+	void dragLeaveEvent(QDragLeaveEvent *event) override;
+	void dropEvent(QDropEvent *event) override;
+	void mousePressEvent(QMouseEvent *event) override;
 
 private:
 	struct pending_give {
@@ -88,6 +98,9 @@ private:
 	void ask_where();
 	void handle_moved(snurra_tile *tile, const QPoint &global);
 	void handle_released(snurra_tile *tile, const QPoint &global);
+	void drag_out(snurra_tile *tile);
+	snurra_wire::side_t side_at(const QPoint &local) const;
+	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT);
 	void leave_if_empty();
 
 	QString m_path;
@@ -103,6 +116,7 @@ private:
 	QPoint m_window_from;
 	bool m_system_move_started = false;
 	snurra_marker *m_marker = nullptr;
+	QWidget *m_drop_hint = nullptr;   /* where a tile dropped here would go */
 	void mark(const QRect &landing, const QRect &shape);
 	snurra_engine *m_engine = nullptr;
 	qint64 m_last_started = 0;   /* the last crossfade taken: its start */

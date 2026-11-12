@@ -474,9 +474,22 @@ controls; each tile very compact but resizeable).
 - **Snapping (X11):** a lone tile dragged by its title moves the window;
   let go within 24 px of another snurra's right edge it joins as the
   next in a train, of its bottom edge as a lane below. In a group, a
-  tile dragged out of the window and let go is pulled out there. On
-  Wayland the window move is the compositor's (`startSystemMove`) and
-  snapping waits for drag-and-drop onto a tile (sec 3b).
+  tile dragged out of the window and let go is pulled out there.
+- **Joining by drag and drop (Wayland), built 2026-11-12:** where a
+  program can neither place its windows nor see the others', a tile's
+  title starts a drag and drop (MIME `application/x-snurra-tile`: its
+  socket and index). Dropped on another snurra, that window shows a strip
+  on the nearer of its right and bottom edges while the drag is over it,
+  and on the drop asks the giver for that one tile (`MERGE_INTO` with an
+  index) -- the same handover as a snap. Dropped on nothing, a tile of a
+  group is pulled out; a lone tile stays. The window's bare frame beside
+  the tiles moves it (`startSystemMove`), everywhere. `SNURRA_DRAG=dnd`
+  chooses this on X11, which is how it is tested:
+  `a_tile_dragged_onto_another_window_joins_it` runs two snurras in a
+  private Xvfb and drags with xdotool through XTEST -- joined on the
+  right, pulled out onto nothing, joined below. A drop handler that
+  ignores the drop fails it. Not shown: that a Wayland compositor
+  carries it the same way; none is installed here.
 - **A tile:** a title that is the handle, a handle for the controls,
   close; a waveform (a stand-in drawn from the source's name, so a file
   always looks the same, with the playhead, and a click seeks); the
@@ -553,9 +566,8 @@ controls; each tile very compact but resizeable).
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
-  consumer embedding snurra hands a deck its bytes); Wayland's
-  drag-and-drop merge; a real waveform; the train's and stack's own
-  mixing (sec 3b).
+  consumer embedding snurra hands a deck its bytes); a real waveform;
+  the train's and stack's own mixing (sec 3b).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -570,7 +582,7 @@ over SSH as the other trees are. Open, the holder's: audio or video
 first; the analysis licences (sec 3e).
 
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
-bytes -- their sessions' to take up, signalled in their trees; the
-Wayland merge by drag and drop;
+bytes -- their sessions' to take up, signalled in their trees (inbox
+20261112T0229Z); the drag and drop tried on a real Wayland compositor;
 a real waveform; a handover between an ALSA output and a hw: one (two
 devices, two clocks -- drift, not only latency, then matters).

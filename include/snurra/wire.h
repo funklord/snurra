@@ -35,7 +35,7 @@ enum type_t : quint8 {
 	COMMIT,        /* token; time: the crossfade starts, fade: its length */
 	ABORT,         /* token */
 	ADOPT,         /* token, tile index: hand that tile to the sender */
-	MERGE_INTO,    /* control: hand every tile to the process at this socket */
+	MERGE_INTO,    /* control: hand every tile (or the one at index) to the process at this socket */
 	RELEASE,       /* control: pull this tile out into a new process */
 	STATUS,        /* -> STATUS_IS: tiles and the last handover's times */
 	STATUS_IS,

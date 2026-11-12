@@ -236,6 +236,12 @@ bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
 	}
 	case QEvent::MouseMove:
 		if (!m_dragging) break;
+		/* A drag and drop swallows the release: the button is up. */
+		if (!(static_cast<QMouseEvent *>(event)->buttons() & Qt::LeftButton)) {
+			m_dragging = false;
+			m_title->setCursor(Qt::OpenHandCursor);
+			break;
+		}
 		emit handle_moved(this, static_cast<QMouseEvent *>(event)->globalPosition().toPoint());
 		return true;
 	case QEvent::MouseButtonRelease:
