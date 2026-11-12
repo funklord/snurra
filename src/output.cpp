@@ -3,7 +3,10 @@
 #include <QCoreApplication>
 #include <QDir>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <iterator>
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -89,9 +92,41 @@ private:
 
 }
 
+int64_t snurra_heard_clock::next(int64_t measured, int frames, int rate) {
+	const double period_us = double(frames) * 1e6 / rate;
+	if (m_predicted > 0) {
+		const double error = double(measured) - m_predicted;
+		if (std::abs(error) < 2 * period_us) {
+			m_errors[m_next] = error;
+			m_next = (m_next + 1) % ERRORS;
+			m_count = std::min(m_count + 1, ERRORS);
+			double sorted[ERRORS];
+			std::copy(m_errors, m_errors + m_count, sorted);
+			std::nth_element(sorted, sorted + m_count / 2, sorted + m_count);
+			m_predicted += sorted[m_count / 2] / 8;
+			m_worst = std::max(m_worst, std::abs(error));
+		} else {
+			m_predicted = double(measured);
+			m_count = 0;
+		}
+	} else {
+		m_predicted = double(measured);
+		m_count = 0;
+	}
+	const int64_t heard = int64_t(std::llround(m_predicted));
+	m_predicted += period_us;   /* the frames now being written */
+	return heard;
+}
+
 std::unique_ptr<snurra_output> snurra_open_output(const QString &spec) {
 	if (spec == QLatin1String("null")) return std::make_unique<clocked_output>(QString());
 	if (spec.startsWith(QLatin1String("capture:"))) return std::make_unique<clocked_output>(spec.mid(8));
+#if SNURRA_ALSA
 	if (spec.startsWith(QLatin1String("alsa:"))) return snurra_open_output_alsa(spec.mid(5));
+#endif
+#if SNURRA_QT_AUDIO
+	if (spec == QLatin1String("qt")) return snurra_open_output_qt(QString());
+	if (spec.startsWith(QLatin1String("qt:"))) return snurra_open_output_qt(spec.mid(3));
+#endif
 	return nullptr;
 }

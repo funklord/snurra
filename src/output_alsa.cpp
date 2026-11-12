@@ -86,7 +86,7 @@ public:
 		/* Said, not counted silently: an underrun is a dropout heard. */
 		if (const int n = m_underruns.exchange(0))
 			std::fprintf(stderr, "snurra: %s: %d underrun(s)\n", qPrintable(name()), n);
-		if (m_trace) std::fprintf(stderr, "snurra[%d]: worst timing error taken %.0f us\n", int(getpid()), m_worst_error);
+		if (m_trace) std::fprintf(stderr, "snurra[%d]: worst timing error taken %.0f us\n", int(getpid()), m_clock.worst_error());
 	}
 
 	int rate() const override { return RATE; }
@@ -117,7 +117,7 @@ private:
 					/* An underrun or a suspend: recovered, and the rest of
 					 * this period dropped rather than played late. */
 					m_underruns.fetch_add(1, std::memory_order_relaxed);
-					m_predicted = 0;   /* the device restarts: measure afresh */
+					m_clock.restart();   /* the device restarts: measure afresh */
 					if (snd_pcm_recover(m_pcm, int(wrote), 1) < 0) m_running.store(false);
 					break;
 				}
@@ -127,50 +127,9 @@ private:
 		}
 	}
 
-	/*
-	 * The shared-clock time the next frame written will be heard, filtered:
-	 * the device's clock is steady, so each period is heard one period after
-	 * the last, and measurements only nudge that prediction rather than
-	 * replacing it. A single reading jitters by tens of microseconds --
-	 * through snd-aloop, two to three frames -- and a handover takes one
-	 * reading from each side.
-	 *
-	 * The nudge is an eighth of the MEDIAN of the last fifteen errors, not
-	 * of the latest. On a loaded machine one reading in a few hundred is
-	 * milliseconds off (measured: 1 to 5 ms, against a clock that drifts by
-	 * parts per million); an eighth of that moved the prediction 24 frames,
-	 * and a handover that sampled just after one left the taker 18 frames
-	 * off the giver. A median does not see a rare outlier at all, and still
-	 * follows real drift. A reading far off the prediction (a start, an
-	 * underrun, a suspend) is taken as it is.
-	 */
-	int64_t when_next_is_heard() {
-		const double measured = double(measure_next_heard());
-		if (m_predicted > 0) {
-			const double error = measured - m_predicted;
-			const double period_us = double(m_period) * 1e6 / RATE;
-			if (std::abs(error) < 2 * period_us) {
-				m_errors[m_error_next] = error;
-				m_error_next = (m_error_next + 1) % m_errors.size();
-				m_error_count = std::min(m_error_count + 1, m_errors.size());
-				std::array<double, 15> sorted = m_errors;
-				const auto middle = sorted.begin() + m_error_count / 2;
-				std::nth_element(sorted.begin(), middle, sorted.begin() + m_error_count);
-				m_predicted += *middle / 8;
-				m_worst_error = std::max(m_worst_error, std::abs(error));
-			} else {
-				if (m_trace) std::fprintf(stderr, "snurra[%d]: timing reset, %.0f us off\n", int(getpid()), error);
-				m_predicted = measured;
-				m_error_count = 0;
-			}
-		} else {
-			m_predicted = measured;
-			m_error_count = 0;
-		}
-		const int64_t present = int64_t(std::llround(m_predicted));
-		m_predicted += double(m_period) * 1e6 / RATE;   /* the period now being written */
-		return present;
-	}
+	/* The shared-clock time the next frame written will be heard: one
+	 * reading, filtered (snurra_heard_clock, output.h). */
+	int64_t when_next_is_heard() { return m_clock.next(measure_next_heard(), m_period, int(RATE)); }
 
 	/* One reading, unfiltered. */
 	int64_t measure_next_heard() {
@@ -188,11 +147,7 @@ private:
 
 	QString m_device;
 	bool m_timestamps = false;
-	double m_predicted = 0;   /* when the next period is heard, filtered */
-	double m_worst_error = 0;
-	std::array<double, 15> m_errors{};   /* the last errors, for their median */
-	size_t m_error_next = 0;
-	size_t m_error_count = 0;
+	snurra_heard_clock m_clock;
 	bool m_trace = qEnvironmentVariableIsSet("SNURRA_TRACE_TIMING");
 	snd_pcm_t *m_pcm = nullptr;
 	int m_period = 0;

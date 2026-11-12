@@ -7,3 +7,18 @@ QMAKE_CXXFLAGS += -Os -ffunction-sections -fdata-sections
 QMAKE_LFLAGS += -Wl,--gc-sections
 include(snurra.pri)
 SOURCES += src/main.cpp
+
+android {
+	# Qt's own manifest template, changed in one place -- the package, the
+	# APP_ID -- so a Qt upgrade can be diffed against the new template.
+	ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+	# From VERSION through the Makefile, which can do the arithmetic; the
+	# fallbacks are for a qmake run that does not come through it.
+	isEmpty(SNURRA_VERSION_CODE): SNURRA_VERSION_CODE = 1
+	isEmpty(SNURRA_VERSION): SNURRA_VERSION = 0
+	isEmpty(SNURRA_TARGET_API): SNURRA_TARGET_API = 36
+	ANDROID_VERSION_CODE = $$SNURRA_VERSION_CODE
+	ANDROID_VERSION_NAME = $$SNURRA_VERSION
+	ANDROID_MIN_SDK_VERSION = 26
+	ANDROID_TARGET_SDK_VERSION = $$SNURRA_TARGET_API
+}

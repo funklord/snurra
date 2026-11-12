@@ -315,9 +315,25 @@ sec 3a's:
   `$SNURRA_LATENCY_MS` (40 ms by default) and taken as granted; **null**
   and **capture:<dir>**, paced by the clock, for no sound card and for the
   tests. `$SNURRA_OUTPUT` chooses; one that will not open falls back to
-  null, said on stderr. PortAudio was planned first, but its headers
-  (`portaudio19-dev`) are not installed here; AAudio and `QAudioSink`
-  wait for their platforms.
+  null, said (`qWarning`: stderr here, logcat on Android). PortAudio was
+  planned first, but its headers (`portaudio19-dev`) are not installed
+  here; AAudio waits for its platform.
+- **`qt[:<device>]`, Qt Multimedia's QAudioSink** (`src/output_qt.cpp`,
+  2026-11-12): the plain fallback sec 3a names, and Android's output
+  until AAudio. Pull mode, on a thread of the sink's own; a pull is heard
+  after what Qt still holds ahead of it, and what the platform holds below
+  Qt is not Qt's to report, so this one plays late by that -- the trade
+  sec 3a accepts for it. Built where Qt Multimedia is (`snurra.pri`;
+  `SNURRA_QT_AUDIO=1` for `snurra.mk`), so "tiny" is not charged for it
+  on a desktop that does not want it. **It cannot run on this machine**:
+  Qt's audio on Linux is PulseAudio only, and no server runs here
+  (measured: no outputs, with either backend asked for), so it falls back
+  to null; it is proved on the Android emulator instead.
+- **Every output's clock is one filter** (`snurra_heard_clock`,
+  `snurra/output.h`): the median-nudged prediction below, taken out of
+  the ALSA backend so the QAudioSink one has it too, its pulls being of
+  any length. The loopback test measured the same 0.03-0.05 frames
+  after the move.
 - **The shared clock** (`src/clock.h`) is `steady_clock` in microseconds,
   one for every process on a machine and never stepped. Tile states carry
   positions in microseconds, so a taker can be in step to a frame. Every
@@ -597,6 +613,24 @@ controls; each tile very compact but resizeable).
   of itself; straight lines (power 0.31 off) and starting B at once (a
   third of it lost) each fail. Not yet: beat-snapping the overlap
   (layer 6).
+- **On Android, built 2026-11-12** (sec 1: BeerSSH's tile, Android first).
+  `make android` (tool/android.mk, copied from the shared fragment, with
+  a build rule after bbq-predictor's) builds the player for a Qt kit's ABI;
+  `VERSION` (0.1.0) gives the versionCode and `APP_ID` is se.vibes.snurra
+  -- both chosen here, the holder's to change. FFmpeg is the kit's own: Qt
+  ships 7.1 for its multimedia, libraries without headers, and the
+  desktop's 7.1.5 headers serve (libavcodec 61.19.101 on both); only the
+  four FFmpeg header directories are copied into the build tree, since the
+  multiarch directory they sit in also holds glibc's. androiddeployqt's
+  readobj cannot find them under Qt's `_<abi>` names and says so, but
+  packs them as Qt Multimedia's dependencies. Measured on the emulator
+  (Galaxy_Nexus_API_33, x86_64, API 33): `tone:440` opened an AAudio
+  stream through QAudioSink, 48 kHz stereo float, shared; the audio
+  server counted 99264 frames in 2.06 s of host time (48210 a second,
+  the remainder adb's timing) and no underrun, and reports 131 ms of
+  latency below Qt, which this output does not see. Not yet: heard on a
+  phone; a tile per process does not apply there (one process per app),
+  so the embedded tile is the shape BeerSSH will use.
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
   consumer embedding snurra hands a deck its bytes); the stack's own
   mixing (sec 3b, layer 4: lanes at once, today a tile with its controls
@@ -617,6 +651,6 @@ first; the analysis licences (sec 3e).
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox
 20261112T0229Z); the drag and drop tried on a real Wayland compositor;
-a QAudioSink output, the plain fallback sec 3a names and what BeerSSH's
-Android tile can have first; a handover between an ALSA output and a hw: one
-(two devices, two clocks -- drift, not only latency, then matters).
+AAudio direct on Android, for the latency QAudioSink cannot see or set;
+a handover between an ALSA output and a hw: one (two devices, two clocks
+-- drift, not only latency, then matters).

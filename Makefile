@@ -4,6 +4,9 @@
 #   make            the player, in $(BUILD_DIR)/snurra
 #   make test       build and run the handover and codec tests (never built by plain make)
 #   make check-mk   build the player from snurra.mk alone, and run the tests on it
+#   make android    the player for Android (a Qt kit, NDK, SDK, JDK); and
+#                   android-install, -run, -log, -uninstall, -check from
+#                   tool/android.mk
 #   make style      the style gate: its own suite, whitespace, indentation, the docs
 #   make hooks      install the commit-msg hook
 #   make help       this list
@@ -43,6 +46,59 @@ test: $(BIN) tests-build
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
 	timeout $(TEST_TIMEOUT) ./$(TEST_BIN)
 
+# --- Android -----------------------------------------------------------------
+# The player on Android, as BeerSSH's tile will first run (project.md sec
+# 1): the vocabulary and the adb plumbing are tool/android.mk's, copied
+# verbatim from ~/.claude/tool/android.mk, included here below `all`; the
+# build rule is this project's, after bbq-predictor's.
+TARGET  = snurra
+APP_ID  = se.vibes.snurra
+VERSION ?= $(shell cat VERSION)
+include tool/android.mk
+
+ANDROID_BUILD_DIR ?= build-android-$(ANDROID_ABI)
+ANDROID_ARTIFACT = $(ANDROID_BUILD_DIR)/$(TARGET)-$(VERSION)-$(ANDROID_ABI).apk
+
+# FFmpeg on Android is the kit's: the libraries Qt ships for its own
+# multimedia, 7.1, without headers. The desktop's 7.1 headers serve, but
+# they live in the multiarch directory beside glibc's, which must not be on
+# an NDK compile's path -- so the four FFmpeg directories alone are copied,
+# by name, into this build's tree.
+FFMPEG_HEADERS ?= $(shell pkg-config --variable=includedir libavformat)
+FFMPEG_DIRS     = libavformat libavcodec libavutil libswresample
+
+$(ANDROID_BUILD_DIR)/ffmpeg-include/.copied:
+	@test -n "$(ANDROID_BUILD_DIR)" || { echo "ANDROID_BUILD_DIR is empty" >&2; exit 1; }
+	mkdir -p $(ANDROID_BUILD_DIR)/ffmpeg-include
+	for d in $(FFMPEG_DIRS); do cp -r $(FFMPEG_HEADERS)/$$d $(ANDROID_BUILD_DIR)/ffmpeg-include/; done
+	touch $@
+
+$(ANDROID_BUILD_DIR)/Makefile: android-check snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied
+	mkdir -p $(ANDROID_BUILD_DIR)
+	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \
+	        SNURRA_FFMPEG_INCLUDE=$(abspath $(ANDROID_BUILD_DIR)/ffmpeg-include) \
+	        SNURRA_VERSION=$(VERSION) SNURRA_VERSION_CODE=$(ANDROID_VERSION_CODE) \
+	        SNURRA_TARGET_API=$(ANDROID_TARGET_API)
+
+# Qt's generated `apk` is build-and-install, then androiddeployqt; only the
+# second is replaced, to pass --android-platform, which the generated rule
+# hardcodes away. bbq-predictor also clears androiddeployqt's staged
+# libraries first, since it adds and never removes; snurra ships none of
+# its own, so there is nothing for a stale one to be.
+android: android-fresh $(ANDROID_BUILD_DIR)/Makefile
+	$(MAKE) -C $(ANDROID_BUILD_DIR) apk_install_target
+	$(ANDROID_DEPLOY_QT) \
+	        --input $(ANDROID_BUILD_DIR)/android-$(TARGET)-deployment-settings.json \
+	        --output $(ANDROID_BUILD_DIR)/android-build \
+	        --android-platform $(ANDROID_PLATFORM) \
+	        --apk $(ANDROID_BUILD_DIR)/android-build/$(TARGET).apk
+	cd $(ANDROID_BUILD_DIR)/android-build && ./gradlew assembleDebug
+	@src=$$(find $(ANDROID_BUILD_DIR)/android-build/build/outputs/apk -name '*.apk' -print -quit); \
+	if [ -z "$$src" ]; then echo "android: no .apk was produced" >&2; exit 1; fi; \
+	cp "$$src" $(ANDROID_ARTIFACT); \
+	echo "android: $(ANDROID_ARTIFACT)"
+	$(call android_verify_signature,$(ANDROID_ARTIFACT))
+
 # --- snurra.mk, proved -----------------------------------------------------
 # A consumer with a hand-written Makefile builds from snurra.mk, which
 # derives its lists from the tree. This builds the player from those lists
@@ -54,7 +110,7 @@ include snurra.mk
 MOC ?= $(shell $(QMAKE) -query QT_HOST_LIBEXECS)/moc
 MK_QT    := Qt6Widgets Qt6Network
 MK_MOCS  := $(patsubst $(SNURRA_INCLUDE)/snurra/%.h,$(MK_BUILD_DIR)/moc_%.cpp,$(SNURRA_MOC_HDRS))
-MK_FLAGS  = -std=c++17 -fPIC -Os -I$(SNURRA_INCLUDE) $(shell pkg-config --cflags $(MK_QT) $(SNURRA_PKGS))
+MK_FLAGS  = -std=c++17 -fPIC -Os -I$(SNURRA_INCLUDE) $(SNURRA_DEFINES) $(shell pkg-config --cflags $(MK_QT) $(SNURRA_PKGS))
 MK_LIBS   = $(shell pkg-config --libs $(MK_QT) $(SNURRA_PKGS))
 
 $(MK_BUILD_DIR)/moc_%.cpp: $(SNURRA_INCLUDE)/snurra/%.h
@@ -87,5 +143,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test check-mk style style-tool hooks help FORCE
+.PHONY: all tests-build test check-mk android style style-tool hooks help FORCE
 FORCE:

@@ -1,6 +1,7 @@
 /build/
 /build-test/
 /build-mk/
+/build-android-*/
 __pycache__/
 /.claude/go.md
 .qmake.stash

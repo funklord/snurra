@@ -9,16 +9,21 @@
 
 snurra_engine::snurra_engine(QObject *parent) : QObject(parent) {
 	const QByteArray wanted = qgetenv("SNURRA_OUTPUT");
-	const QString spec = wanted.isEmpty() ? QStringLiteral("alsa:default") : QString::fromLocal8Bit(wanted);
+#ifdef Q_OS_ANDROID
+	const QString fallback = QStringLiteral("qt");   /* no ALSA for an app there */
+#else
+	const QString fallback = QStringLiteral("alsa:default");
+#endif
+	const QString spec = wanted.isEmpty() ? fallback : QString::fromLocal8Bit(wanted);
 	m_output = snurra_open_output(spec);
 	if (!m_output) {
-		std::fprintf(stderr, "snurra: no output from %s; playing to none\n", qPrintable(spec));
+		qWarning("snurra: no output from %s; playing to none", qPrintable(spec));
 		m_output = snurra_open_output(QStringLiteral("null"));
 	}
 	m_running = m_output->start(
 	        [this](float *out, int frames, int64_t present_us) { render(out, frames, present_us); });
 	if (!m_running) {
-		std::fprintf(stderr, "snurra: %s would not start; playing to none\n", qPrintable(m_output->name()));
+		qWarning("snurra: %s would not start; playing to none", qPrintable(m_output->name()));
 		m_output = snurra_open_output(QStringLiteral("null"));
 		m_running = m_output->start(
 		        [this](float *out, int frames, int64_t present_us) { render(out, frames, present_us); });
