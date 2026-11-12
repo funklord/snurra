@@ -704,7 +704,11 @@ controls; each tile very compact but resizeable).
   bytes after. **BeerSSH plays through it** (2026-11-12, beerssh
   `a696f52`, snurra pinned at `6fa8d4f`): a tile above its file list,
   an 8 s tone played to the end on the sound card under Xvfb against a
-  loopback sshd; no API change asked.
+  loopback sshd; no API change asked. Why a whole widget rather than
+  parts, in the holder's words relayed by beerssh (inbox 20261112T1612Z):
+  "With a snurra-made widget, look and features can evolve" -- a host
+  that places one widget takes each new look and feature without a
+  change of its own.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
