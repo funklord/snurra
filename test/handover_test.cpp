@@ -614,17 +614,21 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	b->terminate();
 	QVERIFY2(b->waitForFinished(3000), "the taker did not end on SIGTERM");
 
+	/* $SNURRA_KEEP_RECORDING: a copy, to look at a run by hand. */
+	if (qEnvironmentVariableIsSet("SNURRA_KEEP_RECORDING"))
+		QFile::copy(recorded, qEnvironmentVariable("SNURRA_KEEP_RECORDING"));
 	QFile file(recorded);
 	QVERIFY(file.open(QIODevice::ReadOnly));
 	/* In the dmix's own format: snd-aloop takes the format of whichever
-	 * end opens first, and a dmix needs an integer one. */
+	 * end opens first, and a dmix needs an integer one. The wrapped ramp
+	 * plays at half scale, so read back at double. */
 	const QByteArray bytes = file.readAll();
 	const qsizetype frames = bytes.size() / 8;
 	QList<float> samples(2 * frames);
 	for (qsizetype i = 0; i < 2 * frames; ++i) {
 		qint32 v = 0;
 		memcpy(&v, bytes.constData() + 4 * i, 4);
-		samples[i] = float(double(v) / 2147483648.0);
+		samples[i] = float(double(v) / 1073741824.0);
 	}
 	/* From the first sound to a little before the recording or the taker
 	 * stopped -- what is checked is the stretch both ends of which sound. */
@@ -697,8 +701,9 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	      (taker_low + taker_high) / 2 - (giver_low + giver_high) / 2);
 	QVERIFY2(qAbs(worst_gain - 1) < 0.02,
 	         qPrintable(QStringLiteral("the gains summed to %1: a gap or a doubling").arg(worst_gain)));
-	/* Whole frames on each side: one apart is the floor's rounding.
-	 * Measured 2026-11-12, twelve runs: 0.02 frames every time. */
+	/* A quarter frame. Measured 2026-11-12 over 24 runs, both builds,
+	 * with the half-scale ramp and the median-filtered clock: 0.05 at
+	 * worst, and the taker on the giver's very frame every time. */
 	/*
 	 * A cleanup is proved by counting what it left: a dmix frees its shared
 	 * memory when its last client closes, and only then. Counted as what
@@ -714,7 +719,7 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 		if (!dmix_segments_before.contains(segment)) new_ones << segment;
 	QVERIFY2(new_ones.isEmpty(),
 	         qPrintable(QStringLiteral("the dmix's shared memory was left behind: %1").arg(new_ones.join(QLatin1Char(' ')))));
-	QVERIFY2(highest - lowest <= 1.05,
+	QVERIFY2(highest - lowest <= 0.25,
 	         qPrintable(QStringLiteral("the frame heard moved by %1 frames across the handover").arg(highest - lowest)));
 }
 

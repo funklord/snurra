@@ -73,8 +73,9 @@ public:
 
 protected:
 	void sample(int64_t frame, float *lr) const override {
-		lr[0] = float(double(frame % int64_t(SNURRA_WRAPPED_RAMP_SCALE)) / SNURRA_WRAPPED_RAMP_SCALE);
-		lr[1] = 1.0f;
+		/* At half scale: two at full scale summed in a dmix clip. */
+		lr[0] = float(0.5 * double(frame % int64_t(SNURRA_WRAPPED_RAMP_SCALE)) / SNURRA_WRAPPED_RAMP_SCALE);
+		lr[1] = 0.5f;
 	}
 };
 

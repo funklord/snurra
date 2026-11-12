@@ -87,10 +87,12 @@ public:
  *    was played says, sample by sample, which frame was heard and at
  *    what gain;
  *  - `snurra-test:wrapped-ramp`, the same with the index taken modulo
- *    2^16 over 2^16: a frame is 2^-16 of full scale rather than 2^-24, so
- *    it survives an output that mixes at 24 bits -- ALSA's dmix shifts a
- *    32-bit sample right by 8 -- to 1/128 of a frame, where the plain
- *    ramp is resolved to two frames;
+ *    2^16 over 2^16, and both channels at half scale: a frame is 2^-17
+ *    of full scale rather than 2^-24, so it survives an output that mixes
+ *    at 24 bits -- ALSA's dmix shifts a 32-bit sample right by 8 -- to
+ *    1/64 of a frame, where the plain ramp is resolved to two frames; and
+ *    two of them crossfading in a dmix do not clip, which at full scale
+ *    they did, a period at a time, reading as a frame and a bit of error;
  *  - anything else: silence, `fallback_length` frames long, so a tile for
  *    something unplayable still behaves as a tile.
  */
