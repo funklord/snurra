@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 #include "snurra/clock.h"
 #include "snurra/source.h"
@@ -61,15 +62,26 @@ snurra_deck::~snurra_deck() {
 
 void snurra_deck::seek(int64_t frame) {
 	m_seek_target.store(std::max<int64_t>(0, frame), std::memory_order_relaxed);
+	m_seek_anchor_us.store(INT64_MIN, std::memory_order_relaxed);
 	m_generation.fetch_add(1, std::memory_order_release);
 }
 
-void snurra_deck::fade(int64_t start_us, int64_t length_us, float from, float to) {
+void snurra_deck::start_at(int64_t frame, int64_t us) {
+	/* A seek the callback anchors: before `us` the position is short of
+	 * `frame` and the data ahead of it, so it plays silence and reaches
+	 * the frame exactly then (render_add). */
+	m_seek_target.store(std::max<int64_t>(0, frame), std::memory_order_relaxed);
+	m_seek_anchor_us.store(us, std::memory_order_relaxed);
+	m_generation.fetch_add(1, std::memory_order_release);
+}
+
+void snurra_deck::fade(int64_t start_us, int64_t length_us, float from, float to, bool power) {
 	m_fade_sequence.fetch_add(1, std::memory_order_acq_rel);
 	m_fade_start.store(start_us, std::memory_order_relaxed);
 	m_fade_length.store(length_us, std::memory_order_relaxed);
 	m_fade_from.store(from, std::memory_order_relaxed);
 	m_fade_to.store(to, std::memory_order_relaxed);
+	m_fade_power.store(power, std::memory_order_relaxed);
 	m_fade_sequence.fetch_add(1, std::memory_order_release);
 }
 
@@ -80,7 +92,8 @@ snurra_deck::fade_t snurra_deck::fade_snapshot() {
 		const uint32_t before = m_fade_sequence.load(std::memory_order_acquire);
 		if (before & 1) continue;
 		fade_t fade{ m_fade_start.load(std::memory_order_relaxed), m_fade_length.load(std::memory_order_relaxed),
-			     m_fade_from.load(std::memory_order_relaxed), m_fade_to.load(std::memory_order_relaxed) };
+			     m_fade_from.load(std::memory_order_relaxed), m_fade_to.load(std::memory_order_relaxed),
+			     m_fade_power.load(std::memory_order_relaxed) };
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (m_fade_sequence.load(std::memory_order_relaxed) == before) {
 			m_fade_last = fade;
@@ -94,6 +107,10 @@ float snurra_deck::fade_gain(const fade_t &fade, int64_t us) const {
 	if (us < fade.start_us) return fade.from;
 	if (fade.length_us <= 0 || us >= fade.start_us + fade.length_us) return fade.to;
 	const float t = float(double(us - fade.start_us) / double(fade.length_us));
+	if (fade.power) {
+		const float angle = t * float(M_PI_2);
+		return fade.from * std::cos(angle) + fade.to * std::sin(angle);
+	}
 	return fade.from + (fade.to - fade.from) * t;
 }
 
@@ -194,13 +211,19 @@ bool snurra_deck::next_frame(float &left, float &right) {
 }
 
 void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
+	const bool playing = m_playing.load(std::memory_order_acquire);   /* first: see set_playing */
 	const uint64_t generation = m_generation.load(std::memory_order_acquire);
 	if (generation != m_seen_generation) {
 		/* A seek: what was read for before it is stale. */
 		m_seen_generation = generation;
 		m_position = m_seek_target.load(std::memory_order_relaxed);
-		m_anchored = false;
-		m_locked.store(true, std::memory_order_release);
+		const int64_t anchor_us = m_seek_anchor_us.load(std::memory_order_relaxed);
+		m_anchored = anchor_us != INT64_MIN;
+		if (m_anchored) {
+			m_anchor_frame = m_position;
+			m_anchor_us = anchor_us;
+		}
+		m_locked.store(!m_anchored, std::memory_order_release);
 		m_finished.store(false, std::memory_order_relaxed);
 		if (m_current) {
 			m_free.push(m_current);
@@ -217,7 +240,6 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	if (m_anchored) m_position = m_anchor_frame + snurra_us_to_frames(present_us - m_anchor_us, m_rate);
 
 	const fade_t fade = fade_snapshot();
-	const bool playing = m_playing.load(std::memory_order_relaxed);
 	const float level = m_level.load(std::memory_order_relaxed);
 	const float target = playing ? level : 0.0f;
 	const float step = 1.0f / (0.005f * float(m_rate));   /* 5 ms from silence to full */

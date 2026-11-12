@@ -580,9 +580,27 @@ controls; each tile very compact but resizeable).
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
+- **The train plays as one, built 2026-11-12** (sec 3b, layer 3): when a
+  playing tile comes within 1.5 s of its length less the overlap, the
+  next tile in its row is started at frame 0 on that exact moment
+  (`snurra_deck::start_at`, the anchored start a handover's taker uses,
+  aimed at a time to come) and the two cross over the overlap along a
+  quarter circle -- equal power, since a train's two tracks are
+  different signals and straight lines dip 3 dB, where a handover's
+  identical ones cross straight. The controls follow what plays; a tile
+  stopped before its next began takes the next back. **The overlap is
+  5 s** ($SNURRA_TRAIN_OVERLAP_MS), never more than half either tile -- a
+  DJ mix's crossfade, decided from the aims; a tile's own when
+  envelopes come (layer 5). Measured from a capture of two constant
+  files, one per channel: the overlap exactly 48000 frames for 1 s, the
+  summed power 1.0000 through it, each side whole outside it, and B all
+  of itself; straight lines (power 0.31 off) and starting B at once (a
+  third of it lost) each fail. Not yet: beat-snapping the overlap
+  (layer 6).
 - **Not yet:** a tile for bytes (the window opens tiles by name; a
-  consumer embedding snurra hands a deck its bytes); the train's and
-  stack's own mixing (sec 3b).
+  consumer embedding snurra hands a deck its bytes); the stack's own
+  mixing (sec 3b, layer 4: lanes at once, today a tile with its controls
+  out plays alongside, which is most of it).
 
 ## 5. Resuming work here (2026-11-12)
 
@@ -599,6 +617,6 @@ first; the analysis licences (sec 3e).
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox
 20261112T0229Z); the drag and drop tried on a real Wayland compositor;
-the train (sec 3b layer 3): tiles side by side played in sequence, the
-overlap the crossfade; a handover between an ALSA output and a hw: one
+a QAudioSink output, the plain fallback sec 3a names and what BeerSSH's
+Android tile can have first; a handover between an ALSA output and a hw: one
 (two devices, two clocks -- drift, not only latency, then matters).

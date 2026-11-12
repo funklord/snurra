@@ -15,6 +15,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -202,6 +203,8 @@ private slots:
 	void a_seek_in_bytes_all_here_lands_as_in_a_file();
 	void a_play_before_any_bytes_begins_at_the_beginning_data() { formats_data(); }
 	void a_play_before_any_bytes_begins_at_the_beginning();
+	void a_deck_started_at_a_time_sounds_its_frame_then();
+	void an_equal_power_fade_keeps_its_quarter_circle();
 	void the_waveform_shows_where_it_is_loud();
 	void a_waveform_closed_while_reading_stops_at_once();
 
@@ -388,6 +391,76 @@ void deck_test::a_play_before_any_bytes_begins_at_the_beginning() {
 	blocks.insert(blocks.end(), more.begin(), more.end());
 	const QString fault = check_continuous(blocks, reference, 0);
 	QVERIFY2(fault.isEmpty(), qPrintable(fault));
+}
+
+void deck_test::a_deck_started_at_a_time_sounds_its_frame_then() {
+	/*
+	 * A train's next tile starts on the very frame and moment the one
+	 * before it reaches its overlap. From the ramp: silent before the
+	 * moment, frame 0 at it -- to half a frame -- and every frame after.
+	 */
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	const int64_t at = present + 150000 + 7;   /* not on a block, nor a frame */
+	deck.start_at(0, at);
+	const std::vector<rendered_t> blocks
+	        = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+	int64_t block_present = blocks.empty() ? 0 : present - int64_t(blocks.size()) * snurra_frames_to_us(PERIOD, RATE);
+	bool sounding = false;
+	double expected = 0;
+	for (const rendered_t &block : blocks) {
+		for (int i = 0; i < PERIOD; ++i) {
+			const double when = double(block_present) + i * 1e6 / RATE;
+			const float gain = block.samples[2 * size_t(i) + 1];
+			const double frame = double(block.samples[2 * size_t(i)]) * SNURRA_RAMP_SCALE;
+			if (!sounding) {
+				if (gain == 0) {
+					QVERIFY2(when < double(at) + 1e6 / RATE,
+					         qPrintable(QStringLiteral("silent %1 us after its moment").arg(when - double(at))));
+					continue;
+				}
+				sounding = true;
+				QVERIFY2(qAbs(when - double(at)) <= 0.5e6 / RATE,
+				         qPrintable(QStringLiteral("began %1 us from its moment").arg(when - double(at))));
+				QCOMPARE(frame, 0.0);
+				expected = 0;
+			}
+			QCOMPARE(frame, expected);
+			expected += 1;
+		}
+		block_present += snurra_frames_to_us(PERIOD, RATE);
+	}
+	QVERIFY2(sounding, "it never began");
+}
+
+void deck_test::an_equal_power_fade_keeps_its_quarter_circle() {
+	/* Falling as cos and rising as sin, so two different tracks crossed
+	 * keep their summed power: from the ramp, the gain is its right. */
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	const int64_t from = present + 100000;
+	const int64_t length = 200000;
+	deck.fade(from, length, 1, 0, true);
+	const std::vector<rendered_t> blocks
+	        = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+	int64_t block_present = present - int64_t(blocks.size()) * snurra_frames_to_us(PERIOD, RATE);
+	double worst = 0;
+	int inside = 0;
+	for (const rendered_t &block : blocks) {
+		for (int64_t i = 0; i < block.advanced; ++i) {
+			const double when = double(block_present) + double(i) * 1e6 / RATE;
+			const double t = qBound(0.0, (when - double(from)) / double(length), 1.0);
+			worst = qMax(worst, qAbs(double(block.samples[2 * size_t(i) + 1]) - std::cos(t * M_PI_2)));
+			if (t > 0 && t < 1) ++inside;
+		}
+		block_present += snurra_frames_to_us(PERIOD, RATE);
+	}
+	QVERIFY2(inside > RATE / 10, "too little of the fade was played");
+	QVERIFY2(worst < 1e-4, qPrintable(QStringLiteral("off the quarter circle by %1").arg(worst)));
 }
 
 /* A WAV whose sample at `frame` is `level(frame)`, 16-bit, both channels. */

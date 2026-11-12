@@ -92,6 +92,11 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	QSizeGrip *grip = new QSizeGrip(this);
 	outer->addWidget(grip, 0, Qt::AlignRight | Qt::AlignBottom);
 
+	m_trains = new QTimer(this);
+	m_trains->setInterval(100);
+	connect(m_trains, &QTimer::timeout, this, &snurra_node::run_trains);
+	m_trains->start();
+
 	setAcceptDrops(true);
 	/* Where a tile dropped here would go: a strip along that edge, over the
 	 * tiles, taking no input so the drag goes on through it. */
@@ -190,17 +195,95 @@ void snurra_node::place_tiles() {
 
 void snurra_node::remove_tile(snurra_tile *tile) {
 	if (!m_tiles.contains(tile)) return;
+	m_following.remove(tile);
 	m_engine->retire(tile->deck());
 	drop_tile(tile);
 }
 
 /* Out of the window, its deck left to whoever retires it. */
 void snurra_node::drop_tile(snurra_tile *tile) {
+	m_following.remove(tile);
 	if (!m_tiles.removeOne(tile)) return;
 	m_grid->removeWidget(tile);
 	tile->hide();
 	tile->deleteLater();
 	place_tiles();
+}
+
+/*
+ * Trains (project.md sec 3b): tiles side by side in a row play as one
+ * sequence. When a playing tile comes within reach of its end, the next in
+ * its row is started at frame 0 on the exact moment the playing one
+ * reaches its length less the overlap, and the two cross over that
+ * overlap along a quarter circle -- two different tracks, so equal power,
+ * where a handover's identical signals cross in straight lines. The
+ * controls follow what plays: out on the next tile as it is started, in on
+ * the one before once it has ended. A tile stopped before its next began
+ * takes the next back.
+ *
+ * The overlap is 5 s, or $SNURRA_TRAIN_OVERLAP_MS, and never more than
+ * half of either tile -- a decision taken from the aims (a DJ mix's
+ * crossfade), to be made a tile's own when envelopes come (sec 3b, layer
+ * 5).
+ */
+void snurra_node::run_trains() {
+	const qint64 now = snurra_clock_us();
+	const QByteArray wanted = qgetenv("SNURRA_TRAIN_OVERLAP_MS");
+	const qint64 overlap_us = wanted.isEmpty() ? 5000000 : qint64(wanted.toLongLong()) * 1000;
+	constexpr qint64 LEAD_US = 1500000;   /* for the next one's reader to be ahead */
+
+	/* What was started: taken back if its tile stopped before it began;
+	 * finished with once that tile has ended. */
+	for (auto it = m_following.begin(); it != m_following.end();) {
+		snurra_tile *before = it.key();
+		if (!m_tiles.contains(before)) {
+			it = m_following.erase(it);
+			continue;
+		}
+		if (!before->playing()) {
+			if (now < it->at_us && it->next) {
+				it->next->set_playing(false);
+				it->next->deck()->fade(0, 0, 1, 1);
+			} else {
+				before->set_controls(false);   /* ended: what plays is the next */
+			}
+			/* Its fade out is done with: played again, it is heard. */
+			before->deck()->fade(0, 0, 1, 1);
+			it = m_following.erase(it);
+			continue;
+		}
+		++it;
+	}
+
+	for (snurra_tile *tile : m_tiles) {
+		if (!tile->playing() || m_following.contains(tile)) continue;
+		snurra_tile *next = nullptr;
+		for (snurra_tile *other : m_tiles)
+			if (other->row() == tile->row() && other->column() > tile->column()
+			    && (!next || other->column() < next->column()))
+				next = other;
+		if (!next || next->playing()) continue;
+		snurra_deck *deck = tile->deck();
+		const int rate = deck->rate();
+		const int64_t length = deck->length();
+		const int64_t next_length = next->deck()->length();
+		if (length <= 0 || next_length <= 0) continue;
+		int64_t frame = 0;
+		int64_t at = 0;
+		int64_t advanced = 0;
+		deck->last_rendered(frame, at, advanced);
+		if (advanced <= 0) continue;   /* starved or paused: no moment to aim at */
+		const int64_t overlap = std::min({ snurra_us_to_frames(overlap_us, rate), length / 2, next_length / 2 });
+		const qint64 start = at + snurra_frames_to_us(length - overlap - frame, rate);
+		if (start - now > LEAD_US || start < now) continue;
+		const qint64 fade_us = snurra_frames_to_us(overlap, rate);
+		next->deck()->start_at(0, start);
+		next->deck()->fade(start, fade_us, 0, 1, true);
+		next->set_playing(true);
+		next->set_controls(true);
+		deck->fade(start, fade_us, 1, 0, true);
+		m_following.insert(tile, following{ next, start });
+	}
 }
 
 void snurra_node::leave_if_empty() {

@@ -102,6 +102,7 @@ private:
 	snurra_wire::side_t side_at(const QPoint &local) const;
 	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT);
 	void leave_if_empty();
+	void run_trains();
 
 	QString m_path;
 	QLocalServer *m_server = nullptr;
@@ -119,6 +120,14 @@ private:
 	QWidget *m_drop_hint = nullptr;   /* where a tile dropped here would go */
 	void mark(const QRect &landing, const QRect &shape);
 	snurra_engine *m_engine = nullptr;
+	/* A train's next tile, started for the tile before it: when, so a
+	 * stop before then can take it back. */
+	struct following {
+		QPointer<snurra_tile> next;
+		qint64 at_us = 0;
+	};
+	QHash<snurra_tile *, following> m_following;
+	QTimer *m_trains = nullptr;
 	qint64 m_last_started = 0;   /* the last crossfade taken: its start */
 	qint64 m_last_stopped = 0;   /* and its end */
 };

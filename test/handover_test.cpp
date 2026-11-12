@@ -15,6 +15,7 @@
 #include <QStandardPaths>
 
 #include <cmath>
+#include <cstring>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -37,6 +38,7 @@ private slots:
 	void a_tile_pulled_out_crosses_over_in_step_without_a_gap();
 	void a_merge_between_two_alsa_outputs_is_heard_in_step();
 	void a_tile_dragged_onto_another_window_joins_it();
+	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 
 private:
 	QProcess *start(const QStringList &args = {}, const QString &output = QStringLiteral("null"),
@@ -862,6 +864,106 @@ void handover_test::a_tile_dragged_onto_another_window_joins_it() {
 		if (state.source.endsWith(QLatin1String("a.flac"))) below = state;
 	QCOMPARE(below.row, 1);
 	QCOMPARE(below.column, 0);
+}
+
+/* A WAV of `seconds` at 48 kHz, its left at `left` and right at `right`,
+ * 16-bit, every frame the same: a constant a capture reads as a gain. */
+static bool write_constant_wav(const QString &path, int seconds, qint16 left, qint16 right) {
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) return false;
+	const quint32 bytes = quint32(seconds) * 48000 * 4;
+	auto u32 = [&file](quint32 v) { file.write(reinterpret_cast<const char *>(&v), 4); };
+	auto u16 = [&file](quint16 v) { file.write(reinterpret_cast<const char *>(&v), 2); };
+	file.write("RIFF");
+	u32(36 + bytes);
+	file.write("WAVEfmt ");
+	u32(16);
+	u16(1);
+	u16(2);
+	u32(48000);
+	u32(48000 * 4);
+	u16(4);
+	u16(16);
+	file.write("data");
+	u32(bytes);
+	QByteArray frame(4, Qt::Uninitialized);
+	std::memcpy(frame.data(), &left, 2);
+	std::memcpy(frame.data() + 2, &right, 2);
+	file.write(frame.repeated(int(bytes / 4)));
+	return true;
+}
+
+/*
+ * A train (project.md sec 3b): B snapped to the right of a playing A
+ * follows it, B starting on the very moment A reaches its length less the
+ * overlap, the two crossed at equal power. A holds half scale on the left
+ * only and B on the right only, so A's process's capture reads each one's
+ * gain directly: the overlap is exactly as long as asked, the summed
+ * power through it is one, A is whole before it and B after, B plays all
+ * of itself -- so it began at its first frame -- and the controls end on
+ * B, with A stopped.
+ */
+void handover_test::a_train_plays_its_tiles_in_sequence_crossed_at_equal_power() {
+	const QString a_file = m_dir->filePath(QStringLiteral("a.wav"));
+	const QString b_file = m_dir->filePath(QStringLiteral("b.wav"));
+	QVERIFY(write_constant_wav(a_file, 3, 16384, 0));
+	QVERIFY(write_constant_wav(b_file, 3, 0, 16384));
+	QProcessEnvironment train;
+	train.insert(QStringLiteral("SNURRA_TRAIN_OVERLAP_MS"), QStringLiteral("1000"));
+	const QString output = QStringLiteral("capture:") + capture_dir();
+
+	QProcess *a = start({ a_file }, output, train);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QProcess *b = start({ b_file }, output, train);
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = socket_of(a);
+	merge.side = snurra_wire::RIGHT;
+	tell(socket_of(b), merge);
+	QVERIFY2(b->waitForFinished(5000), "B did not join A");
+	QTRY_VERIFY_WITH_TIMEOUT(!ask(socket_of(a), status_request()).states.value(1).playing
+	                                 && ask(socket_of(a), status_request()).states.size() == 2
+	                                 && QFileInfo(capture_dir() + QStringLiteral("/%1.capture").arg(a->processId())).size()
+	                                            > 8 * 48000 * 6,
+	                         12000);
+	QTest::qWait(500);
+
+	const capture_t heard = read_capture(QDir(capture_dir()).filePath(QStringLiteral("%1.capture").arg(a->processId())));
+	auto gain_a = [&](int i) { return double(heard.left.at(i)) / 0.5; };
+	auto gain_b = [&](int i) { return double(heard.right.at(i)) / 0.5; };
+	int b_first = -1;
+	int b_last = -1;
+	int a_last = -1;
+	/* Any sample above zero sounds: an equal-power fade begins at sin 0,
+	 * so a threshold of 1e-4 cut three frames off each end of it. */
+	for (int i = 0; i < heard.us.size(); ++i) {
+		if (gain_b(i) > 0) {
+			if (b_first < 0) b_first = i;
+			b_last = i;
+		}
+		if (gain_a(i) > 0) a_last = i;
+	}
+	QVERIFY2(b_first > 0 && a_last > b_first, "B never followed A, or A stopped first");
+	const int overlap = a_last - b_first + 1;
+	double worst_power = 0;
+	for (int i = b_first; i <= a_last; ++i)
+		worst_power = qMax(worst_power, qAbs(gain_a(i) * gain_a(i) + gain_b(i) * gain_b(i) - 1));
+	double worst_before = 0;
+	for (int i = b_first - 24000; i < b_first; ++i) worst_before = qMax(worst_before, qAbs(gain_a(i) - 1));
+	double worst_after = 0;
+	for (int i = a_last + 1; i <= b_last; ++i) worst_after = qMax(worst_after, qAbs(gain_b(i) - 1));
+	qInfo("train: overlap %d frames, summed power off by %.4f at worst, A before %.4f, B after %.4f, B played %d frames",
+	      overlap, worst_power, worst_before, worst_after, b_last - b_first + 1);
+	QVERIFY2(qAbs(overlap - 48000) <= 2, qPrintable(QStringLiteral("an overlap of %1 frames").arg(overlap)));
+	QVERIFY2(worst_power < 0.01, qPrintable(QStringLiteral("the summed power is off by %1").arg(worst_power)));
+	QVERIFY2(worst_before < 1e-4 && worst_after < 1e-4, "a side was not whole outside the overlap");
+	QVERIFY2(qAbs(b_last - b_first + 1 - 3 * 48000) <= 2,
+	         qPrintable(QStringLiteral("B played %1 frames of %2").arg(b_last - b_first + 1).arg(3 * 48000)));
+
+	const QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
+	for (const snurra_tile_state &state : states)
+		QCOMPARE(state.controls, state.source == b_file);
 }
 
 int run_handover_tests(int argc, char **argv) {

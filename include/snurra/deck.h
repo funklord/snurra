@@ -49,14 +49,28 @@ public:
 
 	/* ---- any thread but the callback ---- */
 
-	void set_playing(bool playing) { m_playing.store(playing, std::memory_order_relaxed); }
+	/* Released, and read by the callback before the seek generation: a
+	 * start_at() made before set_playing(true) is then always seen with
+	 * it, and the deck never sounds a block from where it was. */
+	void set_playing(bool playing) { m_playing.store(playing, std::memory_order_release); }
 	void set_level(float level) { m_level.store(level, std::memory_order_relaxed); }
 	void seek(int64_t frame);
 
-	/* The gain goes from `from` to `to` over [start_us, start_us + length_us]
-	 * of the shared clock, in a straight line: the two sides of a handover
-	 * play the same samples in step, so straight lines sum to one. */
-	void fade(int64_t start_us, int64_t length_us, float from, float to);
+	/* Plays `frame` at `us` on the shared clock and on from there, silent
+	 * until then: how a train's next tile starts on the very frame the
+	 * one before it reaches its overlap. The deck must be playing. */
+	void start_at(int64_t frame, int64_t us);
+
+	/*
+	 * The gain goes from `from` to `to` over [start_us, start_us + length_us]
+	 * of the shared clock. In a straight line by default: the two sides of
+	 * a handover play the same samples in step, so straight lines sum to
+	 * one. With `power`, along a quarter circle -- cos falling, sin rising,
+	 * for fades between 0 and 1 -- so that two DIFFERENT signals, a train's
+	 * two tracks, keep their summed power, where straight lines dip 3 dB
+	 * in the middle.
+	 */
+	void fade(int64_t start_us, int64_t length_us, float from, float to, bool power = false);
 
 	/* The frame heard at `us`, from what the callback last rendered. */
 	int64_t position_at(int64_t us) const;
@@ -97,6 +111,7 @@ private:
 		int64_t length_us;
 		float from;
 		float to;
+		bool power;
 	};
 
 	void read_loop();
@@ -122,6 +137,8 @@ private:
 	std::atomic<int64_t> m_fade_length{ 0 };
 	std::atomic<float> m_fade_from{ 1 };
 	std::atomic<float> m_fade_to{ 1 };
+	std::atomic<bool> m_fade_power{ false };
+	std::atomic<int64_t> m_seek_anchor_us{ INT64_MIN };   /* start_at's time; MIN for a plain seek */
 
 	/* From the reader. */
 	std::atomic<int64_t> m_length{ 0 };
@@ -145,7 +162,7 @@ private:
 	block *m_current = nullptr;
 	int m_offset = 0;
 	float m_slew = 0;   /* play/pause and level, smoothed so neither clicks */
-	fade_t m_fade_last{ 0, 0, 1, 1 };
+	fade_t m_fade_last{ 0, 0, 1, 1, false };
 };
 
 #endif
