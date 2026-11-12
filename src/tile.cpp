@@ -60,6 +60,14 @@ public:
 
 	/* The beat grid, as fractions of the track: a tick a beat along the
 	 * top, a longer one each fourth -- where a jump of bars lands. */
+	/* Said across the waveform, in place of the bars, when there is
+	 * nothing to draw and a reason why: what could not be played. */
+	void set_message(const QString &message) {
+		m_message = message;
+		setToolTip(message);
+		update();
+	}
+
 	void set_beats(double first, double period) {
 		m_beat_first = first;
 		m_beat_period = period;
@@ -136,6 +144,11 @@ protected:
 	void paint_waveform() {
 		QPainter painter(this);
 		const int h = height();
+		if (!m_message.isEmpty()) {
+			painter.setPen(palette().color(QPalette::PlaceholderText));
+			painter.drawText(rect().adjusted(4, 0, -4, 0), Qt::AlignCenter | Qt::TextWordWrap, m_message);
+			return;
+		}
 		const QColor played = palette().color(QPalette::Highlight);
 		const QColor ahead = palette().color(QPalette::Mid);
 		if (!m_peaks.empty()) {
@@ -221,6 +234,7 @@ private:
 	std::vector<float> m_peaks;   /* -1: not read yet */
 	float m_loudest = 0;
 	double m_fraction = 0;
+	QString m_message;
 	double m_beat_first = 0;
 	double m_beat_period = 0;   /* fractions of the track; 0: no grid */
 	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
@@ -892,6 +906,9 @@ void snurra_tile::tick() {
 		 * From the event loop: a source that fails at once fails within
 		 * the constructor's own tick, before anyone can be listening. */
 		QMetaObject::invokeMethod(this, [this] { emit failed(this); }, Qt::QueuedConnection);
+		/* And to the person, where they look: a silent tile with no word
+		 * was all an unplayable file gave. */
+		m_waveform->set_message(tr("snurra cannot play this: it is not sound or video it can read."));
 	}
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
 	m_state.position_us = now;

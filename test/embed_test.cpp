@@ -494,6 +494,9 @@ void embed_test::a_player_says_what_it_cannot_play() {
 	QSignalSpy failed(&player, &snurra_player::failed);
 	QVERIFY(player.open(snurra_media{ QStringLiteral("junk.mp3"), QString(), bytes }));
 	QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 5000);
+	/* And the tile says so, where a person looks: across its waveform. */
+	snurra_tile *tile = player.findChild<snurra_tile *>();
+	QVERIFY(waveform_of(tile)->toolTip().contains(QStringLiteral("cannot play")));
 	QCOMPARE(failed.first().at(0).toString(), QStringLiteral("junk.mp3"));
 	QVERIFY(!failed.first().at(1).toString().isEmpty());
 }
