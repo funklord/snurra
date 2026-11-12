@@ -505,9 +505,10 @@ controls; each tile very compact but resizeable).
   subdevice, defined in the test's own config through `ALSA_CONFIG_PATH`,
   and arecord takes the other end. The mix describes itself (from
   `snurra-test:wrapped-ramp`, the right channel is the gains summed, left
-  over right the frame heard), so no clocks are lined up. Twelve runs:
-  the gains sum to 1.0000 and the taker is on the giver's very frame,
-  every time. Skipped where there is no loopback, arecord or free
+  over right the frame heard), so no clocks are lined up. 24 runs, the
+  qmake build and the `.mk` one: the gains sum to 1.0000, the taker is
+  on the giver's very frame every time, and nothing moves by more than
+  0.05 of a frame through the fade. The bar is a quarter frame. Skipped where there is no loopback, arecord or free
   subdevice. What it took:
   - **Placing frames by `snd_pcm_delay` put the two 48 to 110 frames
     apart**: read at an arbitrary moment, it is up to a period stale.
@@ -515,13 +516,22 @@ controls; each tile very compact but resizeable).
     true, and brought it to 0-3 frames.
   - **One reading per side jitters by two or three frames**, and a
     handover takes one from each. The presentation time is now filtered
-    as JACK's DLL does: each period predicted one period after the last,
-    an eighth of a measurement's error taken; a reading two periods off
-    (a start, an underrun) is taken whole. Then 0 in twelve of twelve.
-  - **The instrument first**: dmix mixes 32-bit samples at 24 bits, so
-    the plain ramp read to two frames and showed a 3-5 frame "transient"
-    that was two truncations summed. The wrapped ramp (modulo 2^16)
-    reads to 1/128 of a frame.
+    as JACK's DLL does: each period predicted one period after the last;
+    a reading two periods off (a start, an underrun) is taken whole.
+  - **The nudge is an eighth of the median of the last fifteen errors**,
+    not of the latest: on a loaded machine one reading in a few hundred
+    is 1 to 5 ms off (`SNURRA_TRACE_TIMING=1` prints the worst taken),
+    and an eighth of one moved the prediction 24 frames -- a handover
+    sampling just after it left the taker 18 frames off, in 2 of 6 runs
+    of one build. A median never sees a rare outlier.
+  - **The instrument first, twice.** dmix mixes 32-bit samples at 24
+    bits, so the plain ramp read to two frames and showed a 3-5 frame
+    "transient" that was two truncations summed; the wrapped ramp
+    (modulo 2^16) reads finer. And at full scale two crossfading clients
+    sum past it and dmix clips, a period at a time: exactly 256-frame
+    bursts reading as 1.15 frames, gains still 1.0000. The wrapped ramp
+    plays at half scale now (1/64 of a frame through dmix);
+    `SNURRA_KEEP_RECORDING=<file>` keeps a run's recording to look at.
   - Underruns are counted and said on stderr when the output stops.
   - **A killed player leaked the dmix's shared memory**: two segments and
     a semaphore set a run, 90 and 45 of them by the time it was noticed,
@@ -534,8 +544,8 @@ controls; each tile very compact but resizeable).
     SIGKILL sabotage showed it.
   Sabotaged: `snd_pcm_delay` again (2.66 frames, caught), the giver
   cutting at the fade (gains 0.0001). An 82-frame excursion inside one
-  fade, once, before the filter, was not seen again in 24 runs and left
-  no underrun; unexplained, and the test would fail on it.
+  fade, seen once before the median filter and with no underrun, fits
+  an outlier reading taken whole by the old filter; not seen since.
   Not yet heard on a speaker; `tone:440` through the loopback was a clean
   440.3 Hz.
 - **The marker** (sec 3d): `the_marker_and_the_drop_agree_on_where_a_tile_lands`
