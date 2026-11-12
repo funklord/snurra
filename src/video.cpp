@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -24,9 +25,11 @@ const AVRational MICROSECONDS{ 1, 1000000 };
  * A decoded picture as RGB, at most WIDEST wide, sampled straight to that
  * size so the work is bounded by what is shown. Without libswscale, which
  * this machine's FFmpeg has no headers for and a tiny player need not
- * link: the 8-bit YUV layouts decoders give -- planar 4:2:0, 4:2:2 and
- * 4:4:4, and NV12/NV21 -- in the matrix (BT.601, 709 or 2020) and range
- * (limited or full) the stream says. Any other layout gives no picture.
+ * link: the YUV layouts decoders give -- planar 4:2:0, 4:2:2 and 4:4:4,
+ * NV12/NV21, and their 10-bit kin (planar 10-bit, P010), which HEVC and
+ * AV1 releases are mostly in -- in the matrix (BT.601, 709 or 2020) and
+ * range (limited or full) the stream says. A 10-bit sample is read in the
+ * 8-bit scale the matrix works in. Any other layout gives no picture.
  */
 QImage to_rgb(const AVFrame *from) {
 	const AVPixelFormat format = AVPixelFormat(from->format);
@@ -35,7 +38,13 @@ QImage to_rgb(const AVFrame *from) {
 	bool interleaved = false;   /* NV12: one plane of Cb Cr pairs */
 	bool swapped = false;       /* NV21: Cr Cb */
 	bool full = from->color_range == AVCOL_RANGE_JPEG;
+	bool wide = false;      /* 16-bit samples */
+	double divisor = 1;     /* to the 8-bit scale: 10 bits low, or high (P010) */
 	switch (format) {
+	case AV_PIX_FMT_YUV420P10LE: wide = true; divisor = 4; x_shift = y_shift = 1; break;
+	case AV_PIX_FMT_YUV422P10LE: wide = true; divisor = 4; x_shift = 1; break;
+	case AV_PIX_FMT_YUV444P10LE: wide = true; divisor = 4; break;
+	case AV_PIX_FMT_P010LE: wide = true; divisor = 256; x_shift = y_shift = 1; interleaved = true; break;
 	case AV_PIX_FMT_YUVJ420P: full = true; [[fallthrough]];
 	case AV_PIX_FMT_YUV420P: x_shift = y_shift = 1; break;
 	case AV_PIX_FMT_YUVJ422P: full = true; [[fallthrough]];
@@ -69,6 +78,12 @@ QImage to_rgb(const AVFrame *from) {
 	if (width <= 0 || height <= 0) return QImage();
 	QImage image(width, height, QImage::Format_RGB32);
 	auto clamp = [](double v) { return int(std::lround(std::clamp(v, 0.0, 1.0) * 255)); };
+	auto sample = [wide, divisor](const uint8_t *row, int i) -> double {
+		if (!wide) return row[i];
+		uint16_t value = 0;
+		std::memcpy(&value, row + 2 * i, 2);
+		return value / divisor;
+	};
 	for (int y = 0; y < height; ++y) {
 		const int sy = int(int64_t(y) * from->height / height);
 		const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
@@ -79,10 +94,10 @@ QImage to_rgb(const AVFrame *from) {
 		for (int x = 0; x < width; ++x) {
 			const int sx = int(int64_t(x) * from->width / width);
 			const int cx = sx >> x_shift;
-			int cb = interleaved ? cb_row[2 * cx] : cb_row[cx];
-			int cr = interleaved ? cr_row[2 * cx + 1] : cr_row[cx];
+			double cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
+			double cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
 			if (swapped) std::swap(cb, cr);
-			const double l = (luma[sx] - y_zero) * y_scale;
+			const double l = (sample(luma, sx) - y_zero) * y_scale;
 			const double u = (cb - 128) * c_scale;
 			const double v = (cr - 128) * c_scale;
 			const double r = l + 2 * (1 - kr) * v;

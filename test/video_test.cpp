@@ -97,8 +97,10 @@ bool video_test::make(const QString &name, const QStringList &video_args, double
 	args << QStringLiteral("-f") << QStringLiteral("lavfi") << QStringLiteral("-i")
 	     << QStringLiteral("nullsrc=s=64x48:r=25:d=3,geq=lum='mod(N\\,16)*12+24':cb=128:cr=128")
 	     << QStringLiteral("-f") << QStringLiteral("lavfi") << QStringLiteral("-i")
-	     << QStringLiteral("sine=f=440:d=3") << video_args << QStringLiteral("-pix_fmt") << QStringLiteral("yuv420p")
-	     << m_dir.filePath(name);
+	     << QStringLiteral("sine=f=440:d=3") << video_args;
+	/* 8-bit 4:2:0 unless the codec's row says otherwise (10-bit). */
+	if (!video_args.contains(QStringLiteral("-pix_fmt"))) args << QStringLiteral("-pix_fmt") << QStringLiteral("yuv420p");
+	args << m_dir.filePath(name);
 	QProcess ffmpeg;
 	ffmpeg.start(m_ffmpeg, args);
 	return ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0;
@@ -124,6 +126,16 @@ void video_test::every_codec_shows_the_frame_of_its_time_data() {
 	                                           QStringLiteral("-b:v"), QStringLiteral("0"), QStringLiteral("-c:a"),
 	                                           QStringLiteral("libopus") }
 	                           << 0.0;
+	QTest::newRow("h265, 10-bit") << QStringLiteral("hevc10.mkv")
+	                              << QStringList{ c, QStringLiteral("libx265"), QStringLiteral("-pix_fmt"),
+	                                              QStringLiteral("yuv420p10le"), QStringLiteral("-x265-params"),
+	                                              QStringLiteral("log-level=error") }
+	                              << 0.0;
+	QTest::newRow("av1, 10-bit") << QStringLiteral("av1.mkv")
+	                             /* libaom: SVT-AV1 refuses a picture under 64 high */
+	                             << QStringList{ c, QStringLiteral("libaom-av1"), QStringLiteral("-pix_fmt"),
+	                                             QStringLiteral("yuv420p10le"), QStringLiteral("-cpu-used"), QStringLiteral("8") }
+	                             << 0.0;
 	QTest::newRow("mjpeg") << QStringLiteral("mjpeg.mkv") << QStringList{ c, QStringLiteral("mjpeg"), QStringLiteral("-q:v"), QStringLiteral("2") }
 	                       << 0.0;
 }

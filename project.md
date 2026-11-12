@@ -919,8 +919,11 @@ controls; each tile very compact but resizeable).
   double-click brings it back. Pictures are converted to RGB here, not
   by libswscale, which this machine has no headers for and a tiny
   player need not link: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
-  NV12/NV21, BT.601/709/2020, limited or full range; anything else
-  (10-bit included) shows no picture yet. Measured (`video_test`): H.264
+  NV12/NV21, and since 2026-11-12 their 10-bit kin (planar 10-bit,
+  P010) that HEVC and AV1 releases are mostly in, BT.601/709/2020,
+  limited or full range; anything else shows no picture yet. H.265 and
+  AV1 at 10 bits pass the frame timing test below; without the 10-bit
+  case, frame 0's picture reads as nothing. Measured (`video_test`): H.264
   with B-frames, the same with the picture 0.2 s late, MPEG-4 Part 2 and
   MJPEG in Matroska, VP9 with Opus in WebM, each frame grey at a level
   naming it: at 234 times forward, back and jumping, the frame shown is
