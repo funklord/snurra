@@ -4,6 +4,8 @@
 #   make            the player, in $(BUILD_DIR)/snurra
 #   make test       build and run the handover and codec tests (never built by plain make)
 #   make check-mk   build the player from snurra.mk alone, and run the tests on it
+#   make install    the player and its desktop entry, under PREFIX (/usr/local)
+#                   and DESTDIR; make uninstall removes those two files
 #   make android    the player for Android (a Qt kit, NDK, SDK, JDK); and
 #                   android-install, -run, -log, -uninstall, -check from
 #                   tool/android.mk
@@ -45,6 +47,21 @@ tests-build: $(TEST_BUILD_DIR)/Makefile FORCE
 test: $(BIN) tests-build
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
 	timeout $(TEST_TIMEOUT) ./$(TEST_BIN)
+
+# --- install -----------------------------------------------------------------
+# The player and its desktop entry, so a file manager offers snurra for
+# audio and starts it with the files clicked (project.md sec 3b); several
+# at once become a train. PREFIX and DESTDIR as packaging expects them.
+PREFIX ?= /usr/local
+INSTALLED = $(DESTDIR)$(PREFIX)/bin/snurra $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop
+
+install: $(BIN)
+	install -D -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/snurra
+	install -D -m 0644 snurra.desktop $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop
+
+# The two files install wrote, by name.
+uninstall:
+	rm -f $(INSTALLED)
 
 # --- Android -----------------------------------------------------------------
 # The player on Android, as BeerSSH's tile will first run (project.md sec
@@ -143,5 +160,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test check-mk android style style-tool hooks help FORCE
+.PHONY: all tests-build test check-mk install uninstall android style style-tool hooks help FORCE
 FORCE:

@@ -536,6 +536,14 @@ controls; each tile very compact but resizeable).
   XTEST in Xvfb (`mplayers_keys_drive_the_tile`): paused, each seek
   moves by exactly what its key says; a handler that ignores the keys
   fails it at the first.
+- **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
+  `snurra.desktop` declares the audio types FFmpeg decodes here and runs
+  `snurra %F`, so several files clicked open as a train; `make install`
+  puts the player and the entry under PREFIX (/usr/local) and DESTDIR,
+  and `make uninstall` removes those two files by name. The entry passes
+  `desktop-file-validate`; installed into a scratch DESTDIR, the player
+  ran from there, and uninstall left no file. The icon is the theme's
+  generic `multimedia-audio-player` until snurra has one.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
