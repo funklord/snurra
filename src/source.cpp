@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <mutex>
 #include <thread>
 #include <numeric>
 #include <cmath>
@@ -802,6 +803,16 @@ bool snurra_drop_offers(const QMimeData *mime) {
 	return false;
 }
 
+namespace {
+std::mutex resolver_lock;
+snurra_bytes_resolver resolver_set;
+}   // namespace
+
+void snurra_set_bytes_resolver(snurra_bytes_resolver resolver) {
+	std::lock_guard<std::mutex> hold(resolver_lock);
+	resolver_set = std::move(resolver);
+}
+
 std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length,
                                                   std::function<bool()> interrupted) {
 	if (name == QLatin1String("snurra-test:ramp"))
@@ -811,6 +822,16 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 		const double hz = name.mid(5).toDouble();
 		if (hz > 0 && hz < rate / 2) return std::make_unique<tone>(hz, rate, fallback_length);
 	}
+	snurra_bytes_resolver resolver;
+	{
+		std::lock_guard<std::mutex> hold(resolver_lock);
+		resolver = resolver_set;
+	}
+	if (resolver && !QFileInfo(name).isFile())
+		if (std::shared_ptr<snurra_bytes> bytes = resolver(name)) {
+			if (std::unique_ptr<snurra_source> found = snurra_open_source(bytes, name, rate, interrupted)) return found;
+			return std::make_unique<silence>(fallback_length);
+		}
 	if (QFileInfo(name).isFile() || snurra_is_url(name)) {
 		auto file = std::make_unique<ffmpeg_source>(rate);
 		/* Only a URL's waits are given up: a file's reads are not waits. */

@@ -120,14 +120,37 @@ and everything above it knows nothing of SFTP or fuzznet.
     (dl180g6-03) in snurra's library and DJ player, on the phone too,
     without NFS -- what the phone app lacks today (it sees only the
     phone's own music).
-  - **Recommended: both, at two layers.** fuzzypickles goes on using
-    snurra as its player (and may take up its widgets); snurra gains
-    the estate's catalogue as a library source, as a client of the
-    user's node. **Whose: the holder's** -- it makes fuzznet's local
-    verbs an interface a third project depends on, and on the holder's
-    machines the node is fuzzypickles' `fzpd`, so fuzznet and
-    fuzzypickles would want to say whether those verbs are stable for
-    another client before snurra speaks them. Not built until then.
+  - **Decided by the holder 2026-11-14: both** -- "none of these
+    projects is fully stable yet ... they won't get stable unless they
+    are tested rigorously and flaws get ironed out", and the calls live
+    in fuzznet's own code, so a change of format beneath them is
+    fuzznet's. **Being built** (sec 3b, the estate):
+    - fuzznet vendored at a pin, a shallow submodule (its history is
+      1.2 GB, the pinned tree 7 MB), fetched by the Makefile, the
+      closure the calls need -- `local/*.c`, `hex`, `constant_time` --
+      compiled into the player and the tests only (`app/fuzznet.pri`;
+      some 16 KB of the player's code), never into `snurra.pri` or
+      `snurra.mk`. It links only with sections collected: `rpc.c`'s
+      other calls reach modules the closure leaves out.
+    - `app/estate.h`: the catalogue listed (`fzn_rpc_library_list`),
+      and a file as `snurra_bytes` over `fzn_rpc_library_play` slices
+      with `fzn_rpc_blob_fetch_at` for `want`, named `fuzznet:ROOT` and
+      opened through a resolver the library core now takes
+      (`snurra_set_bytes_resolver`), which the player sets in `main` for
+      itself and every tile process.
+    - Tested against a real `fuzznetd`, built by `make test` from the
+      vendored copy (with its Monocypher, fetched the same way): a file
+      stored and catalogued through fuzznet's calls is listed with its
+      name, kind and this host holding it, plays 144000 frames at 440
+      Hz, and a second file sought back and forth to five places gives
+      the very frames it gives opened by path
+      (`a_catalogued_file_is_listed_and_played_from_the_node`); no node
+      says "not running" and lists nothing. The adapter reading two
+      bytes off its offset fails it. A first expectation was wrong,
+      not the node: a mono file comes out 3 dB down a side, by path too.
+    - Next: the catalogue as rows in the library, a file still arriving
+      from a second host, and Android, where the node lives in another
+      app's sandbox.
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 

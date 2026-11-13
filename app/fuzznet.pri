@@ -13,6 +13,13 @@ INCLUDEPATH += $$FUZZNET_DIR $$PWD
 SOURCES += $$files($$FUZZNET_DIR/local/*.c) \
            $$FUZZNET_DIR/hex/hex.c \
            $$FUZZNET_DIR/constant_time/constant_time.c
+SOURCES += $$PWD/estate.cpp
+HEADERS += $$PWD/estate.h
+# Sections collected, and not only for size: rpc.c's calls for cards,
+# stickers and locations reach fuzznet modules this closure leaves out, so
+# a link that kept every function would not link (the tests, 2026-11-14).
+QMAKE_LFLAGS += -Wl,--gc-sections
+QMAKE_CXXFLAGS += -ffunction-sections -fdata-sections
 QMAKE_CFLAGS += -std=c11 -ffunction-sections -fdata-sections
 QMAKE_CFLAGS_RELEASE -= -O2
 QMAKE_CFLAGS_RELEASE += -Os

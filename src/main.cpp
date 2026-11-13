@@ -29,6 +29,8 @@
 #include "snurra/tile.h"
 #include "snurra/wire.h"
 
+#include "estate.h"   /* the player's, app/: the estate's music through fuzznet's node */
+
 namespace {
 
 int quit_pipe[2] = { -1, -1 };
@@ -93,6 +95,9 @@ int main(int argc, char *argv[]) {
 	snurra_follow_desktop(app);
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
 	quit_on_signals(app);
+	/* "fuzznet:ROOT" opened from the user's node, in this process and in
+	 * every tile process it starts, each running this same main. */
+	snurra_estate_install();
 
 	QCommandLineParser parser;
 	/* mplayer's options are one dash and a word (-ss, -fs), and are what

@@ -116,11 +116,24 @@ public:
  *    1/64 of a frame, where the plain ramp is resolved to two frames; and
  *    two of them crossfading in a dmix do not clip, which at full scale
  *    they did, a period at a time, reading as a frame and a bit of error;
+ *  - a name the host's resolver knows (snurra_set_bytes_resolver), as its
+ *    bytes;
  *  - anything else: silence, `fallback_length` frames long, so a tile for
  *    something unplayable still behaves as a tile.
  */
 std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length,
                                                   std::function<bool()> interrupted = nullptr);
+
+/*
+ * Names a host opens as bytes of its own: asked before anything above but
+ * the tests' names, with the name a tile was given; an empty pointer for a
+ * name it does not know. The player's estate (app/estate.h) opens
+ * "fuzznet:ROOT" this way, so the library itself knows nothing of where
+ * those bytes come from (project.md sec 1). Set once, at start, before any
+ * source is opened; every process the player starts sets its own.
+ */
+using snurra_bytes_resolver = std::function<std::shared_ptr<snurra_bytes>(const QString &name)>;
+void snurra_set_bytes_resolver(snurra_bytes_resolver resolver);
 
 /* Whether `name` is a URL (a scheme and "://"), which goes to FFmpeg as
  * it is, rather than a path. */

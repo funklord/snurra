@@ -91,9 +91,25 @@ tests-build: $(TEST_BUILD_DIR)/Makefile $(TEST_BUILD_DIR)/qmake.stamp FORCE
 	$(MAKE) -C $(TEST_BUILD_DIR)
 
 # A run over no binary is a failure, not a pass.
-test: $(BIN) tests-build
+# A real node for the estate's tests (test/estate_test.cpp): fuzznetd,
+# built from the vendored fuzznet into the test build -- not from a
+# sibling checkout, whose state is its session's. It needs fuzznet's own
+# vendored Monocypher, fetched as fuzznet is: when absent, at the pin,
+# shallow, or the reason. The sub-make runs every time, since only it knows
+# whether fuzznet's sources moved, and writes nothing when they did not.
+FUZZNETD = $(abspath $(TEST_BUILD_DIR)/fuzznet/fuzznetd)
+MONOCYPHER_PROBE = fuzznet/monocypher/src/monocypher.h
+$(MONOCYPHER_PROBE): | $(FUZZNET_PROBE)
+	@echo "snurra: fetching fuzznet's Monocypher, for the tests' node, the pinned commit only"
+	git -C fuzznet submodule update --init --depth 1 monocypher
+	@test -f $@ || { echo "snurra: fuzznet's Monocypher could not be fetched" >&2; exit 1; }
+fuzznetd: $(MONOCYPHER_PROBE) FORCE
+	$(MAKE) -C fuzznet --no-print-directory BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet) $(FUZZNETD)
+
+test: $(BIN) tests-build fuzznetd
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
-	timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
+	@[ -x $(FUZZNETD) ] || { echo "test: no fuzznetd at $(FUZZNETD)" >&2; exit 1; }
+	SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
 
 # --- install -----------------------------------------------------------------
 # The player and its desktop entry, so a file manager offers snurra for
@@ -237,11 +253,20 @@ $(MK_BUILD_DIR)/moc_%.cpp: $(SNURRA_INCLUDE)/snurra/%.h
 	@mkdir -p $(MK_BUILD_DIR)
 	$(MOC) $< -o $@
 
-$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) $(SNURRA_HDRS) VERSION
-	$(CXX) $(MK_FLAGS) -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) -o $@ $(MK_LIBS)
+# The player's own, beside the library's lists: the estate (app/) and the
+# fuzznet calls it is built on, compiled as C -- as app/fuzznet.pri does.
+MK_FZN_SRCS := $(wildcard fuzznet/local/*.c) fuzznet/hex/hex.c fuzznet/constant_time/constant_time.c
+MK_FZN_OBJS := $(patsubst fuzznet/%.c,$(MK_BUILD_DIR)/fzn/%.o,$(MK_FZN_SRCS))
+$(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
+	@mkdir -p $(@D)
+	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -Ifuzznet -c $< -o $@
+-include $(MK_FZN_OBJS:.o=.d)
 
-check-mk: $(MK_BUILD_DIR)/snurra tests-build
-	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
+$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) VERSION
+	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) -Wl,--gc-sections -o $@ $(MK_LIBS)
+
+check-mk: $(MK_BUILD_DIR)/snurra tests-build fuzznetd
+	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
 
 # The gate's own suite first, since a gate's pass means something only once
 # the gate is known to work; both are copied from ~/.claude/tool/.
