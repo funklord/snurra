@@ -805,6 +805,7 @@ void snurra_node::leave_if_empty() {
 	/* Not while a given tile's fade is still to be heard. */
 	if (!m_tiles.isEmpty() || !m_giving.isEmpty() || !m_adopt_token.isEmpty() || m_engine->busy()) return;
 	hide();
+	if (m_stays_open) return;
 	/* After the event loop has written what is queued: a COMMIT must
 	 * reach the taker before this process goes. */
 	QTimer::singleShot(0, this, [] { QCoreApplication::quit(); });
@@ -1279,6 +1280,26 @@ void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) 
 		state.column = column++;
 		add_tile(state);
 	}
+}
+
+void snurra_node::play_file(const QString &path) {
+	if (m_tiles.size() > 1) {
+		add_files({ path }, snurra_wire::RIGHT);
+		return;
+	}
+	for (snurra_tile *tile : QList<snurra_tile *>(m_tiles)) remove_tile(tile);
+	snurra_tile_state state;
+	state.source = path;
+	state.duration_us = 180000000;
+	state.sampled_at_us = snurra_clock_us();
+	state.controls = true;
+	state.playing = true;
+	add_tile(state);
+}
+
+void snurra_node::set_stays_open(bool stays) {
+	m_stays_open = stays;
+	if (!stays) leave_if_empty();
 }
 
 void snurra_node::mousePressEvent(QMouseEvent *event) {

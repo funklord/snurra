@@ -568,7 +568,7 @@ bool snurra_is_url(const QString &name) {
  * though shared-mime-info files .m3u, .pls and .asx under audio/: the
  * first is known as text, and the other two are named, having no text
  * among their ancestors in Qt's database (measured, Qt 6.8). */
-static bool playable_by_name(const QString &path) {
+bool snurra_playable_by_name(const QString &path) {
 	static const QMimeDatabase types;
 	const QMimeType type = types.mimeTypeForFile(path, QMimeDatabase::MatchExtension);
 	const QString name = type.name();
@@ -582,6 +582,8 @@ static bool playable_by_name(const QString &path) {
 QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
 	QStringList found;
 	if (!mime) return found;
+	if (mime->hasFormat(QLatin1String(SNURRA_FILES_MIME)))
+		return QString::fromUtf8(mime->data(QLatin1String(SNURRA_FILES_MIME))).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 	QList<QUrl> urls = mime->urls();
 	/* Some programs drag a link as text alone. */
 	if (urls.isEmpty() && snurra_is_url(mime->text().trimmed())) urls << QUrl(mime->text().trimmed());
@@ -604,7 +606,7 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
 			QDirIterator it(info.absoluteFilePath(), QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
 			while (it.hasNext() && looked_at++ < LOOKED_AT_MOST) {
 				const QString path = it.next();
-				if (playable_by_name(path)) inside << path;
+				if (snurra_playable_by_name(path)) inside << path;
 			}
 			QCollator counting;
 			counting.setNumericMode(true);
@@ -662,6 +664,7 @@ QStringList snurra_stem_names(const QString &path) {
 
 bool snurra_drop_offers(const QMimeData *mime) {
 	if (!mime) return false;
+	if (mime->hasFormat(QLatin1String(SNURRA_FILES_MIME))) return true;
 	if (!mime->hasUrls()) return snurra_is_url(mime->text().trimmed());
 	for (const QUrl &url : mime->urls()) {
 		if (!url.isLocalFile()) {

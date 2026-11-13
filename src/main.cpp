@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "snurra/clock.h"
+#include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
@@ -160,7 +161,7 @@ int main(int argc, char *argv[]) {
 	}
 	bool first = !snurra_wire::any_peer_alive(node.socket_path());
 	int column = 0;
-	for (const QString &file : files.isEmpty() ? QStringList{ QStringLiteral("untitled") } : files) {
+	for (const QString &file : files) {
 		snurra_tile_state state;
 		state.source = QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
 		/* Three minutes for what has no length of its own: silence, for
@@ -194,18 +195,41 @@ int main(int argc, char *argv[]) {
 		}
 		node.set_loop(times);
 	}
-	node.adjustSize();
 	/* At the pointer -- where the file was clicked, on X11 -- and clamped
 	 * to the screen it is on (project.md sec 3b), so a file by the edge
 	 * does not open half off it. */
-	const QPoint pointer = QCursor::pos();
-	QRect place(pointer - QPoint(node.width() / 2, node.height() / 2), node.size());
-	if (const QScreen *screen = QGuiApplication::screenAt(pointer)) {
-		const QRect room = screen->availableGeometry();
-		place.moveLeft(qBound(room.left(), place.left(), qMax(room.left(), room.right() + 1 - place.width())));
-		place.moveTop(qBound(room.top(), place.top(), qMax(room.top(), room.bottom() + 1 - place.height())));
+	auto show_at_pointer = [](QWidget *window) {
+		window->adjustSize();
+		const QPoint pointer = QCursor::pos();
+		QRect place(pointer - QPoint(window->width() / 2, window->height() / 2), window->size());
+		if (const QScreen *screen = QGuiApplication::screenAt(pointer)) {
+			const QRect room = screen->availableGeometry();
+			place.moveLeft(qBound(room.left(), place.left(), qMax(room.left(), room.right() + 1 - place.width())));
+			place.moveTop(qBound(room.top(), place.top(), qMax(room.top(), room.bottom() + 1 - place.height())));
+		}
+		window->move(place.topLeft());
+		window->show();
+	};
+	/*
+	 * Started with nothing to play: the library (project.md sec 3b), not a
+	 * tile of three minutes' silence. The window of tiles waits, hidden,
+	 * for a tune double-clicked there; the process goes once both are
+	 * closed.
+	 */
+	if (files.isEmpty()) {
+		snurra_library *library = new snurra_library;
+		library->setAttribute(Qt::WA_DeleteOnClose);
+		node.set_stays_open(true);
+		QObject::connect(library, &snurra_library::play_requested, &node, [&node, show_at_pointer](const QString &path) {
+			node.play_file(path);
+			if (!node.isVisible()) show_at_pointer(&node);
+		});
+		QObject::connect(library, &QObject::destroyed, &node, [&node] { node.set_stays_open(false); });
+		library->resize(640, 420);
+		library->move(QCursor::pos() - QPoint(320, 210));
+		library->show();
+		return app.exec();
 	}
-	node.move(place.topLeft());
-	node.show();
+	show_at_pointer(&node);
 	return app.exec();
 }

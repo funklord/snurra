@@ -39,6 +39,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/deck.cpp \
     $$SNURRA_ROOT/src/embed.cpp \
     $$SNURRA_ROOT/src/engine.cpp \
+    $$SNURRA_ROOT/src/library.cpp \
     $$SNURRA_ROOT/src/marker.cpp \
     $$SNURRA_ROOT/src/node.cpp \
     $$SNURRA_ROOT/src/output.cpp \
@@ -58,6 +59,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/deck.h \
     $$SNURRA_ROOT/include/snurra/embed.h \
     $$SNURRA_ROOT/include/snurra/engine.h \
+    $$SNURRA_ROOT/include/snurra/library.h \
     $$SNURRA_ROOT/include/snurra/marker.h \
     $$SNURRA_ROOT/include/snurra/node.h \
     $$SNURRA_ROOT/include/snurra/output.h \

@@ -219,6 +219,23 @@ does the same with a tile's playback:
   the full-screen picture -- a window of its own, all of the player
   there is to see -- they go on the train. An embedded tile takes no
   drops: where a host's files come from is the host's.
+- **Started with no file: the music library** (the holder, 2026-11-13:
+  started without a file, snurra said it could not play "untitled" and
+  played three minutes of silence anyway). It opens a library instead,
+  as a DJ program's: the audio and video under the desktop's music folder
+  (XDG), or under one chosen with its button and then remembered
+  (`library/folder` in `~/.config/snurra/snurra.conf`, only when
+  chosen), listed by name and folder in path order as people count,
+  narrowed by every word typed. Double-click or Enter plays: a window of
+  one tile or none plays it in its place at once, a player's way; one of
+  several -- a mix -- takes it at the end of its first lane, paused (an
+  assumption: a double-click must not throw a mix away). Dragged, a tune
+  carries snurra's own type (`application/x-snurra-files`), not a URI
+  list, so a desktop's file manager cannot take it as a copy of the
+  file; a snurra window takes it as any drop, and let go over nothing it
+  opens as a tile of its own where it was let go. The process goes once
+  the library and the window are both closed. Listed on a thread of its
+  own, at most 50000 tunes of 200000 files looked at.
 - **The snap gesture between processes:** on X11 a tile can find the
   others' windows and snap edge to edge as it is moved; on Wayland a
   program cannot learn other windows' positions, so the gesture there

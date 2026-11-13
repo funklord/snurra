@@ -46,6 +46,7 @@ private slots:
 	void mplayers_keys_drive_the_tile();
 	void mplayers_options_say_where_and_how_it_plays();
 	void a_playlist_is_a_train_of_what_it_names();
+	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 	void a_stack_plays_its_lanes_at_once_from_one_time();
@@ -1335,6 +1336,21 @@ void handover_test::a_playlist_is_a_train_of_what_it_names() {
 		train.insert(state.column, state.source);
 	}
 	QCOMPARE(train.values(), radio + mix);
+	a->terminate();
+	QVERIFY(a->waitForFinished(5000));
+}
+
+/*
+ * Started with no file, snurra opens its library (project.md sec 3b): no
+ * tile of three minutes' silence, nothing playing -- and it stays, rather
+ * than ending for want of a tile.
+ */
+void handover_test::started_with_nothing_it_plays_nothing() {
+	QProcess *a = start({});
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QTest::qWait(1500);
+	QCOMPARE(a->state(), QProcess::Running);
+	QCOMPARE(ask(socket_of(a), status_request()).states.size(), 0);
 	a->terminate();
 	QVERIFY(a->waitForFinished(5000));
 }

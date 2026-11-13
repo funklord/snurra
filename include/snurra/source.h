@@ -150,6 +150,14 @@ QStringList snurra_stem_names(const QString &path);
 bool snurra_is_playlist(const QString &path);
 QStringList snurra_playlist(const QString &path, int most = 1000);
 
+/* A drag of tunes from snurra's library (library.h): paths, a line each.
+ * Its own type, not a URI list, so a desktop does not take it as a copy. */
+#define SNURRA_FILES_MIME "application/x-snurra-files"
+
+/* Whether a folder's file is one to play, by the name's type: audio or
+ * video, and no playlist or cue sheet. */
+bool snurra_playable_by_name(const QString &path);
+
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
 bool snurra_drop_offers(const QMimeData *mime);

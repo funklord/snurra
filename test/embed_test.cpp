@@ -7,6 +7,7 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QMimeData>
+#include <QTreeView>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -21,6 +22,7 @@
 #include "snurra/embed.h"
 #include "snurra/node.h"
 #include "snurra/beats.h"
+#include "snurra/library.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
@@ -47,6 +49,7 @@ private slots:
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_lane_dragged_later_starts_later_on_the_beat();
 	void loop_plays_again_from_the_start();
+	void the_library_lists_finds_and_hands_out_tunes();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -564,6 +567,83 @@ void embed_test::loop_plays_again_from_the_start() {
 	a->request_playing(false);
 	QTest::qWait(1500);
 	QVERIFY2(!a->playing(), "a pause was taken for an end");
+}
+
+/*
+ * The library (project.md sec 3b), what snurra opens with no file: under
+ * a folder, a/2.wav, a/10.wav and b/song.flac are listed -- 2 before 10 --
+ * and a cover and a playlist are not. Every word typed must be found. A
+ * double-click asks to play; a drag carries the snurra files type, which
+ * a window takes as a drop and a desktop cannot copy; let go over nothing
+ * it asks for a tile there. The window then plays a tune in place of its
+ * one tile, and with several takes it at its train's end, paused.
+ */
+void embed_test::the_library_lists_finds_and_hands_out_tunes() {
+	QTemporaryDir dir;
+	const QStringList names{ QStringLiteral("a/2.wav"), QStringLiteral("a/10.wav"), QStringLiteral("b/song.flac"),
+		                 QStringLiteral("a/cover.jpg"), QStringLiteral("a/list.m3u") };
+	for (const QString &name : names) {
+		QVERIFY(QDir(dir.path()).mkpath(QFileInfo(name).path()));
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4800));
+	}
+	const QStringList tunes{ dir.filePath(names[0]), dir.filePath(names[1]), dir.filePath(names[2]) };
+	snurra_library library(dir.path());
+	library.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&library));
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QCOMPARE(library.shown(), tunes);
+	library.set_search(QStringLiteral("A 10"));
+	QCOMPARE(library.shown(), QStringList{ tunes[1] });
+	library.set_search(QStringLiteral("song"));
+	QCOMPARE(library.shown(), QStringList{ tunes[2] });
+	library.set_search(QString());
+
+	QString asked;
+	connect(&library, &snurra_library::play_requested, this, [&asked](const QString &path) { asked = path; });
+	QTreeView *view = library.findChild<QTreeView *>();
+	QVERIFY(view);
+	const QRect row = view->visualRect(view->model()->index(1, 0));
+	QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, row.center());
+	QVERIFY2(asked.isEmpty(), "one click played");
+	QTest::mouseDClick(view->viewport(), Qt::LeftButton, {}, row.center());
+	QCOMPARE(asked, tunes[1]);
+	asked.clear();
+	QTest::keyClick(view, Qt::Key_Return);
+	QCOMPARE(asked, tunes[1]);
+
+	std::unique_ptr<QMimeData> mime(snurra_library::mime_for({ tunes[0], tunes[2] }));
+	QVERIFY(!mime->hasUrls());
+	QVERIFY(snurra_drop_offers(mime.get()));
+	QCOMPARE(snurra_dropped(mime.get()), (QStringList{ tunes[0], tunes[2] }));
+	QStringList placed_out;
+	library.on_dropped_nowhere = [&placed_out](const QStringList &paths, const QPoint &) { placed_out = paths; };
+	library.dragged_out({ tunes[0] }, true, QPoint(-10000, -10000));
+	QVERIFY2(placed_out.isEmpty(), "a drag a window took was placed as well");
+	library.dragged_out({ tunes[0] }, false, library.mapToGlobal(library.rect().center()));
+	QVERIFY2(placed_out.isEmpty(), "a drag let go over the library was placed");
+	library.dragged_out({ tunes[0] }, false, QPoint(-10000, -10000));
+	QCOMPARE(placed_out, QStringList{ tunes[0] });
+
+	snurra_node node;
+	node.play_file(tunes[0]);
+	QCOMPARE(node.tile_count(), 1);
+	node.play_file(tunes[1]);
+	QCOMPARE(node.tile_count(), 1);
+	snurra_tile *only = node.findChildren<snurra_tile *>().first();
+	QTRY_COMPARE_WITH_TIMEOUT(node.findChildren<snurra_tile *>().size(), 1, 2000);
+	only = node.findChildren<snurra_tile *>().first();
+	QCOMPARE(only->state().source, tunes[1]);
+	QVERIFY(only->playing());
+	node.add_files({ tunes[0] }, snurra_wire::BELOW);
+	node.play_file(tunes[2]);
+	QCOMPARE(node.tile_count(), 3);
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>())
+		if (tile->state().source == tunes[2]) {
+			QCOMPARE(qMakePair(tile->row(), tile->column()), qMakePair(0, 1));
+			QVERIFY(!tile->playing());
+		}
 }
 
 /*

@@ -74,6 +74,16 @@ public:
 	 * train, below a stack (project.md sec 3b). */
 	void add_files(const QStringList &files, snurra_wire::side_t side);
 
+	/* A tune double-clicked in the library: a window of one tile or none
+	 * plays it in its place at once, a player's way; a window of several
+	 * -- a mix -- keeps them and takes it at the end of its first lane's
+	 * train, paused, as a drop at its right edge. */
+	void play_file(const QString &path);
+
+	/* Open while the library is (library.h): emptied, the window hides
+	 * rather than ending the process. Cleared, an empty one ends it. */
+	void set_stays_open(bool stays);
+
 	/* The normal look, drawers out of a window not a rectangle; or the
 	 * square one (project.md sec 3b). */
 	bool drawers_look() const { return m_drawers_look; }
@@ -191,6 +201,7 @@ private:
 	QTimer *m_trains = nullptr;
 	qint64 m_last_started = 0;   /* the last crossfade taken: its start */
 	qint64 m_last_stopped = 0;   /* and its end */
+	bool m_stays_open = false;
 	int m_loops_left = 0;           /* plays still to come; -1 for ever */
 	bool m_sounding = false;        /* some tile played at the last tick */
 	bool m_stopped = false;         /* by a pause or a tile going: not an end */
