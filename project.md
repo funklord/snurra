@@ -1222,7 +1222,18 @@ controls; each tile very compact but resizeable).
   pictures, and then every frame since came out as fast as it decoded:
   the jitter the holder saw at each skip (2026-11-13). Now the first
   picture after the skip is within two frames of the sound
-  (`a_skip_shows_the_frame_heard_not_one_behind`). The tile asks for the
+  (`a_skip_shows_the_frame_heard_not_one_behind`). That made a reader
+  on its way follow its target as the clock moves -- and so never seek
+  again while on its way: a jump then, or a film started partway in, was
+  decoded from where it had been, 7 s of 4K frames (the holder:
+  "jumping takes a long time to load video"). A target past where the
+  clock alone takes it by more than a second is a new seek
+  (`a_far_target_while_on_the_way_is_a_new_seek`: 281 frames decoded,
+  1362 without). And a seek lands on an indexed key frame, of which a
+  file may have few, so the reader reads on to the target without
+  decoding, keeping the packets from the last key frame on, and decodes
+  from there. The 4K film's 7.4 s jump: 6.65 s to a picture before, about
+  1 s now; the h264 set's under 0.3 s. The tile asks for the
   frame at its deck's heard position every 16 ms while the drawer (or
   the full-screen picture) shows. The drawer is the tile's width and the
   picture's shape tall; it opens with the controls, so on the first
@@ -1254,7 +1265,8 @@ controls; each tile very compact but resizeable).
   (the holder: the small view "could do with some anti-aliasing");
   one-pixel stripes come out grey, not one stripe picked
   (`a_picture_made_small_is_averaged_not_picked`), and the 4K film keeps
-  its 25 a second in a drawer 208 wide. Colour is tested
+  its 25 a second in a drawer 208 wide -- and at 1280 wide only once its
+  divides went (three a pixel had held it to 16 a second). Colour is tested
   against ffmpeg's own RGB, BT.601 and BT.709, limited and full range,
   to 4 steps (`colours_are_ffmpegs_own`). It converts: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
   NV12/NV21, and since 2026-11-12 their 10-bit kin (planar 10-bit,

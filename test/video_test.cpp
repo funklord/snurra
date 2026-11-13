@@ -75,6 +75,7 @@ private slots:
 	void a_local_films_srt_is_found_when_its_bytes_are_given();
 	void a_picture_made_small_is_averaged_not_picked();
 	void a_skip_shows_the_frame_heard_not_one_behind();
+	void a_far_target_while_on_the_way_is_a_new_seek();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1198,4 +1199,36 @@ void video_test::a_skip_shows_the_frame_heard_not_one_behind() {
 	qInfo("after the skip: picture %lld us, sound %lld us, %lld ms behind", shown, heard, (heard - shown) / 1000);
 	QVERIFY2(heard - shown < 150000, qPrintable(QStringLiteral("the first picture after the skip, %1 us, is %2 ms behind the sound at %3 us")
 	                                                    .arg(shown).arg((heard - shown) / 1000).arg(heard)));
+}
+
+/*
+ * A jump while the reader is still on its way somewhere (the holder,
+ * 2026-11-13: "jumping takes a long time to load video"): a key frame
+ * each 20 s; asked for 19.9 s, the reader decodes from the start; asked
+ * for 45 s while it is on its way, it seeks to the key frame at 40 s --
+ * some 150 frames more -- rather than decode on through every frame to
+ * 45 s (some 1350).
+ */
+void video_test::a_far_target_while_on_the_way_is_a_new_seek() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString path = m_dir.filePath(QStringLiteral("keys20.mp4"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("testsrc2=s=640x360:r=30:d=50"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("sine=d=50"), QStringLiteral("-c:v"), QStringLiteral("libx264"),
+	                         QStringLiteral("-preset"), QStringLiteral("ultrafast"), QStringLiteral("-g"), QStringLiteral("600"),
+	                         QStringLiteral("-keyint_min"), QStringLiteral("600"), QStringLiteral("-sc_threshold"), QStringLiteral("0"),
+	                         QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), path });
+	QVERIFY(ffmpeg.waitForFinished(120000) && ffmpeg.exitCode() == 0);
+	snurra_video video(path);
+	QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+	video.frame_at(0);
+	QTRY_VERIFY_WITH_TIMEOUT(video.frame_at(0).valid(), 5000);
+	const int64_t at_start = video.decoded();
+	video.frame_at(19900000);
+	QTRY_VERIFY_WITH_TIMEOUT(video.decoded() > at_start + 30, 5000);
+	snurra_video_frame frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(45000000)).valid() && frame.pts_us > 44900000, 15000);
+	qInfo("45 s while on the way to 19.9 s: %lld pictures decoded", (long long)video.decoded());
+	QVERIFY2(video.decoded() < 1000, qPrintable(QStringLiteral("%1 pictures decoded").arg(video.decoded())));
 }

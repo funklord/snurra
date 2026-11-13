@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -69,6 +70,8 @@ public:
 	void set_shown_width(int width) { m_widest.store(std::max(64, width), std::memory_order_relaxed); }
 
 	snurra_video_frame frame_at(int64_t us);
+	/* Pictures decoded so far, shown or not: what a seek cost. */
+	int64_t decoded() const { return m_decoded.load(std::memory_order_relaxed); }
 	/* When the frame after the one shown for `us` begins, from those
 	 * decoded ahead; one frame's length on, by the stream's rate, where
 	 * none is decoded yet (mplayer's . steps by it). */
@@ -95,6 +98,8 @@ private:
 	int64_t m_newest = INT64_MIN;   /* the last frame decoded */
 	bool m_ended = false;
 	bool m_seeking = false;         /* decoding toward a seek's target, not there yet */
+	int64_t m_seek_asked = 0;       /* that target, as asked */
+	std::chrono::steady_clock::time_point m_seek_began;
 	bool m_stop = false;
 	QSize m_size;
 	int64_t m_frame_us = 40000;     /* one frame's length, from the stream's rate */
@@ -103,6 +108,7 @@ private:
 	std::atomic<bool> m_opened{ false };
 	std::atomic<int64_t> m_length_us{ 0 };
 	std::atomic<int> m_widest{ 1280 };
+	std::atomic<int64_t> m_decoded{ 0 };
 	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitles;
 	int m_subtitle_default = -1;
 };

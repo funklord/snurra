@@ -193,9 +193,24 @@ QImage to_rgb(const AVFrame *from, int widest) {
 	 */
 	if (from->width >= 2 * width && from->height >= 2 * height) {
 		const int chroma_width = (from->width + (1 << x_shift) - 1) >> x_shift;
-		std::vector<int64_t> luma_sum(static_cast<size_t>(from->width));
-		std::vector<int64_t> cb_sum(static_cast<size_t>(chroma_width));
-		std::vector<int64_t> cr_sum(static_cast<size_t>(chroma_width));
+		std::vector<int> luma_sum(static_cast<size_t>(from->width));
+		std::vector<int> cb_sum(static_cast<size_t>(chroma_width));
+		std::vector<int> cr_sum(static_cast<size_t>(chroma_width));
+		/* Each column's span, luma and chroma, once: a divide a pixel --
+		 * three, luma and both chroma -- kept a 4K film shown 1280 wide to
+		 * 16 frames a second of 25 (2026-11-13). */
+		std::vector<int> luma_from(static_cast<size_t>(width));
+		std::vector<int> luma_to(static_cast<size_t>(width));
+		std::vector<int> chroma_from(static_cast<size_t>(width));
+		std::vector<int> chroma_to(static_cast<size_t>(width));
+		for (int x = 0; x < width; ++x) {
+			const int x0 = columns[size_t(x)];
+			const int x1 = std::max(x0 + 1, columns[size_t(x) + 1]);
+			luma_from[size_t(x)] = x0;
+			luma_to[size_t(x)] = x1;
+			chroma_from[size_t(x)] = x0 >> x_shift;
+			chroma_to[size_t(x)] = std::min(chroma_width, std::max((x0 >> x_shift) + 1, ((x1 - 1) >> x_shift) + 1));
+		}
 		for (int y = 0; y < height; ++y) {
 			const int y0 = int(int64_t(y) * from->height / height);
 			const int y1 = std::max(y0 + 1, int(int64_t(y + 1) * from->height / height));
@@ -220,24 +235,26 @@ QImage to_rgb(const AVFrame *from, int widest) {
 				}
 			}
 			QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+			const float luma_rows = 1.0f / float(y1 - y0);
+			const float chroma_rows = 1.0f / float(c1 - c0);
 			for (int x = 0; x < width; ++x) {
-				const int x0 = columns[size_t(x)];
-				const int x1 = std::max(x0 + 1, columns[size_t(x) + 1]);
-				int64_t l = 0;
+				const int x0 = luma_from[size_t(x)];
+				const int x1 = luma_to[size_t(x)];
+				int l = 0;
 				for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
-				const int cx0 = x0 >> x_shift;
-				const int cx1 = std::min(chroma_width, std::max(cx0 + 1, ((x1 - 1) >> x_shift) + 1));
-				int64_t cb = 0;
-				int64_t cr = 0;
+				const int cx0 = chroma_from[size_t(x)];
+				const int cx1 = chroma_to[size_t(x)];
+				int cb = 0;
+				int cr = 0;
 				for (int cx = cx0; cx < cx1; ++cx) {
 					cb += cb_sum[size_t(cx)];
 					cr += cr_sum[size_t(cx)];
 				}
-				const int64_t luma_count = int64_t(x1 - x0) * (y1 - y0);
-				const int64_t chroma_count = int64_t(cx1 - cx0) * (c1 - c0);
-				const int lv = luma_part[int((l + luma_count / 2) / luma_count)];
-				const int cbv = int((cb + chroma_count / 2) / chroma_count);
-				const int crv = int((cr + chroma_count / 2) / chroma_count);
+				const float luma_each = luma_rows / float(x1 - x0);
+				const float chroma_each = chroma_rows / float(cx1 - cx0);
+				const int lv = luma_part[std::min(255, int(float(l) * luma_each + 0.5f))];
+				const int cbv = std::min(255, int(float(cb) * chroma_each + 0.5f));
+				const int crv = std::min(255, int(float(cr) * chroma_each + 0.5f));
 				out[x] = qRgb(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
 			}
 		}
@@ -354,11 +371,20 @@ int64_t snurra_video::next_frame_after(int64_t us) const {
 /* Under the lock. */
 bool snurra_video::want_seek(int64_t target) const {
 	if (target < m_floor) return true;
-	/* Forward only when not already on the way: a seek decodes from the
+	/* Forward while on the way only for a jump: a seek decodes from the
 	 * key frame before its target, and one far apart (250 frames, x264's
 	 * default) took longer than the target moved on -- each new seek began
-	 * again from the key frame, and the picture stalled for seconds. */
-	if (m_seeking) return false;
+	 * again from the key frame, and the picture stalled for seconds. The
+	 * target moving as the clock does is followed (run, 983da1b); moved
+	 * further than that by more than JUMP_US, it is a new seek -- else a
+	 * jump made while the reader was still on its way, or a film started
+	 * partway in, was decoded from where it had been: 7 s of 4K frames
+	 * (the holder, 2026-11-13). */
+	if (m_seeking) {
+		const int64_t elapsed = int64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+		                                        std::chrono::steady_clock::now() - m_seek_began).count());
+		return target > m_seek_asked + elapsed + JUMP_US;
+	}
 	const int64_t reached = m_newest != INT64_MIN ? m_newest : m_floor;
 	return !m_ended && target > reached + JUMP_US;
 }
@@ -617,6 +643,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		opened(true);
 		int64_t seek_target = 0;
 		bool draining = false;
+		std::deque<AVPacket *> queued;   /* read ahead to a seek's key frame, not yet decoded */
 		for (;;) {
 			{
 				std::unique_lock<std::mutex> lock(m_mutex);
@@ -631,19 +658,65 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 					m_newest = INT64_MIN;
 					m_ended = false;
 					m_seeking = true;
+					m_seek_asked = seek_target;
+					m_seek_began = std::chrono::steady_clock::now();
 					draining = false;
 					lock.unlock();
 					av_frame_free(&pending);
 					const int64_t ts = av_rescale_q(seek_target + origin_us, MICROSECONDS, stream->time_base);
+					for (AVPacket *stale : queued) av_packet_free(&stale);
+					queued.clear();
 					av_seek_frame(format, stream_index, ts, AVSEEK_FLAG_BACKWARD);
 					avcodec_flush_buffers(codec);
 					for (subtitle_reader &reader : subtitles) avcodec_flush_buffers(reader.codec);
 					preroll_subtitles(seek_target);
+					/*
+					 * A seek lands on an indexed key frame, and a file may index
+					 * few: YouTube's 4K WebM landed 30 s before a target 1.8 s
+					 * past a key frame, and decoding all of it took 7.4 s of a
+					 * jump (the holder, 2026-11-13: "jumping takes a long time
+					 * to load video"). So read on to the target without
+					 * decoding -- packets are cheap -- keeping those from the
+					 * last key frame on, and decode from there.
+					 */
+					std::vector<AVPacket *> from_key;
+					auto drop_kept = [&from_key] {
+						for (AVPacket *kept : from_key) av_packet_free(&kept);
+						from_key.clear();
+					};
+					for (;;) {
+						if (m_stop) break;
+						if (av_read_frame(format, packet) < 0) break;
+						if (packet->stream_index != stream_index) {
+							for (subtitle_reader &reader : subtitles)
+								if (packet->stream_index == reader.index) read_subtitle(reader, packet);
+							av_packet_unref(packet);
+							continue;
+						}
+						const bool key = packet->flags & AV_PKT_FLAG_KEY;
+						const int64_t at = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
+						const bool past = at != AV_NOPTS_VALUE
+						                  && av_rescale_q(at, stream->time_base, MICROSECONDS) - origin_us > seek_target;
+						if (key && !past) drop_kept();
+						from_key.push_back(av_packet_clone(packet));
+						av_packet_unref(packet);
+						if (past) break;
+					}
+					/* Fed one at a time, as from the file: a decoder takes no
+					 * more until its frames are taken. */
+					for (AVPacket *kept : from_key) queued.push_back(kept);
+					from_key.clear();
 				}
 			}
 
-			/* One packet in, every frame it gives out. */
-			if (!draining) {
+			/* One packet in, every frame it gives out: those read ahead to a
+			 * seek's key frame first. */
+			if (!draining && !queued.empty()) {
+				AVPacket *next = queued.front();
+				queued.pop_front();
+				avcodec_send_packet(codec, next);
+				av_packet_free(&next);
+			} else if (!draining) {
 				const int read = av_read_frame(format, packet);
 				if (read < 0) {
 					draining = true;
@@ -667,6 +740,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 					break;
 				}
 				if (got < 0) break;   /* wants more input */
+				m_decoded.fetch_add(1, std::memory_order_relaxed);
 				if (frame->best_effort_timestamp == AV_NOPTS_VALUE) {
 					av_frame_unref(frame);
 					continue;
@@ -702,6 +776,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 				av_frame_unref(frame);
 			}
 		}
+		for (AVPacket *left : queued) av_packet_free(&left);
 	}
 
 	av_frame_free(&pending);
