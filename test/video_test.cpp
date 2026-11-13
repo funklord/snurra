@@ -49,6 +49,7 @@ private slots:
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
 	void full_screen_asked_before_the_picture_comes_with_it();
 	void a_period_steps_one_frame_on_paused();
+	void plus_and_minus_move_the_picture_against_the_sound();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -380,6 +381,44 @@ void video_test::a_period_steps_one_frame_on_paused() {
 		QTRY_COMPARE_WITH_TIMEOUT(view->property("pts").toLongLong(), *(at + 1), 2000);
 		QVERIFY(!tile->playing());
 	}
+}
+
+/* mplayer's + and -: paused, five presses of + show the frame half a second
+ * after what is heard, and the sound stays where it was; - brings it back. */
+void video_test::plus_and_minus_move_the_picture_against_the_sound() {
+	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
+	const QString name = QStringLiteral("delay.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	const std::vector<int64_t> times = frame_times(name);
+	QVERIFY(times.size() > 40);
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(name);
+	state.controls = true;
+	state.position_us = times[10] + 1000;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	tile->set_video_open(true);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QWidget *view = nullptr;
+	for (QWidget *child : tile->drawer_above()->findChildren<QWidget *>())
+		if (child->accessibleName() == QLatin1String("Video")) view = child;
+	QVERIFY(view);
+	QTRY_COMPARE_WITH_TIMEOUT(view->property("pts").toLongLong(), times[10], 3000);
+	const qint64 heard = tile->state().position_us;
+
+	/* The frame for a time: the last that begins at or before it. */
+	auto frame_for = [&](int64_t us) { return *(std::upper_bound(times.begin(), times.end(), us) - 1); };
+	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_Plus);
+	QCOMPARE(tile->sound_delay(), qint64(500000));
+	QTRY_COMPARE_WITH_TIMEOUT(view->property("pts").toLongLong(), frame_for(heard + 500000), 3000);
+	QCOMPARE(tile->state().position_us, heard);
+	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_Minus);
+	QCOMPARE(tile->sound_delay(), qint64(0));
+	QTRY_COMPARE_WITH_TIMEOUT(view->property("pts").toLongLong(), times[10], 3000);
 }
 
 /* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the

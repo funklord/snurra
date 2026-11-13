@@ -825,6 +825,20 @@ void snurra_tile::delay_subtitles(qint64 us) {
 	show_video_frame();
 }
 
+/* mplayer's + and -: the sound later (positive) or earlier than the
+ * picture, as its -delay -- so the picture shown is the one for that much
+ * after what is heard, and the subtitles, which belong to the picture,
+ * with it. The sound itself is not moved: it is the clock, and in a mix
+ * what the other tracks are in step with. */
+void snurra_tile::delay_sound(qint64 us) {
+	if (!m_view) return;
+	m_sound_delay += us;
+	const QString notice = tr("Sound delay: %1 s").arg(m_sound_delay / 1e6, 0, 'f', 1);
+	if (m_view) m_view->show_notice(notice);
+	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_notice(notice);
+	show_video_frame();
+}
+
 void snurra_tile::next_audio_track() {
 	const QStringList tracks = m_deck->audio_tracks();
 	if (tracks.size() < 2) return;
@@ -881,10 +895,11 @@ void snurra_tile::fit_video_drawer() {
 void snurra_tile::show_video_frame() {
 	if (!m_video) return;
 	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
-	const snurra_video_frame frame = m_video->frame_at(heard);
+	const qint64 picture = heard + m_sound_delay;
+	const snurra_video_frame frame = m_video->frame_at(picture);
 	const QString name = subtitles_name();
 	std::vector<snurra_cue> cues;
-	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(heard - m_subtitle_delay);
+	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(picture - m_subtitle_delay);
 	if (m_view) {
 		m_view->show_frame(frame);
 		m_view->show_cues(cues);
@@ -995,12 +1010,12 @@ snurra_tile_state snurra_tile::state() const {
 void snurra_tile::step_frame() {
 	if (!m_video || !m_video->has_video()) return;
 	if (m_state.playing) request_playing(false);
-	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
-	const snurra_video_frame shown = m_video->frame_at(heard);
+	const qint64 picture = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate())) + m_sound_delay;
+	const snurra_video_frame shown = m_video->frame_at(picture);
 	/* A little into the frame, not on its first microsecond: a position
 	 * goes through frames of sound and back, and rounding it down by one
 	 * would show the frame before. */
-	seek(m_video->next_frame_after(shown.valid() ? shown.pts_us : heard) + 1000);
+	seek(m_video->next_frame_after(shown.valid() ? shown.pts_us : picture) + 1000 - m_sound_delay);
 }
 
 void snurra_tile::seek(qint64 position_us) {

@@ -165,6 +165,10 @@ public:
 	 * moved to where it begins. Nothing for a track with no picture. */
 	void step_frame();
 	qint64 subtitle_delay() const { return m_subtitle_delay; }
+	/* mplayer's + and -: the sound shown later (positive) or earlier
+	 * than the picture by `us` more -- the picture moved, not the sound. */
+	void delay_sound(qint64 us);
+	qint64 sound_delay() const { return m_sound_delay; }
 	QString subtitles_name() const;
 
 	QSize sizeHint() const override;
@@ -231,6 +235,7 @@ private:
 	int m_subtitle = -1;            /* the track chosen, or none */
 	bool m_subtitles_shown = true;
 	qint64 m_subtitle_delay = 0;
+	qint64 m_sound_delay = 0;   /* mplayer's -delay: the picture is shown this much ahead */
 	QStringList m_subtitle_files;   /* a host's, offered first */    /* microseconds the subtitles come later */
 	QToolButton *m_play;
 	QSlider *m_position;

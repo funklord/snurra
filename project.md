@@ -683,6 +683,14 @@ controls; each tile very compact but resizeable).
   times in an x264 file with B-frames, five steps each exactly the next
   (`a_period_steps_one_frame_on_paused`); a step that returns where it
   was fails it.
+- **mplayer's + and -, 2026-11-13**: the sound's delay against the
+  picture by 0.1 s, as mplayer's -delay (positive: the sound later). The
+  picture moves, not the sound: the sound is the clock, and in a mix the
+  other tracks are in step with it. Subtitles go with the picture, and .
+  steps the picture's frames. Tested paused: five + show the frame half a
+  second after what is heard with the sound unmoved, five - bring it back
+  (`plus_and_minus_move_the_picture_against_the_sound`); a picture that
+  ignores the delay fails it.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
