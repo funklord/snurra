@@ -9,6 +9,8 @@
  * forward, after a seek back and after a jump ahead.
  */
 #include <QElapsedTimer>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QSignalSpy>
 #include <QProcess>
 #include <QRegularExpression>
@@ -53,6 +55,8 @@ private slots:
 	void plus_and_minus_move_the_picture_against_the_sound();
 	void less_and_greater_step_along_the_train();
 	void the_full_screen_picture_takes_the_players_keys();
+	void a_url_plays_with_its_picture();
+	void a_url_that_never_answers_lets_the_window_close();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -524,6 +528,88 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
 	QTRY_VERIFY_WITH_TIMEOUT(full->property("clock").toString().isEmpty(), 2000);
 	QTest::keyClick(full, Qt::Key_F);
 	QVERIFY2(!tile->full_screen(), "f in full screen did not come back");
+}
+
+/*
+ * An HTTP server for one file, on this thread: each request answered with
+ * the whole file and closed -- no ranges, so FFmpeg reads it as a stream,
+ * the harder case. With no file, it accepts and never answers.
+ */
+class one_file_server : public QTcpServer {
+public:
+	explicit one_file_server(const QByteArray &body, bool answer = true) : m_body(body), m_answer(answer) {
+		connect(this, &QTcpServer::newConnection, this, [this] {
+			while (QTcpSocket *socket = nextPendingConnection()) {
+				m_held << socket;
+				connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+					m_request[socket] += socket->readAll();
+					if (!m_answer || !m_request[socket].contains("\r\n\r\n")) return;
+					socket->write("HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nContent-Length: "
+					              + QByteArray::number(m_body.size()) + "\r\nConnection: close\r\n\r\n");
+					socket->write(m_body);
+					socket->disconnectFromHost();
+				});
+			}
+		});
+	}
+	QString url(const QString &name) const { return QStringLiteral("http://127.0.0.1:%1/%2").arg(serverPort()).arg(name); }
+
+private:
+	QByteArray m_body;
+	bool m_answer;
+	QList<QTcpSocket *> m_held;
+	QHash<QTcpSocket *, QByteArray> m_request;
+};
+
+/* mplayer's http://...: the sound plays and the picture opens, from a
+ * server that gives the file only as a stream. */
+void video_test::a_url_plays_with_its_picture() {
+	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
+	const QString name = QStringLiteral("url.mkv");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	QFile file(m_dir.filePath(name));
+	QVERIFY(file.open(QIODevice::ReadOnly));
+	one_file_server server(file.readAll());
+	QVERIFY(server.listen(QHostAddress::LocalHost));
+	QVERIFY(snurra_is_url(server.url(name)));
+	QVERIFY(!snurra_is_url(m_dir.filePath(name)));
+	QVERIFY(!snurra_is_url(QStringLiteral("tone:440")));
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = server.url(name);
+	state.duration_us = 180000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->state().duration_us < 4000000, 5000);   /* the film's own length */
+	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 1000000, 5000);
+	QVERIFY(!tile->deck()->failed());
+}
+
+/* A server that takes the connection and says nothing: the window still
+ * closes at once, its readers' network waits given up. */
+void video_test::a_url_that_never_answers_lets_the_window_close() {
+	one_file_server server(QByteArray(), false);
+	QVERIFY(server.listen(QHostAddress::LocalHost));
+	auto *node = new snurra_node;
+	snurra_tile_state state;
+	state.source = server.url(QStringLiteral("silent.mkv"));
+	state.duration_us = 180000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	node->add_tile(state);
+	node->show();
+	QTest::qWait(1000);   /* both readers waiting on the server by now */
+	QElapsedTimer closing;
+	closing.start();
+	delete node;
+	qInfo("url: closed in %lld ms with the server silent", closing.elapsed());
+	QVERIFY(closing.elapsed() < 2000);
 }
 
 /* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the

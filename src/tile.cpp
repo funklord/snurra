@@ -1,4 +1,5 @@
 #include "snurra/tile.h"
+#include "snurra/source.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -671,11 +672,14 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_key_lock(state.key_lock);
 	tick();
 
-	read_peaks(nullptr);
-	if (QFileInfo(state.source).isFile()) {
-		read_video(state.controls);
-		read_beats(nullptr);
-	}
+	/* A URL (mplayer's http://...) is played and its picture shown, but
+	 * not read through again for a waveform and a beat grid: a radio
+	 * stream has no end to read to, and a file would be fetched twice
+	 * more. */
+	const bool url = snurra_is_url(state.source);
+	if (!url) read_peaks(nullptr);
+	if (QFileInfo(state.source).isFile() || url) read_video(state.controls);
+	if (QFileInfo(state.source).isFile()) read_beats(nullptr);
 	show_jumps();
 	/* Decided on from the next tick: the constructor's ran before the
 	 * picture's reader existed -- and a host's tile gets its readers

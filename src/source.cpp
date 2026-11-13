@@ -4,6 +4,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 #include <algorithm>
 #include <chrono>
@@ -116,7 +117,17 @@ public:
 		av_frame_free(&m_frame);
 	}
 
-	bool open(const QString &path) {
+	/* A file, or a URL; `interrupted` gives up a network wait -- in the
+	 * opening as in every read after it -- for a close or a seek. */
+	bool open(const QString &path, std::function<bool()> interrupted = nullptr) {
+		m_interrupted = std::move(interrupted);
+		m_format = avformat_alloc_context();
+		if (!m_format) return false;
+		m_format->interrupt_callback.opaque = this;
+		m_format->interrupt_callback.callback = [](void *opaque) -> int {
+			const ffmpeg_source *self = static_cast<const ffmpeg_source *>(opaque);
+			return self->m_interrupted && self->m_interrupted() ? 1 : 0;
+		};
 		if (avformat_open_input(&m_format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
 		return open_streams(true);
 	}
@@ -540,7 +551,13 @@ std::unique_ptr<snurra_source> snurra_open_source(std::shared_ptr<snurra_bytes> 
 	return source;
 }
 
-std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length) {
+bool snurra_is_url(const QString &name) {
+	static const QRegularExpression url(QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]+://"));
+	return url.match(name).hasMatch();
+}
+
+std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length,
+                                                  std::function<bool()> interrupted) {
 	if (name == QLatin1String("snurra-test:ramp"))
 		return std::make_unique<ramp>(std::min<int64_t>(fallback_length, int64_t(SNURRA_RAMP_SCALE) - 1));
 	if (name == QLatin1String("snurra-test:wrapped-ramp")) return std::make_unique<wrapped_ramp>(fallback_length);
@@ -548,9 +565,10 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 		const double hz = name.mid(5).toDouble();
 		if (hz > 0 && hz < rate / 2) return std::make_unique<tone>(hz, rate, fallback_length);
 	}
-	if (QFileInfo(name).isFile()) {
+	if (QFileInfo(name).isFile() || snurra_is_url(name)) {
 		auto file = std::make_unique<ffmpeg_source>(rate);
-		if (file->open(name)) return file;
+		/* Only a URL's waits are given up: a file's reads are not waits. */
+		if (file->open(name, snurra_is_url(name) ? std::move(interrupted) : nullptr)) return file;
 	}
 	return std::make_unique<silence>(fallback_length);
 }

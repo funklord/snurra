@@ -54,7 +54,7 @@ snurra_deck::snurra_deck(const start_t &start)
 		};
 		m_reader_generation = m_generation.load(std::memory_order_acquire);
 		if (bytes) m_source = snurra_open_source(bytes, name, m_rate, interrupted);
-		if (!m_source) m_source = snurra_open_source(bytes ? QString() : name, m_rate, fallback);
+		if (!m_source) m_source = snurra_open_source(bytes ? QString() : name, m_rate, fallback, interrupted);
 		/* Not for a close that gave up the opening: that is not a failure. */
 		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);
 		m_length.store(m_source->length(), std::memory_order_relaxed);

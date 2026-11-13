@@ -98,7 +98,9 @@ public:
 /*
  * Opens what a tile names, at `rate`:
  *
- *  - a file FFmpeg can decode;
+ *  - a file FFmpeg can decode, or a URL it can open (snurra_is_url:
+ *    http, https, rtsp ...), as mplayer plays one -- `interrupted` gives
+ *    up a network wait, for a close or a seek;
  *  - `tone:<hz>`, a quiet sine, for trying an output by ear;
  *  - `snurra-test:ramp`, which the tests use: the left channel is the
  *    frame's own index over 2^24 and the right is 1, so a capture of what
@@ -114,7 +116,12 @@ public:
  *  - anything else: silence, `fallback_length` frames long, so a tile for
  *    something unplayable still behaves as a tile.
  */
-std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length);
+std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length,
+                                                  std::function<bool()> interrupted = nullptr);
+
+/* Whether `name` is a URL (a scheme and "://"), which goes to FFmpeg as
+ * it is, rather than a path. */
+bool snurra_is_url(const QString &name);
 
 /*
  * Opens `bytes` through FFmpeg, `name` only a hint at its kind (an

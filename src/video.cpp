@@ -1,4 +1,5 @@
 #include "snurra/video.h"
+#include "snurra/source.h"
 
 #include "snurra/bytes_input.h"
 #include "snurra/subtitles.h"
@@ -337,6 +338,16 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 			});
 			if (!format) return false;
 		} else {
+			/* A URL's waits -- the opening, then each read -- are given
+			 * up for a close. */
+			format = avformat_alloc_context();
+			if (!format) return false;
+			format->interrupt_callback.opaque = this;
+			format->interrupt_callback.callback = [](void *opaque) -> int {
+				snurra_video *self = static_cast<snurra_video *>(opaque);
+				std::lock_guard<std::mutex> lock(self->m_mutex);
+				return self->m_stop ? 1 : 0;
+			};
 			if (avformat_open_input(&format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
 			if (avformat_find_stream_info(format, nullptr) < 0) return false;
 		}
@@ -452,7 +463,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	bound.video = this;
 	auto preroll_subtitles = [&](int64_t target) {
 		constexpr int64_t PREROLL = 10 * int64_t(1000000);
-		if (subtitles.empty() || bytes || preroll_failed) return;
+		if (subtitles.empty() || bytes || preroll_failed || snurra_is_url(path)) return;
 		if (!preroll) {
 			preroll_failed = true;
 			preroll = avformat_alloc_context();

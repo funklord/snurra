@@ -731,6 +731,27 @@ controls; each tile very compact but resizeable).
   however a touchpad divides them. Over the waveform the wheel is left
   alone. Tested in full screen: half a notch does nothing, a whole one
   jumps.
+- **The suite caps the files it writes at 256 MB, 2026-11-13**
+  (RLIMIT_FSIZE, set in the test binary's main, so a run by hand has it
+  too). A sabotaged run -- the URL interrupts taken out -- hung closing
+  its window while printing, outlived `timeout 30`'s SIGTERM, and wrote
+  4.3 GB into its log at about 23 MB/s, filling / for every session on
+  the machine until another session reported it. Sabotage runs of a
+  hang are now also run under `timeout -s KILL`.
+- **URLs, as mplayer plays them, 2026-11-13**: a name with a scheme and
+  "://" (http, https, rtsp ...) goes to FFmpeg as it is, for the sound
+  and the picture; it is not read again for a waveform or a beat grid --
+  a radio stream has no end to read to, and a file would be fetched
+  twice more -- nor for subtitles' preroll. Its network waits are given
+  up for a close or a seek (FFmpeg's interrupt callback), in the opening
+  and every read; a file's reads keep no interrupt, as before. Tested
+  with an HTTP server in the test that sends the file whole, without
+  ranges, so FFmpeg reads it as a stream: the sound plays, the picture
+  opens, the length is the film's (`a_url_plays_with_its_picture`); and
+  a server that never answers lets the window close in 99 ms
+  (`a_url_that_never_answers_lets_the_window_close`) -- without the
+  interrupts it never closed. A live stream has no length: the tile
+  keeps its three-minute stand-in length (not yet better).
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
