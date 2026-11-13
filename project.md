@@ -709,6 +709,9 @@ controls; each tile very compact but resizeable).
   shows and clears the time, f comes back
   (`the_full_screen_picture_takes_the_players_keys`); without the
   forwarding, space fails it.
+- **The pointer leaves the full-screen film, 2026-11-13**: after a second
+  still, as mplayer's does (its default delay), back when moved. Tested
+  with the full-screen keys; without it the blank pointer never comes.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

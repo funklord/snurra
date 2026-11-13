@@ -472,7 +472,7 @@ void video_test::less_and_greater_step_along_the_train() {
 
 /* Full screen is a window of its own, and every key the player takes must
  * work there too: space pauses, o puts the time over the picture, f comes
- * back. Only Escape did. */
+ * back. Only Escape did. And the pointer is not left on the film. */
 void video_test::the_full_screen_picture_takes_the_players_keys() {
 	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
 	const QString name = QStringLiteral("keys.mp4");
@@ -491,6 +491,11 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
 	for (QWidget *top : QApplication::topLevelWidgets())
 		if (top->accessibleName() == QLatin1String("Video") && top->isVisible()) full = top;
 	QVERIFY(full);
+
+	/* The pointer goes when still, and comes back when moved. */
+	QTRY_COMPARE_WITH_TIMEOUT(full->cursor().shape(), Qt::BlankCursor, 3000);
+	QTest::mouseMove(full, full->rect().center() + QPoint(7, 5));
+	QTRY_VERIFY_WITH_TIMEOUT(full->cursor().shape() != Qt::BlankCursor, 1000);
 
 	QVERIFY(tile->playing());
 	QTest::keyClick(full, Qt::Key_Space);

@@ -301,6 +301,15 @@ public:
 		setProperty("clock", clock);
 		update();
 	}
+	/* Full screen, the pointer goes after a second still, as mplayer's
+	 * does, and comes back when moved: it would sit on the film. */
+	void hide_pointer_when_still() {
+		setMouseTracking(true);
+		m_pointer.setSingleShot(true);
+		m_pointer.setInterval(POINTER_MS);
+		QObject::connect(&m_pointer, &QTimer::timeout, this, [this] { setCursor(Qt::BlankCursor); });
+		m_pointer.start();
+	}
 	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
 	/* Full screen, a window of its own: every other key, to the player's
 	 * window, as if pressed there -- or space, f and the rest do nothing
@@ -340,8 +349,17 @@ protected:
 	void mouseDoubleClickEvent(QMouseEvent *) override {
 		if (on_leave) on_leave();
 	}
+	void mouseMoveEvent(QMouseEvent *event) override {
+		if (hasMouseTracking()) {
+			unsetCursor();
+			m_pointer.start();
+		}
+		QWidget::mouseMoveEvent(event);
+	}
 
 private:
+	static constexpr int POINTER_MS = 1000;
+	QTimer m_pointer;
 	static constexpr int NOTICE_MS = 2000;
 
 	/* A line of styled runs, white on a black outline, its baseline at
@@ -972,6 +990,7 @@ void snurra_tile::set_full_screen(bool full) {
 	};
 	connect(this, &QObject::destroyed, view, &QObject::deleteLater);
 	m_full = view;
+	view->hide_pointer_when_still();
 	view->showFullScreen();
 	m_frames->start();
 	show_video_frame();
