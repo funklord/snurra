@@ -158,6 +158,11 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	QHBoxLayout *top = new QHBoxLayout;
 	top->addWidget(m_search, 1);
 	top->addWidget(choose);
+	m_find = new QPushButton(tr("Find tempos"), this);
+	m_find->setObjectName(QStringLiteral("snurra-find-tempos"));
+	m_find->setToolTip(tr("Work out the BPM of every tune listed that has none yet; kept for next time"));
+	top->addWidget(m_find);
+	connect(m_find, &QPushButton::clicked, this, &snurra_library::find_tempos);
 	QVBoxLayout *column = new QVBoxLayout(this);
 	column->addLayout(top);
 	column->addWidget(m_view, 1);
@@ -193,10 +198,12 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 }
 
 snurra_library::~snurra_library() {
+	stop_tempos();
 	stop_scan();
 }
 
 void snurra_library::set_folder(const QString &folder, bool remember) {
+	stop_tempos();
 	stop_scan();
 	m_folder = QDir(folder).absolutePath();
 	if (remember) QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).setValue(FOLDER_KEY, m_folder);
@@ -288,6 +295,52 @@ void snurra_library::tagged(const std::vector<std::pair<QString, snurra_tags>> &
 		if (QStandardItem *artist = m_model->item(name->row(), 1); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
 		if (QStandardItem *bpm = m_model->item(name->row(), 2); bpm && tags.bpm > 0) bpm->setText(QString::number(tags.bpm, 'f', 1));
 	}
+}
+
+void snurra_library::find_tempos() {
+	if (m_finding) return;
+	QStringList wanted;
+	for (int row = 0; row < m_model->rowCount(); ++row)
+		if (m_model->item(row, 2)->text().isEmpty()) wanted << m_model->item(row, 0)->data(PATH_ROLE).toString();
+	if (wanted.isEmpty()) return;
+	stop_tempos();
+	m_finding = true;
+	m_tempos_stop = false;
+	m_find->setEnabled(false);
+	QPointer<snurra_library> self(this);
+	m_tempos = std::thread([this, wanted, self] {
+		constexpr int RATE = 48000;
+		auto stopped = [this] { return m_tempos_stop.load(std::memory_order_relaxed); };
+		for (const QString &path : wanted) {
+			if (stopped()) return;
+			snurra_beat_grid grid;
+			if (!snurra_cached_beats(path, -1, RATE, grid)) {
+				std::unique_ptr<snurra_source> reader = snurra_open_source(path, RATE, 0);
+				if (!reader || reader->length() <= 0 || reader->stand_in()) continue;
+				grid = snurra_find_beats(*reader, RATE, stopped);
+				if (stopped()) return;
+				grid.rate = RATE;
+				snurra_cache_beats(path, -1, grid);
+			}
+			if (!grid.valid()) continue;
+			snurra_tags tags;
+			tags.bpm = grid.bpm();
+			std::vector<std::pair<QString, snurra_tags>> told{ { path, tags } };
+			QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
+		}
+		QMetaObject::invokeMethod(this, [self] {
+			if (!self) return;
+			self->m_finding = false;
+			self->m_find->setEnabled(true);
+		});
+	});
+}
+
+void snurra_library::stop_tempos() {
+	m_tempos_stop = true;
+	if (m_tempos.joinable()) m_tempos.join();
+	m_finding = false;
+	if (m_find) m_find->setEnabled(true);
 }
 
 void snurra_library::stop_scan() {

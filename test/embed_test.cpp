@@ -8,6 +8,7 @@
  */
 #include <QDial>
 #include <QMimeData>
+#include <QPushButton>
 #include <QElapsedTimer>
 #include <QAbstractItemModel>
 #include <QGuiApplication>
@@ -65,6 +66,7 @@ private slots:
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
+	void the_library_finds_tempos_only_when_asked();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -1102,6 +1104,41 @@ void embed_test::a_beat_found_once_is_kept_and_shown() {
 	file.write(QByteArray(4, '\0'));
 	file.close();
 	QVERIFY2(!snurra_cached_beats(path, -1, 48000, kept), "a changed file's old grid was given");
+}
+
+/*
+ * Find tempos (the library's button): a folder of a 120 kick, a 126 kick
+ * and a steady tone. Listed, nothing is analysed, however long it waits;
+ * asked, the kicks get their BPM and keep it (beats.h), and the tone,
+ * with no beat, stays blank.
+ */
+void embed_test::the_library_finds_tempos_only_when_asked() {
+	QTemporaryDir dir;
+	const QString slow = kick_file(dir, QStringLiteral("a slow.wav"), 120, 0.1);
+	const QString fast = kick_file(dir, QStringLiteral("b fast.wav"), 126, 0.2);
+	QFile tone(dir.filePath(QStringLiteral("c tone.wav")));
+	QVERIFY(tone.open(QIODevice::WriteOnly));
+	tone.write(make_wav_of(48000 * 8, [](int i) { return int(8000 * std::sin(2 * M_PI * 440 * i / 48000.0)); }));
+	tone.close();
+	snurra_library library(dir.path());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QAbstractItemModel *model = library.findChild<QTreeView *>()->model();
+	auto bpm_of = [&](const QString &path) { return model->index(int(library.shown().indexOf(path)), 2).data().toString(); };
+	QTest::qWait(500);
+	QVERIFY2(bpm_of(slow).isEmpty() && bpm_of(fast).isEmpty(), "a tempo was found without being asked for");
+	snurra_beat_grid kept;
+	QVERIFY(!snurra_cached_beats(slow, -1, 48000, kept));
+
+	QPushButton *find = library.findChild<QPushButton *>(QStringLiteral("snurra-find-tempos"));
+	QVERIFY(find);
+	find->click();
+	QVERIFY(library.finding_tempos());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.finding_tempos(), 20000);
+	QCOMPARE(bpm_of(slow), QStringLiteral("120.0"));
+	QCOMPARE(bpm_of(fast), QStringLiteral("126.0"));
+	QVERIFY(bpm_of(dir.filePath(QStringLiteral("c tone.wav"))).isEmpty());
+	QVERIFY(find->isEnabled());
+	QVERIFY(snurra_cached_beats(slow, -1, 48000, kept) && qAbs(kept.bpm() - 120) < 0.1);
 }
 
 /*

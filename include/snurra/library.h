@@ -44,6 +44,11 @@ public:
 	/* Looked through again; `remember` keeps it for the next start. */
 	void set_folder(const QString &folder, bool remember = false);
 	void set_search(const QString &words);
+	/* The tempo of every tune listed that has none kept, found one after
+	 * another on a thread of its own and kept (beats.h): asked for, never
+	 * by itself -- it holds a core a while, and a phone's battery. */
+	void find_tempos();
+	bool finding_tempos() const { return m_finding; }
 	/* What is listed, as full paths, in the list's order; and whether
 	 * the folder is still being looked through. */
 	QStringList shown() const;
@@ -73,6 +78,11 @@ private:
 	QStandardItemModel *m_model;
 	library_filter *m_filter;
 	std::thread m_thread;
+	std::thread m_tempos;
+	std::atomic<bool> m_tempos_stop{ false };
+	bool m_finding = false;
+	class QPushButton *m_find = nullptr;
+	void stop_tempos();
 	std::atomic<bool> m_stop{ false };
 	bool m_scanning = false;
 	QHash<QString, QStandardItem *> m_items;   /* by path: the name's item */
