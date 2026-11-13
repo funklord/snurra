@@ -503,7 +503,12 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
 
 	/* The pointer goes when still, and comes back when moved. */
 	QTRY_COMPARE_WITH_TIMEOUT(full->cursor().shape(), Qt::BlankCursor, 3000);
-	QTest::mouseMove(full, full->rect().center() + QPoint(7, 5));
+	/* Sent, not QTest::mouseMove: that sends nothing when the pointer is
+	 * already there, as an earlier test can leave it, and the check then
+	 * failed in a full run only. */
+	const QPointF moved = full->rect().center() + QPointF(7, 5);
+	QMouseEvent move(QEvent::MouseMove, moved, full->mapToGlobal(moved), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+	QApplication::sendEvent(full, &move);
 	QTRY_VERIFY_WITH_TIMEOUT(full->cursor().shape() != Qt::BlankCursor, 1000);
 
 	QVERIFY(tile->playing());
