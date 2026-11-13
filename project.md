@@ -177,7 +177,14 @@ and everything above it knows nothing of SFTP or fuzznet.
       the check that the fetch was moved fails -- but over loopback the
       fetch from the start reached the middle as soon anyway (355 ms),
       so this shows the fetch is asked to move, not that it then plays
-      sooner; that wants a slow or lossy link (fuzznet's faults build).
+      sooner. **Over a lossy link** (`make test-estate-loss`: fuzznet's
+      faults build, a fifth of what is sent dropped) it still plays
+      every frame right, and shows the fetch does not follow the reader:
+      sought to the middle, the middle became playable only as the whole
+      file did, whether or not `want` moved the fetch -- 13.0 and 46.6 s
+      with it (the whole 13.2, 47.9), 50.0 and 35.7 s without (51.2,
+      35.9). The spread swamps any gain. That is fuzznet's playhead
+      fetch (its sec 998), reported to it (inbox 20261113T2344Z).
     - **Android: not built, and why.** On a phone the node runs inside
       fuzzypickles' own app, and Android keeps apps' local sockets apart
       (SELinux puts each app in its own category; that it refuses one

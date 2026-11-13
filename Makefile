@@ -2,7 +2,9 @@
 #
 # TARGETS
 #   make            the player, in $(BUILD_DIR)/snurra
-#   make test       build and run the handover and codec tests (never built by plain make)
+#   make test       build and run the tests (never built by plain make), with
+#                   a real fuzznetd built from the vendored fuzznet
+#   make test-estate-loss  the estate's two hosts over a lossy link
 #   make check-mk   build the player from snurra.mk alone, and run the tests on it
 #   make install    the player and its desktop entry, under PREFIX (/usr/local)
 #                   and DESTDIR; make uninstall removes those two files
@@ -105,6 +107,14 @@ $(MONOCYPHER_PROBE): | $(FUZZNET_PROBE)
 	@test -f $@ || { echo "snurra: fuzznet's Monocypher could not be fetched" >&2; exit 1; }
 fuzznetd: $(MONOCYPHER_PROBE) FORCE
 	$(MAKE) -C fuzznet --no-print-directory BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet) $(FUZZNETD)
+
+# The two hosts again over a link dropping a fifth of what is sent, against
+# fuzznet's faults build: 30 to 60 s and varying, so not part of `test`.
+FUZZNETD_FAULTS = $(abspath $(TEST_BUILD_DIR)/fuzznet-faults/fuzznetd)
+fuzznetd-faults: $(MONOCYPHER_PROBE) FORCE
+	$(MAKE) -C fuzznet --no-print-directory FAULTS=1 BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet-faults) $(FUZZNETD_FAULTS)
+test-estate-loss: tests-build fuzznetd-faults
+	timeout -k 10 1000 python3 test/estate_two_hosts.py $(FUZZNETD_FAULTS) ./$(TEST_BIN) --loss 20
 
 test: $(BIN) tests-build fuzznetd
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
@@ -292,5 +302,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test check-mk install uninstall android android-staged-fresh android-ffmpeg-fresh style style-tool hooks help FORCE
+.PHONY: all tests-build test test-estate-loss fuzznetd fuzznetd-faults check-mk install uninstall android android-staged-fresh android-ffmpeg-fresh style style-tool hooks help FORCE
 FORCE:

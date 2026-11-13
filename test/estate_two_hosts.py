@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A file on another of the user's hosts, played by snurra as it arrives.
 
-    python3 test/estate_two_hosts.py PATH_TO_FUZZNETD PATH_TO_SNURRA_TESTS
+    python3 test/estate_two_hosts.py PATH_TO_FUZZNETD PATH_TO_SNURRA_TESTS [--loss P]
 
 Two of one user's hosts over loopback, as fuzznet's own live_catalog.py
 makes them: A the root, B joined with a grant. A puts a WAV and catalogues
@@ -13,6 +13,11 @@ B fetches from A as the reader asks, and every frame must be the file's own.
 The daemons are fuzznet's helpers' (fuzznet/tool, the vendored pin), which
 put each in its own process group and see every one gone on the way out;
 the whole is bounded by their deadline. Exit 0 on a pass, 1 on a failure.
+
+`--loss P` runs both daemons dropping P per cent of what they send, against
+a daemon built with fuzznet's faults (`make fuzznetd-faults` there), with
+three times the rounds -- as fuzznet's own scenarios take loss (its sec
+850). Then B fetches slowly enough that the reader catches up with it.
 """
 
 import math
@@ -52,6 +57,13 @@ def song(path):
 
 
 def main(argv):
+	global ROUNDS
+	if len(argv) == 5 and argv[3] == "--loss" and argv[4].isdigit():
+		# NO SEED GIVEN, as fuzznet's: each daemon seeds its loss from its pid.
+		os.environ["FZN_FAULT_LOSS"] = argv[4]
+		ROUNDS *= 3
+		live_trim.DEADLINE = time.monotonic() + 900.0
+		argv = argv[:3]
 	if len(argv) != 3:
 		print(__doc__.strip().splitlines()[2], file=sys.stderr)
 		return 2
