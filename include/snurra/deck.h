@@ -19,6 +19,11 @@
 class snurra_bytes;
 class snurra_source;
 
+/* An EQ band at none of its sound (snurra_deck::set_eq): below -24 dB,
+ * the deepest a band otherwise goes, is this. Finite, so a state carrying
+ * it streams, compares and rounds as any gain. */
+constexpr float SNURRA_EQ_KILL = -1000.0f;
+
 /*
  * One stream in the engine (project.md sec 3a, Mixxx's EngineDeck and
  * CachingReader in one): a reader thread decodes ahead into blocks, and the
@@ -94,10 +99,12 @@ public:
 	void fade(int64_t start_us, int64_t length_us, float from, float to, bool power = false);
 	/*
 	 * A DJ's three-band EQ (project.md sec 4), each band's gain in dB from
-	 * -24 to +6: a low shelf at 250 Hz, a peak at 1 kHz, a high shelf at
-	 * 4 kHz -- the Audio EQ Cookbook's biquads. All at 0 dB the filters
-	 * are passed by, so a deck untouched is exact. Heard from the next
-	 * period on.
+	 * -24 to +6, or SNURRA_EQ_KILL for none of it: an isolator, as
+	 * Mixxx's and a DJ mixer's -- the track split at 250 Hz and 4 kHz by
+	 * Linkwitz-Riley crossovers, whose bands add back to the whole, each
+	 * band weighted. All at 0 dB the track is passed by, so a deck
+	 * untouched is exact. Heard from the next period on, gliding over
+	 * 10 ms rather than stepping.
 	 */
 	void set_eq(float low_db, float mid_db, float high_db);
 
@@ -210,9 +217,10 @@ private:
 	std::atomic<bool> m_playing;
 	std::atomic<float> m_level;
 	std::atomic<float> m_eq_db[3] = { 0, 0, 0 };   /* asked: low, mid, high */
-	/* The callback's own: the gains its filters were made for, and the
-	 * filters, a section a band, each with its two channels' state. */
-	float m_eq_made[3] = { 0, 0, 0 };
+	/* The callback's own: the isolator's fixed crossovers (make_eq), each
+	 * section with its two channels' state; the bands' gains as heard,
+	 * moving toward the asked; and how much of the isolator is heard
+	 * against the dry track, 0 while every band is at 0 dB. */
 	struct biquad_t {
 		float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
 		float z1[2] = { 0, 0 };
@@ -223,9 +231,17 @@ private:
 			z2[channel] = b2 * x - a2 * y;
 			return y;
 		}
+		void rest() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
 	};
-	biquad_t m_eq[3];
-	bool m_eq_on = false;
+	struct isolator_t {
+		biquad_t low[4], above_low[4], mid[4], high[4], align[2];
+		/* One channel's frame, split and weighted by band. */
+		float run(float x, int channel, const float gain[3]);
+		void rest();
+	};
+	isolator_t m_eq;
+	float m_eq_gain[3] = { 1, 1, 1 };
+	float m_eq_wet = 0;
 	void make_eq();
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };

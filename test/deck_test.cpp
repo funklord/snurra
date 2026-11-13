@@ -531,6 +531,30 @@ void deck_test::the_eq_cuts_its_band_and_leaves_the_rest() {
 	QVERIFY(high_cut_high < -18);
 	QVERIFY(std::abs(high_cut_low) < 1);
 	QVERIFY(std::abs(mid_cut_mid + 24) < 1);
+
+	/* Killed, as an isolator's band: none of it, the far ones as they
+	 * were; and in at all but at unity, the bands add back flat, at the
+	 * crossovers themselves too. */
+	const float K = SNURRA_EQ_KILL;
+	const double low_kill_low = level(60, K, 0, 0);
+	const double low_kill_high = level(8000, K, 0, 0);
+	const double mid_kill_mid = level(1000, 0, K, 0);
+	const double mid_kill_low = level(60, 0, K, 0);
+	const double high_kill_high = level(8000, 0, 0, K);
+	const double high_kill_low = level(60, 0, 0, K);
+	qInfo("killed: low 60 Hz %.1f dB (8 kHz %.1f), mid 1 kHz %.1f dB (60 Hz %.1f), high 8 kHz %.1f dB (60 Hz %.1f)",
+	      low_kill_low, low_kill_high, mid_kill_mid, mid_kill_low, high_kill_high, high_kill_low);
+	QVERIFY(low_kill_low < -60);
+	QVERIFY(std::abs(low_kill_high) < 0.2);
+	QVERIFY(mid_kill_mid < -60);
+	QVERIFY(std::abs(mid_kill_low) < 0.2);
+	QVERIFY(high_kill_high < -40);
+	QVERIFY(std::abs(high_kill_low) < 0.2);
+	for (int hz : { 150, 250, 500, 1000, 4000 }) {
+		const double in = level(hz, 0, 0, -0.001f);
+		qInfo("%d Hz through the bands at unity: %.3f dB", hz, in);
+		QVERIFY2(std::abs(in) < 0.01, qPrintable(QStringLiteral("%1 Hz through the bands at unity at %2 dB").arg(hz).arg(in)));
+	}
 }
 
 /*

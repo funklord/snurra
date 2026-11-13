@@ -1044,16 +1044,25 @@ controls; each tile very compact but resizeable).
   Traktor's -- paused, the cue button sets it where the track stands;
   playing, it goes back there and stops; marked on the waveform by a
   triangle from the top, kept by a handover (`cue_us`). A deck's level
-  slider is its channel fader. **The EQ** (every tile): three bands,
-  a low shelf at 250 Hz, a peak at 1 kHz, a high shelf at 4 kHz -- the
-  Audio EQ Cookbook's biquads, in the deck's callback, passed by
-  altogether at 0 dB so an untouched deck stays exact -- on dials with 0
-  dB at the top, as on a mixer, the left half down to -24 dB and the
-  right up to +6; carried by a handover. Measured on tones through a
-  deck: low cut, 60 Hz at -23.8 dB and 8 kHz at 0.0; high cut, 8 kHz at
-  -21.6 and 60 Hz at 0.0; mid cut, 1 kHz at -24.0
-  (`the_eq_cuts_its_band_and_leaves_the_rest`). Not yet: a true kill
-  (the shelves stop at -24 dB), the phone's layout tried on a phone.
+  slider is its channel fader. **The EQ** (every tile): three bands
+  of an isolator, as Mixxx's and a DJ mixer's (2026-11-13; shelves
+  before, which stop at -24 dB, so no band could be killed) -- the track
+  split at 250 Hz and 4 kHz by Linkwitz-Riley 8 crossovers, whose bands
+  add back to an allpass, the low band put through the upper split's
+  allpass so the three add up flat; each band weighted, the weights
+  gliding over 10 ms, and the dry track crossfaded to the isolator and
+  back in the same 10 ms, so at 0 dB everywhere an untouched deck stays
+  exact. On dials with 0 dB at the top, as on a mixer: the left half
+  down 2 dB a step to -22 and the band killed at its end
+  (`SNURRA_EQ_KILL`), the right up to +6; carried by a handover.
+  Fourth order was tried first and was not a kill: a killed high band
+  left 8 kHz, an octave from its split, at -27 dB. Measured on tones
+  through a deck: cut to -24, 60 Hz -24.0, 8 kHz -23.7, 1 kHz -24.0,
+  the far bands 0.0; killed, 60 Hz -98.9, 1 kHz -91.1, 8 kHz -53.4; in
+  but at unity, 150 Hz to 4 kHz within 0.001 dB
+  (`the_eq_cuts_its_band_and_leaves_the_rest`), which the low band's
+  allpass taken out (-0.11 dB at 250 Hz) and one wrong Q (-1.9 dB at
+  150 Hz) each fail. Not yet: the phone's layout tried on a phone.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

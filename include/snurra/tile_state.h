@@ -65,7 +65,8 @@ struct snurra_tile_state {
 	 * track, -1 for none. */
 	qint64 cue_us = -1;
 
-	/* The EQ, low, mid and high, in dB from -24 to +6 (deck.h). */
+	/* The EQ, low, mid and high, in dB from -24 to +6, or SNURRA_EQ_KILL
+	 * (deck.h). */
 	float eq_db[3] = { 0, 0, 0 };
 
 	/* Where it is at `now`, carried along from the sample -- either way,

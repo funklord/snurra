@@ -15,6 +15,7 @@ snurra_deck::snurra_deck(const start_t &start)
 	      return true;
       }) {
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
+	make_eq();
 
 	/*
 	 * Anchored -- a handover's taker, which must sound in step with the
@@ -356,58 +357,81 @@ bool snurra_deck::next_frame(float &left, float &right) {
 }
 
 void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
-	m_eq_db[0].store(std::clamp(low_db, -24.0f, 6.0f), std::memory_order_relaxed);
-	m_eq_db[1].store(std::clamp(mid_db, -24.0f, 6.0f), std::memory_order_relaxed);
-	m_eq_db[2].store(std::clamp(high_db, -24.0f, 6.0f), std::memory_order_relaxed);
+	auto band = [](float db) { return std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f); };
+	m_eq_db[0].store(band(low_db), std::memory_order_relaxed);
+	m_eq_db[1].store(band(mid_db), std::memory_order_relaxed);
+	m_eq_db[2].store(band(high_db), std::memory_order_relaxed);
 }
 
-/* The callback's: the sections for the gains asked, if they moved. */
+/*
+ * The isolator's crossovers, fixed for the deck's rate: Linkwitz-Riley 8,
+ * a fourth-order Butterworth twice -- the Audio EQ Cookbook's sections at
+ * Q 0.54 and 1.31 -- as Mixxx's isolator, since a kill must be one: a
+ * fourth order's 24 dB an octave left a killed high band's 8 kHz at -27
+ * dB, an octave from its split. A Linkwitz-Riley's low and high pass add
+ * to an allpass, flat. Above 250 Hz is split again at 4 kHz, so the low
+ * band goes through that split's allpass too, or the three would not add
+ * up flat: the band's own phase against the two above it.
+ */
 void snurra_deck::make_eq() {
-	float asked[3];
-	bool moved = false;
-	for (int band = 0; band < 3; ++band) {
-		asked[band] = m_eq_db[band].load(std::memory_order_relaxed);
-		moved = moved || asked[band] != m_eq_made[band];
-	}
-	if (!moved) return;
-	const bool on = asked[0] != 0 || asked[1] != 0 || asked[2] != 0;
-	if (!on || !m_eq_on)
-		for (biquad_t &section : m_eq) section = biquad_t{};   /* from rest */
-	m_eq_on = on;
-	constexpr double Q = 0.707;
-	const double hz[3] = { 250, 1000, 4000 };
-	for (int band = 0; band < 3; ++band) {
-		m_eq_made[band] = asked[band];
-		const double A = std::pow(10.0, asked[band] / 40.0);
-		const double w = 2 * M_PI * hz[band] / m_rate;
+	enum kind_t { low_pass, high_pass, all_pass };
+	auto section = [this](biquad_t &made, double hz, double q, kind_t kind) {
+		const double w = 2 * M_PI * hz / m_rate;
 		const double cosw = std::cos(w);
-		const double alpha = std::sin(w) / (2 * Q);
-		double b0, b1, b2, a0, a1, a2;
-		if (band == 1) {   /* peaking */
-			b0 = 1 + alpha * A;
-			b1 = -2 * cosw;
-			b2 = 1 - alpha * A;
-			a0 = 1 + alpha / A;
-			a1 = -2 * cosw;
-			a2 = 1 - alpha / A;
+		const double alpha = std::sin(w) / (2 * q);
+		double b0, b1, b2;
+		if (kind == low_pass) {
+			b0 = b2 = (1 - cosw) / 2;
+			b1 = 1 - cosw;
+		} else if (kind == high_pass) {
+			b0 = b2 = (1 + cosw) / 2;
+			b1 = -(1 + cosw);
 		} else {
-			const double root = 2 * std::sqrt(A) * alpha;
-			const double s = band == 0 ? -1 : 1;   /* low shelf: -, high shelf: + */
-			b0 = A * ((A + 1) + s * (A - 1) * cosw + root);
-			b1 = -2 * s * A * ((A - 1) + s * (A + 1) * cosw);
-			b2 = A * ((A + 1) + s * (A - 1) * cosw - root);
-			a0 = (A + 1) - s * (A - 1) * cosw + root;
-			a1 = 2 * s * ((A - 1) - s * (A + 1) * cosw);
-			a2 = (A + 1) - s * (A - 1) * cosw - root;
+			b0 = 1 - alpha;
+			b1 = -2 * cosw;
+			b2 = 1 + alpha;
 		}
-		biquad_t &section = m_eq[band];
-		section.b0 = float(b0 / a0);
-		section.b1 = float(b1 / a0);
-		section.b2 = float(b2 / a0);
-		section.a1 = float(a1 / a0);
-		section.a2 = float(a2 / a0);
+		const double a0 = 1 + alpha;
+		made = biquad_t{};
+		made.b0 = float(b0 / a0);
+		made.b1 = float(b1 / a0);
+		made.b2 = float(b2 / a0);
+		made.a1 = float(-2 * cosw / a0);
+		made.a2 = float((1 - alpha) / a0);
+	};
+	const double q[2] = { 1 / (2 * std::cos(M_PI / 8)), 1 / (2 * std::cos(3 * M_PI / 8)) };
+	for (int i = 0; i < 4; ++i) {
+		section(m_eq.low[i], 250, q[i % 2], low_pass);
+		section(m_eq.above_low[i], 250, q[i % 2], high_pass);
+		section(m_eq.mid[i], 4000, q[i % 2], low_pass);
+		section(m_eq.high[i], 4000, q[i % 2], high_pass);
 	}
+	for (int i = 0; i < 2; ++i) section(m_eq.align[i], 4000, q[i], all_pass);
 }
+
+namespace {
+
+template <size_t N, typename section_t> float through(section_t (&sections)[N], float x, int channel) {
+	for (section_t &made : sections) x = made.run(x, channel);
+	return x;
+}
+
+}   // namespace
+
+float snurra_deck::isolator_t::run(float x, int channel, const float gain[3]) {
+	const float bottom = through(align, through(low, x, channel), channel);
+	const float above = through(above_low, x, channel);
+	const float middle = through(mid, above, channel);
+	const float top = through(high, above, channel);
+	return gain[0] * bottom + gain[1] * middle + gain[2] * top;
+}
+
+void snurra_deck::isolator_t::rest() {
+	for (biquad_t *sections : { low, above_low, mid, high })
+		for (int i = 0; i < 4; ++i) sections[i].rest();
+	for (biquad_t &made : align) made.rest();
+}
+
 
 void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	const bool playing = m_playing.load(std::memory_order_acquire);   /* first: see set_playing */
@@ -475,7 +499,20 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		                            * double(m_tempo.load(std::memory_order_relaxed)));
 
 	const fade_t fade = fade_snapshot();
-	make_eq();
+	/* The EQ asked: a gain a band, and whether it is heard at all. From
+	 * the dry track it starts at rest and fades in, and back. */
+	float eq_target[3];
+	bool eq_asked = false;
+	for (int band = 0; band < 3; ++band) {
+		const float db = m_eq_db[band].load(std::memory_order_relaxed);
+		eq_target[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
+		eq_asked = eq_asked || db != 0;
+	}
+	if (eq_asked && m_eq_wet == 0) {
+		m_eq.rest();
+		for (float &gain : m_eq_gain) gain = 1;
+	}
+	const float eq_step = 100.0f / float(m_rate);   /* the whole way in 10 ms */
 	const envelope_snapshot &envelope = envelope_now();
 	int segment = -1;
 	const float level = m_level.load(std::memory_order_relaxed);
@@ -533,11 +570,13 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		/* Rising over a cut's tail, as it falls (keep_tail). */
 		if (m_tail_at < m_tail_len && i >= m_tail_from)
 			gain *= std::min(1.0f, float(m_tail_at + (i - m_tail_from)) / float(m_tail_len));
-		if (m_eq_on)
-			for (biquad_t &section : m_eq) {
-				left = section.run(left, 0);
-				right = section.run(right, 1);
-			}
+		if (eq_asked || m_eq_wet > 0) {
+			m_eq_wet += std::clamp((eq_asked ? 1.0f : 0.0f) - m_eq_wet, -eq_step, eq_step);
+			for (int band = 0; band < 3; ++band)
+				m_eq_gain[band] += std::clamp(eq_target[band] - m_eq_gain[band], -eq_step, eq_step);
+			left += m_eq_wet * (m_eq.run(left, 0, m_eq_gain) - left);
+			right += m_eq_wet * (m_eq.run(right, 1, m_eq_gain) - right);
+		}
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
 		if (!m_speed) ++m_position;   /* the stretch moved it as it read */

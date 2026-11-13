@@ -842,8 +842,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	speed->addWidget(m_sync);
 	strip->addLayout(speed);
 	/* The EQ, a DJ's three bands: 0 dB at the top of the dial, as on a
-	 * mixer -- the left half down to -24 dB, the right up to +6, steps of
-	 * 2 dB and of 0.5; a double-click puts one back. */
+	 * mixer -- the left half down by 2 dB a step to -22 and, at its end,
+	 * the band killed, as an isolator's; the right up to +6 by 0.5. A
+	 * double-click puts one back. */
 	QHBoxLayout *bands = new QHBoxLayout;
 	const QString band_names[3] = { tr("lo"), tr("mid"), tr("hi") };
 	const char *band_objects[3] = { "snurra-eq-low", "snurra-eq-mid", "snurra-eq-high" };
@@ -853,7 +854,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		m_eq[band] = new QDial(m_controls);
 		m_eq[band]->setObjectName(QLatin1String(band_objects[band]));
 		m_eq[band]->setAccessibleName(tr("EQ %1").arg(band_names[band]));
-		m_eq[band]->setToolTip(tr("EQ %1, -24 to +6 dB; a double-click puts it back").arg(band_names[band]));
+		m_eq[band]->setToolTip(tr("EQ %1, killed at the left end to +6 dB; a double-click puts it back").arg(band_names[band]));
 		m_eq[band]->setRange(-12, 12);
 		m_eq[band]->setNotchesVisible(true);
 		const int side = fontMetrics().height() * 2;
@@ -862,7 +863,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		bands->addWidget(name);
 		bands->addWidget(m_eq[band]);
 		connect(m_eq[band], &QDial::valueChanged, this, [this] {
-			auto db = [](int step) { return step < 0 ? 2.0f * float(step) : 0.5f * float(step); };
+			auto db = [](int step) { return step <= -12 ? SNURRA_EQ_KILL : step < 0 ? 2.0f * float(step) : 0.5f * float(step); };
 			set_eq(db(m_eq[0]->value()), db(m_eq[1]->value()), db(m_eq[2]->value()));
 		});
 	}
@@ -1433,11 +1434,12 @@ void snurra_tile::seek(qint64 position_us) {
 void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
 	const float asked[3] = { low_db, mid_db, high_db };
 	for (int band = 0; band < 3; ++band) {
-		m_state.eq_db[band] = std::clamp(asked[band], -24.0f, 6.0f);
+		const float db = std::isnan(asked[band]) ? 0.0f : asked[band] < -24.0f ? SNURRA_EQ_KILL : std::min(asked[band], 6.0f);
+		m_state.eq_db[band] = db;
 		if (m_eq[band]) {
 			m_eq[band]->blockSignals(true);
-			const float db = m_state.eq_db[band];
-			m_eq[band]->setValue(int(std::lround(db < 0 ? db / 2 : db * 2)));
+			/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
+			m_eq[band]->setValue(db <= SNURRA_EQ_KILL ? -12 : db < 0 ? std::max(-11, int(std::lround(db / 2))) : int(std::lround(db * 2)));
 			m_eq[band]->blockSignals(false);
 		}
 	}

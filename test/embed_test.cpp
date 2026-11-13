@@ -1029,13 +1029,15 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QVERIFY2(!deck->playing(), "the cue did not stop it");
 	QTRY_VERIFY_WITH_TIMEOUT(qAbs(deck->state().position_us - deck->cue_us()) < 20000, 2000);
 
-	/* The EQ's dials: the low one down to -24 dB, kept by a handover,
-	 * put back by a double-click. */
+	/* The EQ's dials: the low one down to the kill, a step short of it
+	 * -22 dB, kept by a handover, put back by a double-click. */
 	QDial *low = deck->findChild<QDial *>(QStringLiteral("snurra-eq-low"));
 	QVERIFY(low && deck->findChild<QDial *>(QStringLiteral("snurra-eq-mid")) && deck->findChild<QDial *>(QStringLiteral("snurra-eq-high")));
 	QCOMPARE(low->value(), (low->minimum() + low->maximum()) / 2);   /* 0 dB at the top */
+	low->setValue(low->minimum() + 1);
+	QCOMPARE(deck->state().eq_db[0], -22.0f);
 	low->setValue(low->minimum());
-	QCOMPARE(deck->state().eq_db[0], -24.0f);
+	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
 	low->setValue(low->maximum());
 	QCOMPARE(deck->state().eq_db[0], 6.0f);
 	low->setValue(low->minimum());
@@ -1047,7 +1049,7 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.cue_us, deck->cue_us());
-	QCOMPARE(back.eq_db[0], -24.0f);
+	QCOMPARE(back.eq_db[0], SNURRA_EQ_KILL);
 	QTest::mouseDClick(low, Qt::LeftButton);
 	QCOMPARE(deck->state().eq_db[0], 0.0f);
 }
