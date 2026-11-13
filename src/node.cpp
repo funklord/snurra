@@ -505,6 +505,23 @@ void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
 	}
 }
 
+/*
+ * mplayer's < and >: the playlist's previous and next file, which here is
+ * the train's -- the lane's previous or next tile, from its start, the
+ * group with it. The one now is the lane's playing tile, else the one the
+ * keys are on; before the first is the first's start.
+ */
+void snurra_node::step_train(snurra_tile *tile, int direction) {
+	const QList<snurra_tile *> tiles = lane(tile->row());
+	snurra_tile *now = tile;
+	for (snurra_tile *candidate : tiles)
+		if (candidate->playing()) now = candidate;
+	const int to = qBound(0, int(tiles.indexOf(now)) + direction, int(tiles.size()) - 1);
+	if (direction > 0 && to == tiles.indexOf(now)) return;   /* after the last: nothing */
+	snurra_tile *next = tiles.at(to);
+	seek_group(next, next->offset_us());
+}
+
 void snurra_node::start_group_at(int64_t time) {
 	const qint64 at = snurra_clock_us() + m_engine->latency_us() + 50000;
 	m_following.clear();   /* every lane starts afresh: no train is mid-way */
@@ -1075,7 +1092,8 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
  * and down ten minutes, 9 and 0 (and / and *) take the level down and up by
  * mplayer's 3, m mutes, ] [ } { and backspace set the tempo as
  * mplayer's speed, f the picture full screen, . a frame on, paused, + and
- * - the sound's delay against the picture, q and escape quit. On the tile last touched, or the first with its controls
+ * - the sound's delay against the picture, < and > the train's previous
+ * and next tile, q and escape quit. On the tile last touched, or the first with its controls
  * out, or the first. A tile played from the keyboard has its controls
  * pulled out first: what plays is what can be stopped (sec 3c).
  */
@@ -1129,6 +1147,8 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 	case Qt::Key_X: tile->delay_subtitles(100000); break;
 	case Qt::Key_NumberSign: tile->next_audio_track(); break;
 	case Qt::Key_Period: tile->step_frame(); break;
+	case Qt::Key_Less: step_train(tile, -1); break;
+	case Qt::Key_Greater: step_train(tile, 1); break;
 	case Qt::Key_Plus: tile->delay_sound(100000); break;
 	case Qt::Key_Minus: tile->delay_sound(-100000); break;
 	case Qt::Key_Q:

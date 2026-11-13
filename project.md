@@ -691,6 +691,14 @@ controls; each tile very compact but resizeable).
   second after what is heard with the sound unmoved, five - bring it back
   (`plus_and_minus_move_the_picture_against_the_sound`); a picture that
   ignores the delay fails it.
+- **mplayer's < and >, 2026-11-13**: the playlist's previous and next
+  file, which here is the train's -- the lane's previous or next tile,
+  from its start, the group with it (a seek of the group to where that
+  tile begins). The one now is the lane's playing tile, else the one the
+  keys are on; > past the last does nothing, < at the first goes to its
+  start. Tested with a train of three
+  (`less_and_greater_step_along_the_train`); a step that stays put fails
+  it.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

@@ -50,6 +50,7 @@ private slots:
 	void full_screen_asked_before_the_picture_comes_with_it();
 	void a_period_steps_one_frame_on_paused();
 	void plus_and_minus_move_the_picture_against_the_sound();
+	void less_and_greater_step_along_the_train();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -419,6 +420,52 @@ void video_test::plus_and_minus_move_the_picture_against_the_sound() {
 	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_Minus);
 	QCOMPARE(tile->sound_delay(), qint64(0));
 	QTRY_COMPARE_WITH_TIMEOUT(view->property("pts").toLongLong(), times[10], 3000);
+}
+
+/* mplayer's < and >: the playlist's previous and next file, here the train's
+ * tile -- from its start, the one before stopping; nothing past the last,
+ * and before the first, the first's start. */
+void video_test::less_and_greater_step_along_the_train() {
+	snurra_node node;
+	QList<snurra_tile *> tiles;
+	for (int column = 0; column < 3; ++column) {
+		snurra_tile_state state;
+		state.source = m_dir.filePath(QStringLiteral("nothing-%1.flac").arg(column));   /* silence, a minute */
+		state.duration_us = 60000000;
+		state.controls = column == 0;
+		state.playing = column == 0;
+		state.column = column;
+		state.sampled_at_us = snurra_clock_us();
+		tiles << node.add_tile(state);
+	}
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(tiles[0]->playing(), 3000);
+	QTest::qWait(1500);
+
+	auto only = [&](int playing) {
+		for (int i = 0; i < tiles.size(); ++i)
+			if (tiles[i]->playing() != (i == playing)) return false;
+		return true;
+	};
+	auto into = [&](int i) { return tiles[i]->state().position_now(); };
+	QTest::keyClick(&node, Qt::Key_Greater);
+	QTRY_VERIFY_WITH_TIMEOUT(only(1), 3000);
+	QVERIFY2(into(1) < 500000, "> did not start the next tile from its start");
+	QTest::keyClick(&node, Qt::Key_Greater);
+	QTRY_VERIFY_WITH_TIMEOUT(only(2), 3000);
+	QTest::keyClick(&node, Qt::Key_Greater);
+	QTest::qWait(300);
+	QVERIFY2(only(2) && into(2) > 200000, "> past the last moved");
+	QTest::keyClick(&node, Qt::Key_Less);
+	QTRY_VERIFY_WITH_TIMEOUT(only(1), 3000);
+	QTest::keyClick(&node, Qt::Key_Less);
+	QTRY_VERIFY_WITH_TIMEOUT(only(0), 3000);
+	QTest::qWait(1000);
+	QTest::keyClick(&node, Qt::Key_Less);
+	QTest::qWait(300);
+	QVERIFY(only(0));
+	QVERIFY2(into(0) < 800000, "< at the first did not go back to its start");
 }
 
 /* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the

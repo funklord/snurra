@@ -124,6 +124,7 @@ private:
 	/* The tile of lane `row` that plays at `time`, and its frame then;
 	 * none past the lane's end. */
 	snurra_tile *lane_at(int row, int64_t time, int64_t &frame) const;
+	void step_train(snurra_tile *tile, int direction);
 	QList<int> rows() const;
 	int64_t time_of(snurra_tile *tile) const;
 	int64_t timeline_length(snurra_tile *tile) const;
