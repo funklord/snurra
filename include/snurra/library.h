@@ -32,6 +32,16 @@ class library_filter;
  * snurra window takes as a drop and a desktop does not, so a drag let go
  * over nothing opens it as a tile of its own there.
  */
+/* A row a host lists beside the folder's (the player's estate, a host's
+ * own catalogue): `name` as a tile opens it, `title` shown as its name,
+ * `where` in the Folder column. */
+struct snurra_library_entry {
+	QString name;
+	QString title;
+	QString artist;
+	QString where;
+};
+
 class snurra_library : public QWidget {
 	Q_OBJECT
 
@@ -44,6 +54,9 @@ public:
 	/* Looked through again; `remember` keeps it for the next start. */
 	void set_folder(const QString &folder, bool remember = false);
 	void set_search(const QString &words);
+	/* `source`'s rows, in place of any it gave before, kept across a change
+	 * of folder; played, dragged and analysed by `name` as any other. */
+	void set_entries(const QString &source, const std::vector<snurra_library_entry> &entries);
 	/* The tempo of every tune listed that has none kept, found one after
 	 * another on a thread of its own and kept (beats.h): asked for, never
 	 * by itself -- it holds a core a while, and a phone's battery. */
@@ -74,6 +87,8 @@ private:
 	void found(const QStringList &paths, bool last);
 	void tagged(const std::vector<std::pair<QString, snurra_tags>> &told);
 	void say();
+	void add_entries(const std::vector<snurra_library_entry> &entries);
+	QHash<QString, std::vector<snurra_library_entry>> m_entries;   /* by source */
 
 	QString m_folder;
 	QLineEdit *m_search;

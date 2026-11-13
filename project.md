@@ -148,9 +148,20 @@ and everything above it knows nothing of SFTP or fuzznet.
       says "not running" and lists nothing. The adapter reading two
       bytes off its offset fails it. A first expectation was wrong,
       not the node: a mono file comes out 3 dB down a side, by path too.
-    - Next: the catalogue as rows in the library, a file still arriving
-      from a second host, and Android, where the node lives in another
-      app's sandbox.
+    - The catalogue as rows of the library and the DJ player's browser
+      (`snurra_estate_offer`, listed off the UI thread at start and each
+      minute): a file's catalogued name, "on this host" or "on N other
+      hosts" in the Folder column, beside the folder's files; played and
+      dragged by its `fuzznet:ROOT`. The core takes them as a host's own
+      rows (`snurra_library::set_entries`), kept across a change of
+      folder and replaced whole when listed again
+      (`the_library_lists_the_estate_beside_the_folder`; without the
+      keeping, a change of folder loses them and it fails). A name with
+      a scheme -- `fuzznet:`, `tone:` -- is now given to a tile as it is
+      (`snurra_source_of`): made absolute, it had become a file under
+      the current folder.
+    - Next: a file still arriving from a second host, and Android, where
+      the node lives in another app's sandbox.
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 

@@ -135,6 +135,12 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 using snurra_bytes_resolver = std::function<std::shared_ptr<snurra_bytes>(const QString &name)>;
 void snurra_set_bytes_resolver(snurra_bytes_resolver resolver);
 
+/* What a tile is given for `name`: a path made absolute, so another
+ * process finds it; a URL, or a name with a scheme of its own --
+ * "fuzznet:ROOT", "tone:440" -- as it is, which a path made absolute
+ * would have turned into a file under the current folder. */
+QString snurra_source_of(const QString &name);
+
 /* Whether `name` is a URL (a scheme and "://"), which goes to FFmpeg as
  * it is, rather than a path. */
 bool snurra_is_url(const QString &name);

@@ -1419,7 +1419,7 @@ void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) 
 	int column = side == snurra_wire::BELOW ? 0 : last_column + 1;
 	for (const QString &file : files) {
 		snurra_tile_state state;
-		state.source = snurra_is_url(file) ? file : QFileInfo(file).absoluteFilePath();
+		state.source = snurra_source_of(file);
 		state.duration_us = 180000000;
 		state.sampled_at_us = snurra_clock_us();
 		state.controls = false;
@@ -1438,7 +1438,7 @@ void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) 
  */
 void snurra_node::replace_tile(snurra_tile *tile, const QString &file) {
 	snurra_tile_state state = tile->state();
-	state.source = snurra_is_url(file) ? file : QFileInfo(file).absoluteFilePath();
+	state.source = snurra_source_of(file);
 	state.duration_us = 180000000;
 	state.position_us = 0;
 	state.sampled_at_us = snurra_clock_us();

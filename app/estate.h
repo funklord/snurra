@@ -93,4 +93,11 @@ private:
 /* Has snurra_open_source open "fuzznet:ROOT" names as snurra_estate_bytes. */
 void snurra_estate_install();
 
+/* The catalogue as rows of `library` (its set_entries, source "estate"):
+ * listed off the UI thread now and each minute after, a file's name as
+ * catalogued, where it is held in the Folder column. No node, no rows --
+ * a player with no fuzznet looks as it did. */
+class snurra_library;
+void snurra_estate_offer(snurra_library *library);
+
 #endif

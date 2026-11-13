@@ -158,6 +158,8 @@ int main(int argc, char *argv[]) {
 	if (as_dj) {
 		snurra_dj *player = new snurra_dj;
 		player->setAttribute(Qt::WA_DeleteOnClose);
+		/* The estate's music in its browser, where a node answers. */
+		if (snurra_library *browser = player->findChild<snurra_library *>()) snurra_estate_offer(browser);
 		player->setWindowTitle(QStringLiteral("snurra -- DJ"));
 		const QStringList given = parser.positionalArguments();
 		for (int deck = 0; deck < 2 && deck < given.size(); ++deck) {
@@ -274,6 +276,7 @@ int main(int argc, char *argv[]) {
 	if (files.isEmpty()) {
 		snurra_library *library = new snurra_library;
 		library->setAttribute(Qt::WA_DeleteOnClose);
+		snurra_estate_offer(library);
 		node.set_stays_open(true);
 		QObject::connect(library, &snurra_library::play_requested, &node, [&node, show_at_pointer](const QString &path) {
 			node.play_file(path);

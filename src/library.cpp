@@ -236,7 +236,30 @@ void snurra_library::set_folder(const QString &folder, bool remember) {
 	if (remember) QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).setValue(FOLDER_KEY, m_folder);
 	m_model->removeRows(0, m_model->rowCount());
 	m_items.clear();
+	for (const std::vector<snurra_library_entry> &entries : std::as_const(m_entries)) add_entries(entries);
 	scan();
+}
+
+void snurra_library::set_entries(const QString &source, const std::vector<snurra_library_entry> &entries) {
+	for (const snurra_library_entry &old : m_entries.value(source))
+		if (QStandardItem *item = m_items.take(old.name)) m_model->removeRow(item->row());
+	m_entries.insert(source, entries);
+	add_entries(entries);
+	say();
+}
+
+void snurra_library::add_entries(const std::vector<snurra_library_entry> &entries) {
+	m_filter->setDynamicSortFilter(false);
+	for (const snurra_library_entry &entry : entries) {
+		if (m_items.contains(entry.name)) continue;
+		QStandardItem *name = new QStandardItem(entry.title.isEmpty() ? entry.name : entry.title);
+		name->setData(entry.name, PATH_ROLE);
+		name->setToolTip(entry.title);
+		m_items.insert(entry.name, name);
+		m_model->appendRow({ name, new QStandardItem(entry.artist), new QStandardItem(), new QStandardItem(), new QStandardItem(entry.where) });
+	}
+	m_filter->sort(m_filter->sortColumn() < 0 ? FOLDER : m_filter->sortColumn(), m_filter->sortOrder());
+	m_filter->setDynamicSortFilter(true);
 }
 
 void snurra_library::set_search(const QString &words) {

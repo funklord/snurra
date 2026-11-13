@@ -1,7 +1,14 @@
 #include "estate.h"
 
+#include <QCoreApplication>
+#include <QPointer>
+#include <QTimer>
+
 #include <algorithm>
 #include <cstring>
+#include <thread>
+
+#include "snurra/library.h"
 
 QByteArray snurra_estate_socket() {
 	const QByteArray set = qgetenv("SNURRA_FUZZNET_SOCKET");
@@ -102,4 +109,34 @@ void snurra_estate_install() {
 		if (!snurra_estate_root(name, root)) return nullptr;
 		return std::make_shared<snurra_estate_bytes>(root);
 	});
+}
+
+void snurra_estate_offer(snurra_library *library) {
+	QPointer<snurra_library> to(library);
+	auto list = [to] {
+		/* Its own thread: a node that is busy answers late, and the window
+		 * must not wait. Nothing it holds outlives the library but the
+		 * pointer, asked on the UI thread. */
+		std::thread([to] {
+			QString error;
+			const std::vector<snurra_estate_file> files = snurra_estate_list(&error);
+			std::vector<snurra_library_entry> rows;
+			for (const snurra_estate_file &file : files) {
+				snurra_library_entry row;
+				row.name = snurra_estate_name(reinterpret_cast<const uint8_t *>(file.root.constData()));
+				row.title = file.name;
+				row.where = file.here ? QCoreApplication::translate("estate", "on this host")
+				                      : QCoreApplication::translate("estate", "on %n other host(s)", nullptr, file.holders);
+				rows.push_back(row);
+			}
+			QMetaObject::invokeMethod(qApp, [to, rows] {
+				if (to) to->set_entries(QStringLiteral("estate"), rows);
+			});
+		}).detach();
+	};
+	list();
+	QTimer *again = new QTimer(library);
+	again->setInterval(60000);
+	QObject::connect(again, &QTimer::timeout, library, list);
+	again->start();
 }

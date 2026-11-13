@@ -15,7 +15,12 @@
 #include <sys/prctl.h>
 
 #include "estate.h"
+#include "snurra/library.h"
 #include "snurra/source.h"
+
+#include <QAbstractItemModel>
+#include <QSignalSpy>
+#include <QTreeView>
 
 namespace {
 
@@ -52,8 +57,11 @@ private slots:
 	void cleanupTestCase();
 	void a_catalogued_file_is_listed_and_played_from_the_node();
 	void no_node_says_so_and_lists_nothing();
+	void the_library_lists_the_estate_beside_the_folder();
 
 private:
+	/* A WAV stored on the node and catalogued as `title`: its root. */
+	QByteArray catalogue(const QString &title, const QByteArray &wav);
 	QTemporaryDir m_dir{ QStringLiteral("/tmp/snurra-estate.XXXXXX") };   /* short: a socket path is */
 	QProcess m_node;
 	QString m_socket;
@@ -202,6 +210,37 @@ void estate_test::a_catalogued_file_is_listed_and_played_from_the_node() {
 	qInfo("sought to five places, back and forth: the node's frames are the file's");
 }
 
+QByteArray estate_test::catalogue(const QString &title, const QByteArray &wav) {
+	const QString path = m_dir.filePath(title + QStringLiteral(".wav"));
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) return QByteArray();
+	file.write(wav);
+	file.close();
+	fzn_rpc_t call;
+	fzn_rpc_init(&call);
+	if (fzn_rpc_set_node_socket(&call, m_socket.toLocal8Bit().constData()) != 0) return QByteArray();
+	fzn_rpc_blob_add_resp_t added{};
+	const QByteArray local = path.toLocal8Bit();
+	if (fzn_rpc_blob_add(&call, local.constData(), size_t(local.size()), FZN_RPC_BLOB_TIER_PRIVATE, &added) != FZN_RPC_OK) {
+		qWarning("blob add: %s", call.error);
+		return QByteArray();
+	}
+	fzn_rpc_library_add_req_t entry{};
+	memcpy(entry.root, added.root, sizeof entry.root);
+	memcpy(entry.content_key, added.key, sizeof entry.content_key);
+	entry.size = added.byte_len;
+	const QByteArray name = title.toUtf8(), kind("audio");
+	memcpy(entry.name, name.constData(), size_t(std::min<qsizetype>(name.size(), 255)));
+	entry.name_len = size_t(std::min<qsizetype>(name.size(), 255));
+	memcpy(entry.kind, kind.constData(), size_t(kind.size()));
+	entry.kind_len = size_t(kind.size());
+	if (fzn_rpc_library_add(&call, &entry) != FZN_RPC_OK) {
+		qWarning("library add: %s", call.error);
+		return QByteArray();
+	}
+	return QByteArray(reinterpret_cast<const char *>(added.root), 32);
+}
+
 /* No node at the socket: nothing listed, and the reason in words. */
 void estate_test::no_node_says_so_and_lists_nothing() {
 	const QByteArray kept = qgetenv("SNURRA_FUZZNET_SOCKET");
@@ -212,6 +251,59 @@ void estate_test::no_node_says_so_and_lists_nothing() {
 	QVERIFY(files.empty());
 	qInfo("no node: %s", qPrintable(error));
 	QVERIFY(error.contains(QLatin1String("not running")));
+}
+
+/*
+ * The library (the player's, through snurra_estate_offer): Tone A,
+ * catalogued in the test before, is a row named so and held "on this
+ * host", beside the folder's own file; played, it is asked for by its
+ * "fuzznet:ROOT", which a tile is given as it is. A change of folder
+ * keeps it; listed again, it is one row still.
+ */
+void estate_test::the_library_lists_the_estate_beside_the_folder() {
+	QTemporaryDir folder;
+	QFile local(folder.filePath(QStringLiteral("local.wav")));
+	QVERIFY(local.open(QIODevice::WriteOnly));
+	local.write(wav_of(RATE, [](int) { return 0; }));
+	local.close();
+	QVERIFY(!catalogue(QStringLiteral("Tone L"), wav_of(RATE, [](int i) { return int(8000 * std::sin(2 * M_PI * 330 * i / double(RATE))); }))
+	             .isEmpty());
+	snurra_library library(folder.path());
+	snurra_estate_offer(&library);
+	QAbstractItemModel *model = library.findChild<QTreeView *>()->model();
+	auto row_of = [&](const QString &title) {
+		for (int row = 0; row < model->rowCount(); ++row)
+			if (model->index(row, 0).data().toString() == title) return row;
+		return -1;
+	};
+	QTRY_VERIFY_WITH_TIMEOUT(row_of(QStringLiteral("Tone L")) >= 0, 10000);
+	QTRY_VERIFY_WITH_TIMEOUT(row_of(QStringLiteral("local")) >= 0, 5000);
+	const int tone = row_of(QStringLiteral("Tone L"));
+	QCOMPARE(model->index(tone, 4).data().toString(), QStringLiteral("on this host"));
+	const QString name = library.shown().at(tone);
+	uint8_t root[32];
+	QVERIFY2(snurra_estate_root(name, root), qPrintable(name));
+	QCOMPARE(snurra_source_of(name), name);
+	QVERIFY(snurra_source_of(QStringLiteral("tone:440")) == QStringLiteral("tone:440"));
+	QVERIFY(snurra_source_of(QStringLiteral("local.wav")).startsWith(QLatin1Char('/')));
+
+	QSignalSpy asked(&library, &snurra_library::play_requested);
+	QTreeView *view = library.findChild<QTreeView *>();
+	emit view->doubleClicked(model->index(tone, 0));
+	QCOMPARE(asked.size(), 1);
+	QCOMPARE(asked.at(0).at(0).toString(), name);
+
+	QTemporaryDir other;
+	library.set_folder(other.path());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QVERIFY(row_of(QStringLiteral("Tone L")) >= 0);
+	QVERIFY(row_of(QStringLiteral("local")) < 0);
+	snurra_estate_offer(&library);
+	QTest::qWait(1500);
+	int tones = 0;
+	for (int row = 0; row < model->rowCount(); ++row)
+		if (model->index(row, 0).data().toString() == QLatin1String("Tone L")) ++tones;
+	QCOMPARE(tones, 1);
 }
 
 int run_estate_tests(int argc, char **argv) {

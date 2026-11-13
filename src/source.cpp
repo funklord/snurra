@@ -808,6 +808,15 @@ std::mutex resolver_lock;
 snurra_bytes_resolver resolver_set;
 }   // namespace
 
+QString snurra_source_of(const QString &name) {
+	if (snurra_is_url(name)) return name;
+	/* A scheme: two letters or more, then a colon -- a drive letter's one
+	 * is a path -- and not a file of that name here. */
+	static const QRegularExpression scheme(QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]+:"));
+	if (scheme.match(name).hasMatch() && !QFileInfo::exists(name)) return name;
+	return QFileInfo(name).absoluteFilePath();
+}
+
 void snurra_set_bytes_resolver(snurra_bytes_resolver resolver) {
 	std::lock_guard<std::mutex> hold(resolver_lock);
 	resolver_set = std::move(resolver);
