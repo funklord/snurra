@@ -6,6 +6,7 @@
  * plays, holds where the bytes stop and goes on when they come, and closing
  * it leaves no deck behind in the engine, whichever goes first.
  */
+#include <QDial>
 #include <QMimeData>
 #include <QGuiApplication>
 #include <QStyleHints>
@@ -1022,6 +1023,17 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QVERIFY2(!deck->playing(), "the cue did not stop it");
 	QTRY_VERIFY_WITH_TIMEOUT(qAbs(deck->state().position_us - deck->cue_us()) < 20000, 2000);
 
+	/* The EQ's dials: the low one down to -24 dB, kept by a handover,
+	 * put back by a double-click. */
+	QDial *low = deck->findChild<QDial *>(QStringLiteral("snurra-eq-low"));
+	QVERIFY(low && deck->findChild<QDial *>(QStringLiteral("snurra-eq-mid")) && deck->findChild<QDial *>(QStringLiteral("snurra-eq-high")));
+	QCOMPARE(low->value(), (low->minimum() + low->maximum()) / 2);   /* 0 dB at the top */
+	low->setValue(low->minimum());
+	QCOMPARE(deck->state().eq_db[0], -24.0f);
+	low->setValue(low->maximum());
+	QCOMPARE(deck->state().eq_db[0], 6.0f);
+	low->setValue(low->minimum());
+
 	QByteArray bytes;
 	QDataStream out(&bytes, QIODevice::WriteOnly);
 	out << deck->state();
@@ -1029,6 +1041,9 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.cue_us, deck->cue_us());
+	QCOMPARE(back.eq_db[0], -24.0f);
+	QTest::mouseDClick(low, Qt::LeftButton);
+	QCOMPARE(deck->state().eq_db[0], 0.0f);
 }
 
 /*

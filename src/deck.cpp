@@ -355,6 +355,60 @@ bool snurra_deck::next_frame(float &left, float &right) {
 	}
 }
 
+void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
+	m_eq_db[0].store(std::clamp(low_db, -24.0f, 6.0f), std::memory_order_relaxed);
+	m_eq_db[1].store(std::clamp(mid_db, -24.0f, 6.0f), std::memory_order_relaxed);
+	m_eq_db[2].store(std::clamp(high_db, -24.0f, 6.0f), std::memory_order_relaxed);
+}
+
+/* The callback's: the sections for the gains asked, if they moved. */
+void snurra_deck::make_eq() {
+	float asked[3];
+	bool moved = false;
+	for (int band = 0; band < 3; ++band) {
+		asked[band] = m_eq_db[band].load(std::memory_order_relaxed);
+		moved = moved || asked[band] != m_eq_made[band];
+	}
+	if (!moved) return;
+	const bool on = asked[0] != 0 || asked[1] != 0 || asked[2] != 0;
+	if (!on || !m_eq_on)
+		for (biquad_t &section : m_eq) section = biquad_t{};   /* from rest */
+	m_eq_on = on;
+	constexpr double Q = 0.707;
+	const double hz[3] = { 250, 1000, 4000 };
+	for (int band = 0; band < 3; ++band) {
+		m_eq_made[band] = asked[band];
+		const double A = std::pow(10.0, asked[band] / 40.0);
+		const double w = 2 * M_PI * hz[band] / m_rate;
+		const double cosw = std::cos(w);
+		const double alpha = std::sin(w) / (2 * Q);
+		double b0, b1, b2, a0, a1, a2;
+		if (band == 1) {   /* peaking */
+			b0 = 1 + alpha * A;
+			b1 = -2 * cosw;
+			b2 = 1 - alpha * A;
+			a0 = 1 + alpha / A;
+			a1 = -2 * cosw;
+			a2 = 1 - alpha / A;
+		} else {
+			const double root = 2 * std::sqrt(A) * alpha;
+			const double s = band == 0 ? -1 : 1;   /* low shelf: -, high shelf: + */
+			b0 = A * ((A + 1) + s * (A - 1) * cosw + root);
+			b1 = -2 * s * A * ((A - 1) + s * (A + 1) * cosw);
+			b2 = A * ((A + 1) + s * (A - 1) * cosw - root);
+			a0 = (A + 1) - s * (A - 1) * cosw + root;
+			a1 = 2 * s * ((A - 1) - s * (A + 1) * cosw);
+			a2 = (A + 1) - s * (A - 1) * cosw - root;
+		}
+		biquad_t &section = m_eq[band];
+		section.b0 = float(b0 / a0);
+		section.b1 = float(b1 / a0);
+		section.b2 = float(b2 / a0);
+		section.a1 = float(a1 / a0);
+		section.a2 = float(a2 / a0);
+	}
+}
+
 void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	const bool playing = m_playing.load(std::memory_order_acquire);   /* first: see set_playing */
 	const uint64_t generation = m_generation.load(std::memory_order_acquire);
@@ -421,6 +475,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		                            * double(m_tempo.load(std::memory_order_relaxed)));
 
 	const fade_t fade = fade_snapshot();
+	make_eq();
 	const envelope_snapshot &envelope = envelope_now();
 	int segment = -1;
 	const float level = m_level.load(std::memory_order_relaxed);
@@ -478,6 +533,11 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		/* Rising over a cut's tail, as it falls (keep_tail). */
 		if (m_tail_at < m_tail_len && i >= m_tail_from)
 			gain *= std::min(1.0f, float(m_tail_at + (i - m_tail_from)) / float(m_tail_len));
+		if (m_eq_on)
+			for (biquad_t &section : m_eq) {
+				left = section.run(left, 0);
+				right = section.run(right, 1);
+			}
 		out[2 * i] += gain * left;
 		out[2 * i + 1] += gain * right;
 		if (!m_speed) ++m_position;   /* the stretch moved it as it read */

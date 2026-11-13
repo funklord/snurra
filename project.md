@@ -970,8 +970,16 @@ controls; each tile very compact but resizeable).
   Traktor's -- paused, the cue button sets it where the track stands;
   playing, it goes back there and stops; marked on the waveform by a
   triangle from the top, kept by a handover (`cue_us`). A deck's level
-  slider is its channel fader. Not yet: an
-  EQ per deck, the phone's layout tried on a phone.
+  slider is its channel fader. **The EQ** (every tile): three bands,
+  a low shelf at 250 Hz, a peak at 1 kHz, a high shelf at 4 kHz -- the
+  Audio EQ Cookbook's biquads, in the deck's callback, passed by
+  altogether at 0 dB so an untouched deck stays exact -- on dials with 0
+  dB at the top, as on a mixer, the left half down to -24 dB and the
+  right up to +6; carried by a handover. Measured on tones through a
+  deck: low cut, 60 Hz at -23.8 dB and 8 kHz at 0.0; high cut, 8 kHz at
+  -21.6 and 60 Hz at 0.0; mid cut, 1 kHz at -24.0
+  (`the_eq_cuts_its_band_and_leaves_the_rest`). Not yet: a true kill
+  (the shelves stop at -24 dB), the phone's layout tried on a phone.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

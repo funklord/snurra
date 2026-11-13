@@ -2,6 +2,7 @@
 #include "snurra/source.h"
 
 #include <QCoreApplication>
+#include <QDial>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -818,6 +819,33 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_sync->setEnabled(false);
 	speed->addWidget(m_sync);
 	strip->addLayout(speed);
+	/* The EQ, a DJ's three bands: 0 dB at the top of the dial, as on a
+	 * mixer -- the left half down to -24 dB, the right up to +6, steps of
+	 * 2 dB and of 0.5; a double-click puts one back. */
+	QHBoxLayout *bands = new QHBoxLayout;
+	const QString band_names[3] = { tr("lo"), tr("mid"), tr("hi") };
+	const char *band_objects[3] = { "snurra-eq-low", "snurra-eq-mid", "snurra-eq-high" };
+	for (int band = 0; band < 3; ++band) {
+		QLabel *name = new QLabel(band_names[band], m_controls);
+		name->setForegroundRole(QPalette::PlaceholderText);
+		m_eq[band] = new QDial(m_controls);
+		m_eq[band]->setObjectName(QLatin1String(band_objects[band]));
+		m_eq[band]->setAccessibleName(tr("EQ %1").arg(band_names[band]));
+		m_eq[band]->setToolTip(tr("EQ %1, -24 to +6 dB; a double-click puts it back").arg(band_names[band]));
+		m_eq[band]->setRange(-12, 12);
+		m_eq[band]->setNotchesVisible(true);
+		const int side = fontMetrics().height() * 2;
+		m_eq[band]->setFixedSize(side, side);
+		m_eq[band]->installEventFilter(this);
+		bands->addWidget(name);
+		bands->addWidget(m_eq[band]);
+		connect(m_eq[band], &QDial::valueChanged, this, [this] {
+			auto db = [](int step) { return step < 0 ? 2.0f * float(step) : 0.5f * float(step); };
+			set_eq(db(m_eq[0]->value()), db(m_eq[1]->value()), db(m_eq[2]->value()));
+		});
+	}
+	bands->addStretch(1);
+	strip->addLayout(bands);
 	column->addWidget(m_controls);
 
 	/*
@@ -871,6 +899,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	show_cue();
 	set_tempo(state.tempo);
 	set_key_lock(state.key_lock);
+	set_eq(state.eq_db[0], state.eq_db[1], state.eq_db[2]);
 	tick();
 
 	/* A URL (mplayer's http://...) is played and its picture shown, but
@@ -1379,6 +1408,20 @@ void snurra_tile::seek(qint64 position_us) {
  * tempo -- and how far its phase is from the leader's now, the shorter way
  * round, for the caller to bend out. 0 where either has no beat.
  */
+void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
+	const float asked[3] = { low_db, mid_db, high_db };
+	for (int band = 0; band < 3; ++band) {
+		m_state.eq_db[band] = std::clamp(asked[band], -24.0f, 6.0f);
+		if (m_eq[band]) {
+			m_eq[band]->blockSignals(true);
+			const float db = m_state.eq_db[band];
+			m_eq[band]->setValue(int(std::lround(db < 0 ? db / 2 : db * 2)));
+			m_eq[band]->blockSignals(false);
+		}
+	}
+	m_deck->set_eq(m_state.eq_db[0], m_state.eq_db[1], m_state.eq_db[2]);
+}
+
 void snurra_tile::cue() {
 	if (m_state.playing) {
 		if (m_state.cue_us < 0) return;
@@ -1645,6 +1688,11 @@ bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
 		set_tempo(1);
 		return true;
 	}
+	for (QDial *dial : m_eq)
+		if (watched == dial && event->type() == QEvent::MouseButtonDblClick) {
+			dial->setValue(0);
+			return true;
+		}
 	if (event->type() == QEvent::MouseButtonPress) emit touched(this);
 	if (watched != m_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {

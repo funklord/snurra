@@ -133,6 +133,8 @@ public:
 	/* The cue (a CDJ's, Traktor's): paused, it is set where the track
 	 * stands; playing, the track goes back to it and stops. */
 	void cue();
+	/* The EQ (deck.h), low, mid and high in dB; its dials follow. */
+	void set_eq(float low_db, float mid_db, float high_db);
 	qint64 cue_us() const { return m_state.cue_us; }
 
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
@@ -282,6 +284,7 @@ private:
 	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_sync = nullptr;
 	QToolButton *m_cue = nullptr;
+	class QDial *m_eq[3] = { nullptr, nullptr, nullptr };
 	void show_cue();
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;

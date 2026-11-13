@@ -92,6 +92,15 @@ public:
 	 * in the middle.
 	 */
 	void fade(int64_t start_us, int64_t length_us, float from, float to, bool power = false);
+	/*
+	 * A DJ's three-band EQ (project.md sec 4), each band's gain in dB from
+	 * -24 to +6: a low shelf at 250 Hz, a peak at 1 kHz, a high shelf at
+	 * 4 kHz -- the Audio EQ Cookbook's biquads. All at 0 dB the filters
+	 * are passed by, so a deck untouched is exact. Heard from the next
+	 * period on.
+	 */
+	void set_eq(float low_db, float mid_db, float high_db);
+
 	/* The gain the last fade asked ends at: a crossfader's, held. */
 	float fade_to() const { return m_fade_to.load(std::memory_order_relaxed); }
 
@@ -200,6 +209,24 @@ private:
 	/* Controls. */
 	std::atomic<bool> m_playing;
 	std::atomic<float> m_level;
+	std::atomic<float> m_eq_db[3] = { 0, 0, 0 };   /* asked: low, mid, high */
+	/* The callback's own: the gains its filters were made for, and the
+	 * filters, a section a band, each with its two channels' state. */
+	float m_eq_made[3] = { 0, 0, 0 };
+	struct biquad_t {
+		float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+		float z1[2] = { 0, 0 };
+		float z2[2] = { 0, 0 };
+		float run(float x, int channel) {
+			const float y = b0 * x + z1[channel];
+			z1[channel] = b1 * x - a1 * y + z2[channel];
+			z2[channel] = b2 * x - a2 * y;
+			return y;
+		}
+	};
+	biquad_t m_eq[3];
+	bool m_eq_on = false;
+	void make_eq();
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
 	std::atomic<int64_t> m_bend_asked{ 0 };

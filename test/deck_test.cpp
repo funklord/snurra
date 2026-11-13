@@ -140,6 +140,7 @@ private slots:
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
+	void the_eq_cuts_its_band_and_leaves_the_rest();
 	void a_nudge_bends_without_a_gap();
 	void a_jump_while_playing_has_no_gap();
 	void an_anchored_deck_keeps_step_at_its_tempo();
@@ -491,6 +492,45 @@ static double frequency(const std::vector<float> &mono) {
 			++crossings;
 		}
 	return crossings > 1 ? (crossings - 1) * double(RATE) / double(last - first) : 0;
+}
+
+/*
+ * A DJ's EQ (the holder's simplified Traktor): a tone's level through a
+ * deck, in dB against the tone's own, for each band at -24 dB. Untouched,
+ * the level is the tone's; a band cut takes its own frequencies down and
+ * leaves the far ones as they were.
+ */
+void deck_test::the_eq_cuts_its_band_and_leaves_the_rest() {
+	auto level = [this](int hz, float low, float mid, float high) {
+		snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:%1").arg(hz));
+		start.fallback_length = RATE * 20;
+		snurra_deck deck(start);
+		deck.set_eq(low, mid, high);
+		int64_t present = snurra_clock_us();
+		play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 5; });
+		const std::vector<rendered_t> blocks = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+		double sum = 0;
+		int64_t n = 0;
+		for (const rendered_t &block : blocks)
+			for (int64_t i = 0; i < block.advanced; ++i, ++n) sum += double(block.samples[size_t(2 * i)]) * block.samples[size_t(2 * i)];
+		return 10 * std::log10(sum / double(n) / (0.2 * 0.2 / 2));
+	};
+	for (int hz : { 60, 1000, 8000 }) {
+		const double flat = level(hz, 0, 0, 0);
+		QVERIFY2(std::abs(flat) < 0.1, qPrintable(QStringLiteral("%1 Hz untouched at %2 dB").arg(hz).arg(flat)));
+	}
+	const double low_cut_low = level(60, -24, 0, 0);
+	const double low_cut_high = level(8000, -24, 0, 0);
+	const double high_cut_high = level(8000, 0, 0, -24);
+	const double high_cut_low = level(60, 0, 0, -24);
+	const double mid_cut_mid = level(1000, 0, -24, 0);
+	qInfo("low cut: 60 Hz %.1f dB, 8 kHz %.1f dB; high cut: 8 kHz %.1f dB, 60 Hz %.1f dB; mid cut: 1 kHz %.1f dB",
+	      low_cut_low, low_cut_high, high_cut_high, high_cut_low, mid_cut_mid);
+	QVERIFY(low_cut_low < -18);
+	QVERIFY(std::abs(low_cut_high) < 1);
+	QVERIFY(high_cut_high < -18);
+	QVERIFY(std::abs(high_cut_low) < 1);
+	QVERIFY(std::abs(mid_cut_mid + 24) < 1);
 }
 
 /*
