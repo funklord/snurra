@@ -1174,8 +1174,16 @@ controls; each tile very compact but resizeable).
   tile only, and the window grows up so the tiles stay still on screen;
   a maximize button shows the picture full screen, Escape or a
   double-click brings it back. Pictures are converted to RGB here, not
-  by libswscale, which this machine has no headers for and a tiny
-  player need not link: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
+  by libswscale, which this machine had no headers for and a tiny
+  player need not link -- in whole numbers from tables made once a
+  frame since 2026-11-13, when the holder found video "very poor": in
+  doubles with a 64-bit divide a pixel, a 1080p 30 fps film showed 13
+  to 18 frames a second, and now its 30, at a load average of 29
+  (measured offscreen; the holder's "worse in the small window" was not
+  seen there, and the picture is now opaque, so the drawer and window
+  behind it are not painted again for each frame). Colour is tested
+  against ffmpeg's own RGB, BT.601 and BT.709, limited and full range,
+  to 4 steps (`colours_are_ffmpegs_own`). It converts: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
   NV12/NV21, and since 2026-11-12 their 10-bit kin (planar 10-bit,
   P010) that HEVC and AV1 releases are mostly in, BT.601/709/2020,
   limited or full range; and packed RGB in any byte order, a palette

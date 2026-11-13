@@ -349,6 +349,10 @@ public:
 	explicit snurra_video_view(QWidget *parent = nullptr) : QWidget(parent) {
 		setAccessibleName(QStringLiteral("Video"));
 		setProperty("pts", qint64(INT64_MIN));
+		/* Every pixel its own (black round the picture): what is behind
+		 * it -- the drawer, a window that may be translucent -- is not
+		 * painted again for each frame. */
+		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 	void show_frame(const snurra_video_frame &frame) {
 		if (!frame.valid() || frame.pts_us == property("pts").toLongLong()) return;

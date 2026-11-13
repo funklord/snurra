@@ -66,6 +66,8 @@ private slots:
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
 	void a_films_other_sound_track_plays_from_where_it_is();
 	void a_stem_file_is_a_stack_of_its_stems();
+	void colours_are_ffmpegs_own_data();
+	void colours_are_ffmpegs_own();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -908,4 +910,55 @@ void video_test::a_stem_file_is_a_stack_of_its_stems() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.audio_track, 3);
+}
+
+/*
+ * Colour, not grey alone (2026-11-13, when the conversion went to whole
+ * numbers): solid colours encoded as BT.601 and BT.709, limited range,
+ * and full range, read back through snurra and through ffmpeg's own RGB,
+ * the reference -- within a few steps of 255, what 4:2:0 and rounding
+ * leave. A matrix taken wrong, or a channel swapped, is tens off.
+ */
+void video_test::colours_are_ffmpegs_own_data() {
+	QTest::addColumn<QStringList>("coding");
+	QTest::newRow("BT.601 limited") << QStringList{ QStringLiteral("-vf"), QStringLiteral("format=yuv420p") };
+	QTest::newRow("BT.709 limited") << QStringList{ QStringLiteral("-vf"), QStringLiteral("scale=out_color_matrix=bt709,format=yuv420p"),
+		                                         QStringLiteral("-colorspace"), QStringLiteral("bt709") };
+	QTest::newRow("BT.601 full") << QStringList{ QStringLiteral("-vf"), QStringLiteral("scale=out_range=full,format=yuvj420p"),
+		                                      QStringLiteral("-color_range"), QStringLiteral("pc") };
+}
+
+void video_test::colours_are_ffmpegs_own() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QFETCH(QStringList, coding);
+	const QStringList colours{ QStringLiteral("0xe03020"), QStringLiteral("0x20c040"), QStringLiteral("0x3040e0"),
+		                   QStringLiteral("0xd8a080"), QStringLiteral("0xc020c0") };
+	for (const QString &colour : colours) {
+		const QString path = m_dir.filePath(QStringLiteral("colour.mkv"));
+		QProcess make;
+		make.start(m_ffmpeg, QStringList{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+		                                  QStringLiteral("lavfi"), QStringLiteral("-i"),
+		                                  QStringLiteral("color=c=%1:s=64x48:r=25:d=1").arg(colour) }
+		                         << coding << QStringList{ QStringLiteral("-c:v"), QStringLiteral("ffv1"), path });
+		QVERIFY(make.waitForFinished(60000) && make.exitCode() == 0);
+		QProcess reference;
+		reference.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-i"), path, QStringLiteral("-frames:v"),
+		                            QStringLiteral("1"), QStringLiteral("-f"), QStringLiteral("rawvideo"), QStringLiteral("-pix_fmt"),
+		                            QStringLiteral("rgb24"), QStringLiteral("-") });
+		QVERIFY(reference.waitForFinished(60000));
+		const QByteArray rgb = reference.readAllStandardOutput();
+		QCOMPARE(rgb.size(), 64 * 48 * 3);
+		const int middle = (24 * 64 + 32) * 3;
+		snurra_video video(path);
+		QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+		snurra_video_frame frame;
+		QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(100000)).valid(), 5000);
+		const QRgb ours = frame.image.pixel(32, 24);
+		const int want[3] = { uchar(rgb[middle]), uchar(rgb[middle + 1]), uchar(rgb[middle + 2]) };
+		const int got[3] = { qRed(ours), qGreen(ours), qBlue(ours) };
+		for (int c = 0; c < 3; ++c)
+			QVERIFY2(qAbs(want[c] - got[c]) <= 4, qPrintable(QStringLiteral("%1: ffmpeg %2,%3,%4, snurra %5,%6,%7")
+			                                                         .arg(colour).arg(want[0]).arg(want[1]).arg(want[2])
+			                                                         .arg(got[0]).arg(got[1]).arg(got[2])));
+	}
 }
