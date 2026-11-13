@@ -63,8 +63,9 @@ public:
 protected:
 	bool filterAcceptsRow(int row, const QModelIndex &parent) const override {
 		if (m_words.isEmpty()) return true;
-		const QString text = sourceModel()->index(row, 1, parent).data().toString() + QLatin1Char('/')
-		                     + sourceModel()->index(row, 0, parent).data().toString();
+		const QString text = sourceModel()->index(row, 2, parent).data().toString() + QLatin1Char('/')
+		                     + sourceModel()->index(row, 0, parent).data().toString() + QLatin1Char(' ')
+		                     + sourceModel()->index(row, 1, parent).data().toString();
 		for (const QString &word : m_words)
 			if (!text.contains(word, Qt::CaseInsensitive)) return false;
 		return true;
@@ -126,8 +127,8 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_search->setPlaceholderText(tr("Search"));
 	m_search->setClearButtonEnabled(true);
 	QPushButton *choose = new QPushButton(tr("Folder..."), this);
-	m_model = new QStandardItemModel(0, 2, this);
-	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Folder") });
+	m_model = new QStandardItemModel(0, 3, this);
+	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Artist"), tr("Folder") });
 	m_filter = new library_filter(this);
 	m_filter->setSourceModel(m_model);
 	m_view = new library_view(this, this);
@@ -143,8 +144,10 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	 * a dozen letters beside an empty folder column (seen 2026-11-13). */
 	m_view->header()->setStretchLastSection(false);
 	m_view->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-	m_view->header()->setSectionResizeMode(1, QHeaderView::Interactive);
-	m_view->header()->resizeSection(1, fontMetrics().horizontalAdvance(QLatin1Char('M')) * 14);
+	for (int column : { 1, 2 }) {
+		m_view->header()->setSectionResizeMode(column, QHeaderView::Interactive);
+		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * 12);
+	}
 	m_status = new QLabel(this);
 	/* Wrapped: a long folder's line otherwise set the window's least width,
 	 * wider than a phone (seen 2026-11-13). */
@@ -197,6 +200,7 @@ void snurra_library::set_folder(const QString &folder, bool remember) {
 	m_folder = QDir(folder).absolutePath();
 	if (remember) QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).setValue(FOLDER_KEY, m_folder);
 	m_model->removeRows(0, m_model->rowCount());
+	m_items.clear();
 	scan();
 }
 
@@ -235,6 +239,7 @@ void snurra_library::scan() {
 	QPointer<snurra_library> self(this);
 	m_thread = std::thread([this, folder, self] {
 		QStringList piece;
+		QStringList all;
 		int listed = 0;
 		int looked_at = 0;
 		QDirIterator it(folder, QDir::Files | QDir::Readable, QDirIterator::Subdirectories | QDirIterator::FollowSymlinks);
@@ -242,6 +247,7 @@ void snurra_library::scan() {
 			const QString path = it.next();
 			if (!snurra_playable_by_name(path)) continue;
 			piece << path;
+			all << path;
 			++listed;
 			if (piece.size() >= 500) {
 				QMetaObject::invokeMethod(this, [self, piece] { if (self) self->found(piece, false); });
@@ -249,7 +255,33 @@ void snurra_library::scan() {
 			}
 		}
 		QMetaObject::invokeMethod(this, [self, piece] { if (self) self->found(piece, true); });
+		/* Then each file's own tags, as they are read: the list is there at
+		 * once, the names and artists come after it. */
+		std::vector<std::pair<QString, snurra_tags>> told;
+		for (const QString &path : all) {
+			if (m_stop.load(std::memory_order_relaxed)) return;
+			const snurra_tags tags = snurra_read_tags(path);
+			if (tags.title.isEmpty() && tags.artist.isEmpty()) continue;
+			told.emplace_back(path, tags);
+			if (told.size() >= 200) {
+				QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
+				told.clear();
+			}
+		}
+		if (!told.empty()) QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
 	});
+}
+
+/* A file's title in place of its name where it has one, and its artist:
+ * shown only -- no file is renamed, and an untagged file keeps its name,
+ * a YouTube ID and all (the holder, 2026-11-13). */
+void snurra_library::tagged(const std::vector<std::pair<QString, snurra_tags>> &told) {
+	for (const auto &[path, tags] : told) {
+		QStandardItem *name = m_items.value(path);
+		if (!name) continue;
+		if (!tags.title.isEmpty()) name->setText(tags.title);
+		if (QStandardItem *artist = m_model->item(name->row(), 1); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
+	}
 }
 
 void snurra_library::stop_scan() {
@@ -268,7 +300,8 @@ void snurra_library::found(const QStringList &paths, bool last) {
 		name->setToolTip(path);
 		QString where = root.relativeFilePath(info.absolutePath());
 		if (where == QLatin1String(".")) where.clear();
-		m_model->appendRow({ name, new QStandardItem(where) });
+		m_items.insert(path, name);
+		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(where) });
 	}
 	m_filter->sort(0);
 	m_filter->setDynamicSortFilter(true);

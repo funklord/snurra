@@ -685,6 +685,25 @@ QStringList snurra_stem_names(const QString &path) {
 	return { QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
 }
 
+snurra_tags snurra_read_tags(const QString &path) {
+	snurra_tags tags;
+	AVFormatContext *format = nullptr;
+	if (avformat_open_input(&format, path.toUtf8().constData(), nullptr, nullptr) < 0) return tags;
+	auto take = [](const AVDictionary *from, const char *key) {
+		const AVDictionaryEntry *entry = av_dict_get(from, key, nullptr, 0);
+		return entry && entry->value ? QString::fromUtf8(entry->value).trimmed() : QString();
+	};
+	tags.title = take(format->metadata, "title");
+	tags.artist = take(format->metadata, "artist");
+	/* Ogg and Opus keep theirs on the stream. */
+	for (unsigned i = 0; i < format->nb_streams && (tags.title.isEmpty() || tags.artist.isEmpty()); ++i) {
+		if (tags.title.isEmpty()) tags.title = take(format->streams[i]->metadata, "title");
+		if (tags.artist.isEmpty()) tags.artist = take(format->streams[i]->metadata, "artist");
+	}
+	avformat_close_input(&format);
+	return tags;
+}
+
 bool snurra_drop_offers(const QMimeData *mime) {
 	if (!mime) return false;
 	if (mime->hasFormat(QLatin1String(SNURRA_FILES_MIME))) return true;

@@ -254,7 +254,14 @@ does the same with a tile's playback:
   IDs" -- and no file is renamed. Recognition by fingerprint
   (Chromaprint and AcoustID, as Picard and beets use) waits on the
   holder: linking Chromaprint (LGPL-2.1+) and sending fingerprints to
-  AcoustID are the holder's to decide.
+  AcoustID are the holder's to decide. **A file's own tags are shown**
+  (2026-11-13): Name is its title where it has one, beside an Artist
+  column -- ID3, Vorbis comments, MP4 and Matroska tags through FFmpeg,
+  the container's or else the first stream's (Ogg keeps them there) --
+  read on the listing's thread after the list is out, so a large folder
+  lists at once and its names come in after; search covers name, artist
+  and folder. An untagged file keeps its own name, ID and all; nothing
+  is renamed (`the_library_shows_a_files_own_title_and_artist`).
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the

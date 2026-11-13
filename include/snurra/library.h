@@ -3,15 +3,21 @@
 
 #include <QPoint>
 #include <QStringList>
+#include <QHash>
 #include <QWidget>
 
 #include <atomic>
 #include <functional>
 #include <thread>
+#include <utility>
+#include <vector>
+
+#include "snurra/source.h"
 
 class QLabel;
 class QLineEdit;
 class QMimeData;
+class QStandardItem;
 class QStandardItemModel;
 class QTreeView;
 class library_filter;
@@ -57,6 +63,7 @@ private:
 	void scan();
 	void stop_scan();
 	void found(const QStringList &paths, bool last);
+	void tagged(const std::vector<std::pair<QString, snurra_tags>> &told);
 	void say();
 
 	QString m_folder;
@@ -68,6 +75,7 @@ private:
 	std::thread m_thread;
 	std::atomic<bool> m_stop{ false };
 	bool m_scanning = false;
+	QHash<QString, QStandardItem *> m_items;   /* by path: the name's item */
 };
 
 #endif

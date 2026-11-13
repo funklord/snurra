@@ -158,6 +158,17 @@ QStringList snurra_playlist(const QString &path, int most = 1000);
  * video, and no playlist or cue sheet. */
 bool snurra_playable_by_name(const QString &path);
 
+/*
+ * A file's own title and artist, as its tags say (ID3, Vorbis comments,
+ * MP4 and Matroska tags, through FFmpeg): the container's, else its first
+ * stream's. Empty where it has none. Opens the file, so off the UI thread.
+ */
+struct snurra_tags {
+	QString title;
+	QString artist;
+};
+snurra_tags snurra_read_tags(const QString &path);
+
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
 bool snurra_drop_offers(const QMimeData *mime);

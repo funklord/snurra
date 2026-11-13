@@ -15,6 +15,8 @@
 #include <QDataStream>
 #include <QLabel>
 #include <QMimeData>
+#include <QAbstractItemModel>
+#include <QTreeView>
 #include <QToolButton>
 #include <QProcess>
 #include <QRegularExpression>
@@ -29,6 +31,7 @@
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/embed.h"
+#include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/peaks.h"
 #include "snurra/source.h"
@@ -76,6 +79,7 @@ private slots:
 	void a_picture_made_small_is_averaged_not_picked();
 	void a_skip_shows_the_frame_heard_not_one_behind();
 	void a_far_target_while_on_the_way_is_a_new_seek();
+	void the_library_shows_a_files_own_title_and_artist();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1231,4 +1235,51 @@ void video_test::a_far_target_while_on_the_way_is_a_new_seek() {
 	QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(45000000)).valid() && frame.pts_us > 44900000, 15000);
 	qInfo("45 s while on the way to 19.9 s: %lld pictures decoded", (long long)video.decoded());
 	QVERIFY2(video.decoded() < 1000, qPrintable(QStringLiteral("%1 pictures decoded").arg(video.decoded())));
+}
+
+/*
+ * The library's names and artists (2026-11-13): a FLAC and an Opus
+ * tagged with title and artist show them -- the Opus's on its stream, as
+ * Ogg keeps them -- and an untagged file keeps its own name, a YouTube ID
+ * and all (the holder: no cleanup removes those); search finds a file by
+ * its artist. No file is renamed.
+ */
+void video_test::the_library_shows_a_files_own_title_and_artist() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QTemporaryDir dir;
+	auto make_tagged = [this, &dir](const QString &name, const QStringList &tags) {
+		QProcess ffmpeg;
+		ffmpeg.start(m_ffmpeg, QStringList{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+		                                    QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=d=1") }
+		                               << tags << dir.filePath(name));
+		return ffmpeg.waitForFinished(30000) && ffmpeg.exitCode() == 0;
+	};
+	QVERIFY(make_tagged(QStringLiteral("01 track.flac"), { QStringLiteral("-metadata"), QStringLiteral("title=Night Drive"),
+		                                               QStringLiteral("-metadata"), QStringLiteral("artist=Somebody") }));
+	QVERIFY(make_tagged(QStringLiteral("02 track.opus"), { QStringLiteral("-c:a"), QStringLiteral("libopus"), QStringLiteral("-metadata"),
+		                                               QStringLiteral("title=Morning"), QStringLiteral("-metadata"),
+		                                               QStringLiteral("artist=Someone Else") }));
+	const QString untagged = QStringLiteral("HI-LO - Impulse (Official Music Video)-FYLJdKxTxJ0");
+	QVERIFY(make_tagged(untagged + QStringLiteral(".wav"), {}));
+	const QStringList before = QDir(dir.path()).entryList(QDir::Files, QDir::Name);
+
+	snurra_library library(dir.path());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QTreeView *view = library.findChild<QTreeView *>();
+	QAbstractItemModel *model = view->model();
+	auto row_of = [&library](const QString &file) { return int(library.shown().indexOf(file)); };
+	const int flac = row_of(dir.filePath(QStringLiteral("01 track.flac")));
+	const int opus = row_of(dir.filePath(QStringLiteral("02 track.opus")));
+	const int wav = row_of(dir.filePath(untagged + QStringLiteral(".wav")));
+	QVERIFY(flac >= 0 && opus >= 0 && wav >= 0);
+	QTRY_COMPARE_WITH_TIMEOUT(model->index(flac, 0).data().toString(), QStringLiteral("Night Drive"), 5000);
+	QCOMPARE(model->index(flac, 1).data().toString(), QStringLiteral("Somebody"));
+	QTRY_COMPARE_WITH_TIMEOUT(model->index(opus, 0).data().toString(), QStringLiteral("Morning"), 5000);
+	QCOMPARE(model->index(opus, 1).data().toString(), QStringLiteral("Someone Else"));
+	QCOMPARE(model->index(wav, 0).data().toString(), untagged);
+	QVERIFY(model->index(wav, 1).data().toString().isEmpty());
+
+	library.set_search(QStringLiteral("somebody"));
+	QCOMPARE(library.shown(), QStringList{ dir.filePath(QStringLiteral("01 track.flac")) });
+	QCOMPARE(QDir(dir.path()).entryList(QDir::Files, QDir::Name), before);
 }
