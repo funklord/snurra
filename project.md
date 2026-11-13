@@ -248,7 +248,13 @@ does the same with a tile's playback:
   file; a snurra window takes it as any drop, and let go over nothing it
   opens as a tile of its own where it was let go. The process goes once
   the library and the window are both closed. Listed on a thread of its
-  own, at most 50000 tunes of 200000 files looked at.
+  own, at most 50000 tunes of 200000 files looked at. **Names, if ever
+  tidied for display** (the holder, 2026-11-13): a YouTube ID in a name
+  stays -- "if we ever do this kind of cleanup we do not remove youtube
+  IDs" -- and no file is renamed. Recognition by fingerprint
+  (Chromaprint and AcoustID, as Picard and beets use) waits on the
+  holder: linking Chromaprint (LGPL-2.1+) and sending fingerprints to
+  AcoustID are the holder's to decide.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the
