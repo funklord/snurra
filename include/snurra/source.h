@@ -183,6 +183,13 @@ struct snurra_chapter {
 };
 std::vector<snurra_chapter> snurra_read_chapters(const QString &path);
 
+/* A cue sheet's tracks for the file `audio` names, as chapters: INDEX 01
+ * (minutes:seconds:frames, 75 a second), titled "PERFORMER - TITLE" (or
+ * the one there is). snurra_read_chapters takes the sheet beside a file
+ * -- its name with .cue -- where the file has no chapters of its own, as
+ * hydra writes one beside a saved mix. */
+std::vector<snurra_chapter> snurra_read_cue(const QString &cue, const QString &audio);
+
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
 bool snurra_drop_offers(const QMimeData *mime);

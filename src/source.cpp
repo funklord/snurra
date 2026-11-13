@@ -726,7 +726,59 @@ std::vector<snurra_chapter> snurra_read_chapters(const QString &path) {
 	}
 	avformat_close_input(&format);
 	std::sort(chapters.begin(), chapters.end(), [](const snurra_chapter &a, const snurra_chapter &b) { return a.start_us < b.start_us; });
+	if (chapters.empty()) {
+		const QFileInfo info(path);
+		const QString beside = info.dir().filePath(info.completeBaseName() + QStringLiteral(".cue"));
+		if (QFileInfo(beside).isFile()) chapters = snurra_read_cue(beside, path);
+	}
 	return chapters;
+}
+
+std::vector<snurra_chapter> snurra_read_cue(const QString &cue, const QString &audio) {
+	QFile file(cue);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text) || file.size() > 1024 * 1024) return {};
+	const QString audio_name = QFileInfo(audio).fileName();
+	auto quoted = [](const QString &rest) {
+		const QString text = rest.trimmed();
+		return text.startsWith(QLatin1Char('"')) ? text.mid(1, text.lastIndexOf(QLatin1Char('"')) - 1) : text;
+	};
+	/* Each FILE's tracks, then the one for `audio`: the sheet's only FILE
+	 * whatever it names (the file renamed since), else the one named so. */
+	std::vector<std::vector<snurra_chapter>> per_file;
+	int matching = -1;
+	QString sheet_performer;
+	QString performer;
+	QString title;
+	bool in_track = false;
+	for (QString line : QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'))) {
+		line = line.trimmed();
+		const QString word = line.section(QLatin1Char(' '), 0, 0).toUpper();
+		const QString rest = line.section(QLatin1Char(' '), 1);
+		if (word == QLatin1String("FILE")) {
+			per_file.emplace_back();
+			if (QFileInfo(quoted(rest.left(rest.lastIndexOf(QLatin1Char(' '))))).fileName() == audio_name)
+				matching = int(per_file.size()) - 1;
+			in_track = false;
+		} else if (word == QLatin1String("TRACK")) {
+			in_track = true;
+			performer = sheet_performer;
+			title.clear();
+		} else if (word == QLatin1String("PERFORMER")) {
+			(in_track ? performer : sheet_performer) = quoted(rest);
+		} else if (word == QLatin1String("TITLE")) {
+			if (in_track) title = quoted(rest);
+		} else if (word == QLatin1String("INDEX") && in_track && !per_file.empty()
+		           && rest.section(QLatin1Char(' '), 0, 0) == QLatin1String("01")) {
+			const QStringList at = rest.section(QLatin1Char(' '), 1, 1).split(QLatin1Char(':'));
+			if (at.size() != 3) continue;
+			snurra_chapter one;
+			one.start_us = (int64_t(at[0].toInt()) * 60 + at[1].toInt()) * 1000000 + int64_t(at[2].toInt()) * 1000000 / 75;
+			one.title = performer.isEmpty() ? title : title.isEmpty() ? performer : performer + QStringLiteral(" - ") + title;
+			per_file.back().push_back(one);
+		}
+	}
+	if (per_file.size() == 1) return per_file.front();
+	return matching >= 0 ? per_file[size_t(matching)] : std::vector<snurra_chapter>{};
 }
 
 bool snurra_drop_offers(const QMimeData *mime) {

@@ -67,6 +67,7 @@ private slots:
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
 	void the_library_finds_tempos_only_when_asked();
+	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -1139,6 +1140,42 @@ void embed_test::the_library_finds_tempos_only_when_asked() {
 	QVERIFY(bpm_of(dir.filePath(QStringLiteral("c tone.wav"))).isEmpty());
 	QVERIFY(find->isEnabled());
 	QVERIFY(snurra_cached_beats(slow, -1, 48000, kept) && qAbs(kept.bpm() - 120) < 0.1);
+}
+
+/*
+ * A cue sheet beside a file, as hydra writes beside a saved mix: its
+ * tracks are the file's chapters, from INDEX 01 at 75 frames a second,
+ * titled "PERFORMER - TITLE" -- the sheet's performer where a track has
+ * none -- INDEX 00 passed over. A sheet of two files gives each its own.
+ */
+void embed_test::a_cue_sheet_beside_a_file_is_its_tracklist() {
+	QTemporaryDir dir;
+	auto write = [&dir](const QString &name, const QByteArray &bytes) {
+		QFile file(dir.filePath(name));
+		return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+	};
+	QVERIFY(write(QStringLiteral("mix.wav"), make_wav_of(48000 * 10, [](int) { return 0; })));
+	QVERIFY(write(QStringLiteral("mix.cue"), "PERFORMER \"Sheet DJ\"\nTITLE \"The Mix\"\nFILE \"mix.wav\" WAVE\n"
+	                                         "  TRACK 01 AUDIO\n    PERFORMER \"A\"\n    TITLE \"One\"\n    INDEX 01 00:00:00\n"
+	                                         "  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:03:00\n"
+	                                         "  TRACK 03 AUDIO\n    PERFORMER \"C\"\n    TITLE \"Three\"\n"
+	                                         "    INDEX 00 00:05:00\n    INDEX 01 00:06:37\n"));
+	const std::vector<snurra_chapter> read = snurra_read_chapters(dir.filePath(QStringLiteral("mix.wav")));
+	QCOMPARE(int(read.size()), 3);
+	QCOMPARE(read[0].start_us, qint64(0));
+	QCOMPARE(read[1].start_us, qint64(3000000));
+	QCOMPARE(read[2].start_us, qint64(6000000 + 37 * 1000000 / 75));
+	QCOMPARE(read[0].title, QStringLiteral("A - One"));
+	QCOMPARE(read[1].title, QStringLiteral("Sheet DJ - Two"));
+	QCOMPARE(read[2].title, QStringLiteral("C - Three"));
+
+	QVERIFY(write(QStringLiteral("two.cue"), "FILE \"a.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"A1\"\n    INDEX 01 00:00:00\n"
+	                                         "  TRACK 02 AUDIO\n    TITLE \"A2\"\n    INDEX 01 00:01:00\n"
+	                                         "FILE \"b.wav\" WAVE\n  TRACK 03 AUDIO\n    TITLE \"B1\"\n    INDEX 01 00:00:00\n"));
+	const std::vector<snurra_chapter> b = snurra_read_cue(dir.filePath(QStringLiteral("two.cue")), dir.filePath(QStringLiteral("b.wav")));
+	QCOMPARE(int(b.size()), 1);
+	QCOMPARE(b[0].title, QStringLiteral("B1"));
+	QCOMPARE(int(snurra_read_cue(dir.filePath(QStringLiteral("two.cue")), dir.filePath(QStringLiteral("a.wav"))).size()), 2);
 }
 
 /*

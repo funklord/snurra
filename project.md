@@ -808,7 +808,13 @@ controls; each tile very compact but resizeable).
   mplayer's ! and @ step to the previous and next one's start (before
   the first, the track's start), through the group as any seek
   (`a_mixs_chapters_are_its_tracklist`). A URL's and a host's bytes are
-  not opened a second time for them. Not yet: a .cue beside the file.
+  not opened a second time for them. **A cue sheet beside the file**
+  (its name with .cue, as hydra writes one) is its chapters where it has
+  none of its own: each track's INDEX 01 at 75 frames a second, INDEX 00
+  passed over, titled "PERFORMER - TITLE" with the sheet's performer
+  where a track has none; a sheet of several FILEs gives each its own,
+  and of one FILE gives it whatever it names, the file renamed since
+  (`a_cue_sheet_beside_a_file_is_its_tracklist`).
   **Playlists** (`snurra_playlist`): an `.m3u`, `.m3u8` or `.pls`, named
   as a file or given with `-playlist`, is the files it names in its
   place in the train; dropped, the same. Paths are taken from the
