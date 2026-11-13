@@ -1,8 +1,10 @@
 #include "snurra/tile.h"
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontMetricsF>
 #include <QPainterPath>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -291,7 +293,19 @@ public:
 		update();
 		QTimer::singleShot(NOTICE_MS + 50, this, [this] { update(); });
 	}
+	/* Where it is and how long, held on screen (mplayer's o) until
+	 * cleared with an empty string. */
+	void show_clock(const QString &clock) {
+		if (clock == m_clock) return;
+		m_clock = clock;
+		setProperty("clock", clock);
+		update();
+	}
 	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
+	/* Full screen, a window of its own: every other key, to the player's
+	 * window, as if pressed there -- or space, f and the rest do nothing
+	 * once the picture fills the screen. */
+	std::function<void(QKeyEvent *)> on_key;
 
 protected:
 	void paintEvent(QPaintEvent *) override {
@@ -309,9 +323,18 @@ protected:
 			outlined(painter, at.topLeft() + QPointF(at.height() / 30.0, at.height() / 30.0 + font.pixelSize()),
 			         { { m_notice, false, false } }, font);
 		}
+		if (!m_clock.isEmpty()) {
+			QFont font = painter.font();
+			font.setPixelSize(qMax(11, at.height() / 20));
+			const double margin = at.height() / 30.0;
+			const double wide = QFontMetricsF(font).horizontalAdvance(m_clock);
+			outlined(painter, QPointF(at.right() + 1 - margin - wide, at.top() + margin + font.pixelSize()),
+			         { { m_clock, false, false } }, font);
+		}
 	}
 	void keyPressEvent(QKeyEvent *event) override {
 		if (event->key() == Qt::Key_Escape && on_leave) on_leave();
+		else if (on_key) on_key(event);
 		else QWidget::keyPressEvent(event);
 	}
 	void mouseDoubleClickEvent(QMouseEvent *) override {
@@ -413,6 +436,7 @@ private:
 
 	QImage m_image;
 	std::vector<snurra_cue> m_cues;
+	QString m_clock;
 	QString m_notice;
 	QElapsedTimer m_notice_age;
 };
@@ -839,6 +863,11 @@ void snurra_tile::delay_sound(qint64 us) {
 	show_video_frame();
 }
 
+void snurra_tile::toggle_clock() {
+	m_clock = !m_clock;
+	show_video_frame();
+}
+
 void snurra_tile::next_audio_track() {
 	const QStringList tracks = m_deck->audio_tracks();
 	if (tracks.size() < 2) return;
@@ -900,13 +929,27 @@ void snurra_tile::show_video_frame() {
 	const QString name = subtitles_name();
 	std::vector<snurra_cue> cues;
 	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(picture - m_subtitle_delay);
+	/* mplayer's o: where it is and how long, as h:mm:ss, while asked for. */
+	QString clock;
+	if (m_clock) {
+		auto text = [](qint64 us) {
+			const qint64 seconds = qMax<qint64>(0, us) / 1000000;
+			return QStringLiteral("%1:%2:%3")
+			        .arg(seconds / 3600)
+			        .arg(seconds / 60 % 60, 2, 10, QLatin1Char('0'))
+			        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+		};
+		clock = text(heard) + QStringLiteral(" / ") + text(m_state.duration_us);
+	}
 	if (m_view) {
 		m_view->show_frame(frame);
 		m_view->show_cues(cues);
+		m_view->show_clock(clock);
 	}
 	if (m_full) {
 		static_cast<snurra_video_view *>(m_full.data())->show_frame(frame);
 		static_cast<snurra_video_view *>(m_full.data())->show_cues(cues);
+		static_cast<snurra_video_view *>(m_full.data())->show_clock(clock);
 	}
 }
 
@@ -923,6 +966,10 @@ void snurra_tile::set_full_screen(bool full) {
 	view->setAttribute(Qt::WA_DeleteOnClose);
 	view->setWindowTitle(QFileInfo(m_state.source).fileName());
 	view->on_leave = [this] { set_full_screen(false); };
+	view->on_key = [this](QKeyEvent *event) {
+		emit touched(this);
+		QCoreApplication::sendEvent(window(), event);
+	};
 	connect(this, &QObject::destroyed, view, &QObject::deleteLater);
 	m_full = view;
 	view->showFullScreen();

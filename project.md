@@ -699,6 +699,16 @@ controls; each tile very compact but resizeable).
   start. Tested with a train of three
   (`less_and_greater_step_along_the_train`); a step that stays put fails
   it.
+- **Full screen takes the player's keys, and mplayer's o, 2026-11-13.**
+  The full-screen picture is a window of its own, and took only Escape:
+  space, the arrows, f and every other key did nothing once a film
+  filled the screen, which is where mplayer is mostly driven from. Every
+  other key now goes to the player's window as if pressed there, on that
+  tile. o holds the time over the picture, h:mm:ss / h:mm:ss at its top
+  right, until pressed again. Tested in full screen: space pauses, o
+  shows and clears the time, f comes back
+  (`the_full_screen_picture_takes_the_players_keys`); without the
+  forwarding, space fails it.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

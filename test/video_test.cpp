@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -51,6 +52,7 @@ private slots:
 	void a_period_steps_one_frame_on_paused();
 	void plus_and_minus_move_the_picture_against_the_sound();
 	void less_and_greater_step_along_the_train();
+	void the_full_screen_picture_takes_the_players_keys();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -466,6 +468,40 @@ void video_test::less_and_greater_step_along_the_train() {
 	QTest::qWait(300);
 	QVERIFY(only(0));
 	QVERIFY2(into(0) < 800000, "< at the first did not go back to its start");
+}
+
+/* Full screen is a window of its own, and every key the player takes must
+ * work there too: space pauses, o puts the time over the picture, f comes
+ * back. Only Escape did. */
+void video_test::the_full_screen_picture_takes_the_players_keys() {
+	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
+	const QString name = QStringLiteral("keys.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(name);
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	tile->set_full_screen(true);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->full_screen(), 5000);
+	QWidget *full = nullptr;
+	for (QWidget *top : QApplication::topLevelWidgets())
+		if (top->accessibleName() == QLatin1String("Video") && top->isVisible()) full = top;
+	QVERIFY(full);
+
+	QVERIFY(tile->playing());
+	QTest::keyClick(full, Qt::Key_Space);
+	QVERIFY2(!tile->playing(), "space in full screen did not pause");
+	QTest::keyClick(full, Qt::Key_O);
+	QTRY_VERIFY_WITH_TIMEOUT(QRegularExpression(QStringLiteral("^0:00:0\\d / 0:00:03$")).match(full->property("clock").toString()).hasMatch(),
+	                         2000);
+	QTest::keyClick(full, Qt::Key_O);
+	QTRY_VERIFY_WITH_TIMEOUT(full->property("clock").toString().isEmpty(), 2000);
+	QTest::keyClick(full, Qt::Key_F);
+	QVERIFY2(!tile->full_screen(), "f in full screen did not come back");
 }
 
 /* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the
