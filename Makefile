@@ -107,6 +107,21 @@ FFMPEG_DIRS     = libavformat libavcodec libavutil libswresample
 # the kit's library is a prerequisite, so a new kit is checked again.
 FFMPEG_KIT_LIB = $(QT_ANDROID_ROOT)/lib/libavformat.so
 
+# And the copy already made is checked against the kit at every build, not
+# only when the kit's library is newer than it: a release kit installed over
+# a pre-release carries its release's older dates, so the 7.1 headers of
+# the first stayed in the x86_64 build against the second's 9.0 libraries,
+# and every AVFrame was read at the wrong offsets -- channels 0, rate 0, and
+# no sound (2026-11-13). On a mismatch the stamp goes, and the rule above
+# copies the headers again, over the old ones.
+android-ffmpeg-fresh:
+	@copied=$$(sed -n 's/^#define LIBAVFORMAT_VERSION_MAJOR *\([0-9]*\).*/\1/p' $(ANDROID_BUILD_DIR)/ffmpeg-include/libavformat/version_major.h 2>/dev/null); \
+	kit=$$(strings $(FFMPEG_KIT_LIB) | sed -n 's|^.*Lavf/\([0-9]*\)\..*$$|\1|p' | head -1); \
+	if [ -n "$$copied" ] && [ "$$copied" != "$$kit" ]; then \
+		echo "android: the copied FFmpeg headers are libavformat $$copied, the kit's $$kit: copying again"; \
+		rm -f $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied; \
+	fi
+
 $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 	@test -n "$(ANDROID_BUILD_DIR)" || { echo "ANDROID_BUILD_DIR is empty" >&2; exit 1; }
 	@header=$$(sed -n 's/^#define LIBAVFORMAT_VERSION_MAJOR *\([0-9]*\).*/\1/p' $(FFMPEG_HEADERS)/libavformat/version_major.h); \
@@ -136,13 +151,18 @@ $(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg
 # stays in every later APK (measured 2026-11-12: 72 libraries of the
 # morning's build were still staged that afternoon). The staging tree is the build's own; only its .so files go,
 # each named, and only under a build directory that is set and relative.
+# Qt's .jar files too: androiddeployqt copies a file only when it is newer,
+# and a kit installed over another carries its release's older dates, so
+# the old kit's Qt6Android.jar stayed beside the new kit's libraries and Qt
+# failed in JNI_OnLoad at start (2026-11-13, the x86_64 build after the
+# 6.12.0 release kit replaced the pre-release).
 ANDROID_STAGED_LIBS = $(ANDROID_BUILD_DIR)/android-build/libs
 
 android-staged-fresh:
 	@case "$(ANDROID_BUILD_DIR)" in ""|/*|*..*) echo "android: unsafe ANDROID_BUILD_DIR '$(ANDROID_BUILD_DIR)'" >&2; exit 1;; esac
-	@if [ -d "$(ANDROID_STAGED_LIBS)" ]; then find "$(ANDROID_STAGED_LIBS)" -type f -name '*.so' -print -delete; fi
+	@if [ -d "$(ANDROID_STAGED_LIBS)" ]; then find "$(ANDROID_STAGED_LIBS)" -type f \( -name '*.so' -o -name '*.jar' \) -print -delete; fi
 
-android: android-fresh android-staged-fresh $(ANDROID_BUILD_DIR)/Makefile
+android: android-fresh android-staged-fresh android-ffmpeg-fresh $(ANDROID_BUILD_DIR)/Makefile
 	$(MAKE) -C $(ANDROID_BUILD_DIR) apk_install_target
 	$(ANDROID_DEPLOY_QT) \
 	        --input $(ANDROID_BUILD_DIR)/android-$(TARGET)-deployment-settings.json \
@@ -200,5 +220,5 @@ hooks:
 help:
 	@sed -n '/^# TARGETS/,/^#$$/p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-.PHONY: all tests-build test check-mk install uninstall android android-staged-fresh style style-tool hooks help FORCE
+.PHONY: all tests-build test check-mk install uninstall android android-staged-fresh android-ffmpeg-fresh style style-tool hooks help FORCE
 FORCE:
