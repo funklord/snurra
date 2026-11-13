@@ -1189,11 +1189,20 @@ controls; each tile very compact but resizeable).
   (measured offscreen; the holder's "worse in the small window" was not
   seen there, and the picture is now opaque, so the drawer and window
   behind it are not painted again for each frame). A picture is
-  made as wide as it is shown, in device pixels -- the drawer's width,
-  or the screen's full screen, never wider than the film -- where it was
+  made as wide as it is shown, in device pixels -- the picture fitted in
+  the drawer or on the screen, never wider than the film -- where it was
   1280 wide always: small, it costs little, and full screen on a screen
   wider than 1280 it is sharp, not 720p stretched
-  (`a_picture_is_made_as_wide_as_it_is_shown`). Colour is tested
+  (`a_picture_is_made_as_wide_as_it_is_shown`). Fitted, not the view's
+  width (the holder, 2026-11-13, full screen still poor on a 3440 x 1440
+  screen): a 4K film was made 3440 wide where it fills 2560, 13 frames a
+  second of 25 and 11.7 ms a paint scaling it down; made 2560 it keeps
+  up, drawn one to one in 5.6 ms. Shown at half the film's width or
+  less, each pixel is the mean of the samples it covers, luma and chroma
+  (the holder: the small view "could do with some anti-aliasing");
+  one-pixel stripes come out grey, not one stripe picked
+  (`a_picture_made_small_is_averaged_not_picked`), and the 4K film keeps
+  its 25 a second in a drawer 208 wide. Colour is tested
   against ffmpeg's own RGB, BT.601 and BT.709, limited and full range,
   to 4 steps (`colours_are_ffmpegs_own`). It converts: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
   NV12/NV21, and since 2026-11-12 their 10-bit kin (planar 10-bit,

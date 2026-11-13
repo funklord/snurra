@@ -8,6 +8,7 @@
 #include <QTransform>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -178,8 +179,70 @@ QImage to_rgb(const AVFrame *from, int widest) {
 		return std::min(255, value >> shift);
 	};
 	/* Which source column each column shown is from, once for the frame. */
-	std::vector<int> columns(static_cast<size_t>(width));
-	for (int x = 0; x < width; ++x) columns[size_t(x)] = int(int64_t(x) * from->width / width);
+	std::vector<int> columns(static_cast<size_t>(width) + 1);
+	for (int x = 0; x <= width; ++x) columns[size_t(x)] = int(int64_t(x) * from->width / width);
+
+	/*
+	 * Shown at half the film's width or less -- a 1080p film in a drawer
+	 * 200 wide -- each pixel is the mean of the samples it covers, luma
+	 * and chroma alike, before the matrix: one picked of every five or
+	 * ten shimmered on fine detail (the holder, 2026-11-13: "could do with
+	 * some anti-aliasing"), and stripes finer than the step came out one
+	 * colour. Every sample of the film is read, so it costs what a
+	 * picture the film's size would, less the matrix.
+	 */
+	if (from->width >= 2 * width && from->height >= 2 * height) {
+		const int chroma_width = (from->width + (1 << x_shift) - 1) >> x_shift;
+		std::vector<int64_t> luma_sum(static_cast<size_t>(from->width));
+		std::vector<int64_t> cb_sum(static_cast<size_t>(chroma_width));
+		std::vector<int64_t> cr_sum(static_cast<size_t>(chroma_width));
+		for (int y = 0; y < height; ++y) {
+			const int y0 = int(int64_t(y) * from->height / height);
+			const int y1 = std::max(y0 + 1, int(int64_t(y + 1) * from->height / height));
+			std::fill(luma_sum.begin(), luma_sum.end(), 0);
+			std::fill(cb_sum.begin(), cb_sum.end(), 0);
+			std::fill(cr_sum.begin(), cr_sum.end(), 0);
+			for (int sy = y0; sy < y1; ++sy) {
+				const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
+				for (int sx = 0; sx < from->width; ++sx) luma_sum[size_t(sx)] += sample(luma, sx);
+			}
+			const int c0 = y0 >> y_shift;
+			const int c1 = std::max(c0 + 1, ((y1 - 1) >> y_shift) + 1);
+			for (int cy = c0; cy < c1; ++cy) {
+				const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
+				const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
+				for (int cx = 0; cx < chroma_width; ++cx) {
+					int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
+					int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
+					if (swapped) std::swap(cb, cr);
+					cb_sum[size_t(cx)] += cb;
+					cr_sum[size_t(cx)] += cr;
+				}
+			}
+			QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+			for (int x = 0; x < width; ++x) {
+				const int x0 = columns[size_t(x)];
+				const int x1 = std::max(x0 + 1, columns[size_t(x) + 1]);
+				int64_t l = 0;
+				for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
+				const int cx0 = x0 >> x_shift;
+				const int cx1 = std::min(chroma_width, std::max(cx0 + 1, ((x1 - 1) >> x_shift) + 1));
+				int64_t cb = 0;
+				int64_t cr = 0;
+				for (int cx = cx0; cx < cx1; ++cx) {
+					cb += cb_sum[size_t(cx)];
+					cr += cr_sum[size_t(cx)];
+				}
+				const int64_t luma_count = int64_t(x1 - x0) * (y1 - y0);
+				const int64_t chroma_count = int64_t(cx1 - cx0) * (c1 - c0);
+				const int lv = luma_part[int((l + luma_count / 2) / luma_count)];
+				const int cbv = int((cb + chroma_count / 2) / chroma_count);
+				const int crv = int((cr + chroma_count / 2) / chroma_count);
+				out[x] = qRgb(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
+			}
+		}
+		return image;
+	}
 	for (int y = 0; y < height; ++y) {
 		const int sy = int(int64_t(y) * from->height / height);
 		const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
@@ -538,6 +601,9 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	};
 
 	auto push = [&](const AVFrame *from, int64_t pts_us) {
+		/*
+		 * At the width shown (to_rgb averages where that is far smaller).
+		 */
 		snurra_video_frame next{ to_rgb(from, m_widest.load(std::memory_order_relaxed)), pts_us };
 		if (rotation != 0 && !next.image.isNull()) next.image = next.image.transformed(QTransform().rotate(rotation));
 		std::lock_guard<std::mutex> lock(m_mutex);

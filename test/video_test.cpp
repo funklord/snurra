@@ -73,6 +73,7 @@ private slots:
 	void a_full_screen_button_shows_while_the_pointer_moves();
 	void a_picture_is_made_as_wide_as_it_is_shown();
 	void a_local_films_srt_is_found_when_its_bytes_are_given();
+	void a_picture_made_small_is_averaged_not_picked();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1067,15 +1068,23 @@ void video_test::a_picture_is_made_as_wide_as_it_is_shown() {
 	for (QWidget *w : node.findChildren<QWidget *>())
 		if (w->accessibleName() == QLatin1String("Video")) small = w;
 	QVERIFY(small && small->width() < 640);
-	const int drawer = int(std::lround(small->width() * small->devicePixelRatioF()));
-	QTRY_COMPARE_WITH_TIMEOUT(small->property("made").toSize().width(), drawer, 3000);
+	/* The picture fitted in the view, 4:3, in device pixels. */
+	auto fitted = [](const QWidget *view) {
+		return int(std::lround(std::min(double(view->width()), view->height() * 4.0 / 3) * view->devicePixelRatioF()));
+	};
+	QTRY_COMPARE_WITH_TIMEOUT(small->property("made").toSize().width(), fitted(small), 3000);
 	tile->set_full_screen(true);
 	QTRY_VERIFY_WITH_TIMEOUT(tile->full_screen(), 3000);
 	QWidget *full = nullptr;
 	for (QWidget *top : QApplication::topLevelWidgets())
 		if (top->accessibleName() == QLatin1String("Video") && top->isVisible()) full = top;
 	QVERIFY(full);
-	QTRY_COMPARE_WITH_TIMEOUT(full->property("made").toSize().width(), qMin(640, int(std::lround(full->width() * full->devicePixelRatioF()))), 3000);
+	QTRY_COMPARE_WITH_TIMEOUT(full->property("made").toSize().width(), qMin(640, fitted(full)), 3000);
+	/* Fitted, not the view's width: a screen wider than the picture's
+	 * shape (the holder's 3440 x 1440 with a 16:9 film) had it made as
+	 * wide as the screen and scaled down again on every paint. */
+	full->resize(1200, 300);
+	QTRY_COMPARE_WITH_TIMEOUT(full->property("made").toSize().width(), 400, 3000);
 	tile->set_full_screen(false);
 }
 
@@ -1107,3 +1116,34 @@ void video_test::a_local_films_srt_is_found_when_its_bytes_are_given() {
 	QVERIFY(tile);
 	QTRY_COMPARE_WITH_TIMEOUT(tile->subtitles_name(), QStringLiteral("film.srt"), 5000);
 }
+
+/*
+ * Anti-aliasing (the holder, 2026-11-13): a picture of one-pixel black and
+ * white stripes, 1280 wide, shown 160 wide is grey -- each pixel the mean
+ * of the eight stripes it covers -- not black or white as one stripe in
+ * eight picked would make it.
+ */
+void video_test::a_picture_made_small_is_averaged_not_picked() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString path = m_dir.filePath(QStringLiteral("stripes.mkv"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("nullsrc=s=1280x720:r=25:d=1,geq=lum='if(mod(X\\,2)\\,235\\,16)':cb=128:cr=128"),
+	                         QStringLiteral("-c:v"), QStringLiteral("ffv1"), QStringLiteral("-pix_fmt"), QStringLiteral("yuv444p"), path });
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+	snurra_video video(path);
+	video.set_shown_width(160);
+	QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+	snurra_video_frame frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(0)).valid(), 5000);
+	QCOMPARE(frame.image.width(), 160);
+	int darkest = 255;
+	int lightest = 0;
+	for (int x = 2; x < 158; ++x) {
+		const int grey = qRed(frame.image.pixel(x, 45));
+		darkest = std::min(darkest, grey);
+		lightest = std::max(lightest, grey);
+	}
+	QVERIFY2(darkest > 90 && lightest < 165, qPrintable(QStringLiteral("from %1 to %2, not grey").arg(darkest).arg(lightest)));
+}
+

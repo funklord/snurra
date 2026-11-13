@@ -1160,11 +1160,20 @@ void snurra_tile::show_video_frame() {
 		keep_screen_awake();
 		m_awake.start();
 	}
-	/* Made as wide as it is shown, the widest of the drawer and the full
-	 * screen, in device pixels. */
+	/* Made as wide as it is shown -- the picture fitted in the drawer or
+	 * on the full screen, the wider, in device pixels -- so it is drawn
+	 * one to one. The view's width alone made a 4K film 3440 wide on a
+	 * 3440 x 1440 screen, where it fills 2560, and every paint scaled it
+	 * down again (the holder, 2026-11-13: full screen still poor). */
+	const QSize film = m_video->size();
+	auto fitted_width = [&film](const QWidget *view) {
+		if (film.isEmpty()) return int(std::lround(view->width() * view->devicePixelRatioF()));
+		const double width = std::min(double(view->width()), double(view->height()) * film.width() / film.height());
+		return int(std::lround(width * view->devicePixelRatioF()));
+	};
 	int shown = 0;
-	if (m_view && video_open()) shown = int(std::lround(m_view->width() * m_view->devicePixelRatioF()));
-	if (m_full) shown = std::max(shown, int(std::lround(m_full->width() * m_full->devicePixelRatioF())));
+	if (m_view && video_open()) shown = fitted_width(m_view);
+	if (m_full) shown = std::max(shown, fitted_width(m_full));
 	if (shown > 0) m_video->set_shown_width(shown);
 	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
 	const qint64 picture = heard + m_sound_delay;
