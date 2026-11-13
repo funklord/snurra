@@ -345,13 +345,44 @@ void snurra_node::drop_tile(snurra_tile *tile) {
  *
  * The overlap is 5 s, or $SNURRA_TRAIN_OVERLAP_MS, and never more than
  * half of either tile -- a decision taken from the aims (a DJ mix's
- * crossfade), to be made a tile's own when envelopes come (sec 3b, step
- * 5).
+ * crossfade). Where both tracks have a beat (step 6) it is whole bars of
+ * the first, moved by less than a beat so the next one's first beat falls
+ * on a beat of the first: a DJ brings the next record in on the beat.
+ * The tempos are not matched here -- sync is the DJ's own choice (sec 4)
+ * -- so two tempos apart drift through the overlap from in phase.
  */
-static int64_t train_overlap(int64_t length, int64_t next_length, int rate) {
+int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, double tempo, double next_tempo,
+                             const snurra_beat_grid *grid, const snurra_beat_grid *next_grid) {
 	const QByteArray wanted = qgetenv("SNURRA_TRAIN_OVERLAP_MS");
 	const qint64 overlap_us = wanted.isEmpty() ? 5000000 : qint64(wanted.toLongLong()) * 1000;
-	return std::min({ snurra_us_to_frames(overlap_us, rate), length / 2, next_length / 2 });
+	const int64_t room = std::min(length / 2, next_length / 2);
+	const int64_t plain = std::min(snurra_us_to_frames(overlap_us, rate), room);
+	if (plain <= 0 || !grid || !next_grid || !grid->valid() || !next_grid->valid() || tempo <= 0 || next_tempo <= 0)
+		return plain;
+	/* In frames out: a beat of the first, and the next one's first beat
+	 * after it starts. */
+	const double beat = grid->period / tempo;
+	const double bar = 4 * beat;
+	const double whole = std::max(1.0, std::round(double(plain) / bar)) * bar;
+	const double next_first = next_grid->first / next_tempo;
+	/* The overlap is length + next_first - (the first's beat k, out): the
+	 * k that comes nearest the whole bars. */
+	const double k = std::round(((double(length) + next_first - whole) * tempo - grid->first) / grid->period);
+	double snapped = double(length) + next_first - (grid->first + k * grid->period) / tempo;
+	while (snapped > double(room)) snapped -= beat;
+	while (snapped <= 0) snapped += beat;
+	if (snapped > double(room)) return plain;   /* no beat of it fits */
+	return std::llround(snapped);
+}
+
+/* The overlap between `tile` and `next` on their lane's timeline: the
+ * one the train plays and every seek counts with. */
+int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
+	if (!next) return 0;
+	const snurra_beat_grid grid = tile->beats();
+	const snurra_beat_grid next_grid = next->beats();
+	return snurra_train_overlap(timeline_length(tile), timeline_length(next), m_engine->rate(), tile->deck()->tempo(),
+	                            next->deck()->tempo(), &grid, &next_grid);
 }
 
 void snurra_node::run_trains() {
@@ -402,7 +433,7 @@ void snurra_node::run_trains() {
 		int64_t advanced = 0;
 		deck->last_rendered(frame, at, advanced);
 		if (advanced <= 0) continue;   /* starved or paused: no moment to aim at */
-		const int64_t overlap = train_overlap(int64_t(double(length) / tempo), int64_t(double(next_length) / next->deck()->tempo()), rate);
+		const int64_t overlap = this->overlap(tile, next);
 		const qint64 start = at + snurra_frames_to_us(int64_t(std::llround((double(length) - double(overlap) * tempo - double(frame)) / tempo)), rate);
 		if (start - now > LEAD_US || start < now) continue;
 		const qint64 fade_us = snurra_frames_to_us(overlap, rate);
@@ -435,13 +466,11 @@ QList<snurra_tile *> snurra_node::lane(int row) const {
 }
 
 int64_t snurra_node::lane_start(snurra_tile *tile) const {
-	const int rate = m_engine->rate();
 	const QList<snurra_tile *> tiles = lane(tile->row());
 	int64_t start = 0;
 	for (int i = 0; i < tiles.size() && tiles.at(i) != tile; ++i) {
 		const int64_t length = timeline_length(tiles.at(i));
-		const int64_t next = i + 1 < tiles.size() ? timeline_length(tiles.at(i + 1)) : 0;
-		start += length - train_overlap(length, next, rate);
+		start += length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
 	}
 	return start;
 }
@@ -473,8 +502,7 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
 	int64_t start = 0;
 	for (int i = 0; i < tiles.size(); ++i) {
 		const int64_t length = timeline_length(tiles.at(i));
-		const int64_t next = i + 1 < tiles.size() ? timeline_length(tiles.at(i + 1)) : 0;
-		const int64_t own = length - train_overlap(length, next, m_engine->rate());
+		const int64_t own = length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
 		/* Inside an overlap belongs to the next: a seek into a crossfade
 		 * comes in on the track it goes to. A length not known yet is
 		 * taken as long enough. */

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "snurra/beats.h"
+#include "snurra/node.h"
 #include "snurra/source.h"
 
 namespace {
@@ -111,7 +112,66 @@ private slots:
 	void an_encoded_steady_tone_has_no_beat_data();
 	void an_encoded_steady_tone_has_no_beat();
 	void an_encoded_beat_is_still_found();
+	void a_trains_overlap_brings_the_next_in_on_the_beat_data();
+	void a_trains_overlap_brings_the_next_in_on_the_beat();
 };
+
+/*
+ * Step 6 (project.md sec 3b): where both tracks have a beat, the train's
+ * overlap is whole bars of the first near the plain 5 s, moved so the
+ * next one's first beat falls on a beat of the first -- at any tempo of
+ * either, and within half of the shorter. Without both grids, 5 s.
+ */
+void beats_test::a_trains_overlap_brings_the_next_in_on_the_beat_data() {
+	QTest::addColumn<double>("bpm");
+	QTest::addColumn<double>("first");
+	QTest::addColumn<double>("tempo");
+	QTest::addColumn<double>("next_bpm");
+	QTest::addColumn<double>("next_first");
+	QTest::addColumn<double>("next_tempo");
+	QTest::addColumn<double>("next_seconds");
+	QTest::newRow("120 into 128") << 120.0 << 1000.0 << 1.0 << 128.0 << 7000.0 << 1.0 << 60.0;
+	QTest::newRow("both at tempos") << 127.3 << 333.0 << 1.25 << 90.0 << 21000.0 << 0.8 << 60.0;
+	QTest::newRow("a short next") << 174.0 << 50.0 << 1.0 << 140.0 << 400.0 << 1.0 << 5.0;
+	QTest::newRow("a late first beat") << 100.0 << 9000.0 << 1.0 << 100.0 << 96000.0 << 1.0 << 60.0;
+}
+
+void beats_test::a_trains_overlap_brings_the_next_in_on_the_beat() {
+	QFETCH(double, bpm);
+	QFETCH(double, first);
+	QFETCH(double, tempo);
+	QFETCH(double, next_bpm);
+	QFETCH(double, next_first);
+	QFETCH(double, next_tempo);
+	QFETCH(double, next_seconds);
+	constexpr int RATE = 48000;
+	const int64_t length = 60 * RATE + 1234;   /* frames out */
+	const int64_t next_length = int64_t(next_seconds * RATE);
+	snurra_beat_grid grid;
+	grid.period = 60.0 * RATE / bpm;
+	grid.first = first;
+	grid.rate = RATE;
+	snurra_beat_grid next_grid = grid;
+	next_grid.period = 60.0 * RATE / next_bpm;
+	next_grid.first = next_first;
+
+	const int64_t plain = snurra_train_overlap(length, next_length, RATE);
+	QCOMPARE(plain, std::min<int64_t>(5 * RATE, next_length / 2));
+	snurra_beat_grid none;
+	QCOMPARE(snurra_train_overlap(length, next_length, RATE, tempo, next_tempo, &none, &next_grid), plain);
+
+	const int64_t overlap = snurra_train_overlap(length, next_length, RATE, tempo, next_tempo, &grid, &next_grid);
+	QVERIFY(overlap > 0 && overlap <= std::min(length, next_length) / 2);
+	/* The next one's first beat, as a frame of the first track. */
+	const double at = (double(length - overlap) + next_first / next_tempo) * tempo;
+	const double beats = (at - first) / grid.period;
+	QVERIFY2(std::abs(beats - std::round(beats)) * grid.period < 1.0,
+	         qPrintable(QStringLiteral("the next comes in %1 of a beat off").arg(beats - std::round(beats))));
+	/* Near the plain overlap's whole bars, where they fit. */
+	const double beat = grid.period / tempo;
+	const double whole = std::max(1.0, std::round(double(plain) / (4 * beat))) * 4 * beat;
+	if (whole <= double(next_length) / 2) QVERIFY(std::abs(double(overlap) - whole) <= beat / 2 + 1);
+}
 
 void beats_test::a_beat_is_found_to_the_frame_data() {
 	QTest::addColumn<double>("bpm");

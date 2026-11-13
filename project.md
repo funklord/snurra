@@ -644,7 +644,8 @@ controls; each tile very compact but resizeable).
   checks the columns exactly (silent, half, quarter, silent read as
   0, 0, 0.5, 0.5, 0.25, 0.25, 0, 0) and that a tile closed mid-read stops
   at once; without the stop, it read all sixty seconds. Seen in Xvfb: a
-  swelling tone draws its diamond. Not yet for bytes still arriving.
+  swelling tone draws its diamond. A host's bytes are read for it too,
+  where the host allows a second read (embed.h).
   About 26 characters wide, 14 at least, frameless with a size grip.
   Opened at the pointer, clamped to the screen it is on (2026-11-12; it
   was not clamped, and by the corner opened half off the screen), shown
@@ -914,8 +915,17 @@ controls; each tile very compact but resizeable).
   files, one per channel: the overlap exactly 48000 frames for 1 s, the
   summed power 1.0000 through it, each side whole outside it, and B all
   of itself; straight lines (power 0.31 off) and starting B at once (a
-  third of it lost) each fail. Not yet: beat-snapping the overlap
-  (step 6).
+  third of it lost) each fail. **Beat-snapped, 2026-11-13 (step 6):**
+  where both tracks have a beat grid, the overlap is the first's whole
+  bars nearest 5 s, moved by less than a beat so the next one's first
+  beat falls on a beat of the first -- a record brought in on the beat,
+  at either's tempo, within half the shorter. One function
+  (`snurra_train_overlap`) for the train as it plays and for every seek
+  and lane time, so they agree. Tempos are not matched for it: sync is
+  the DJ's (sec 4), and two tempos apart drift from in phase through the
+  overlap. Tested on grids alone, four cases including tempos and a
+  short next, to under a frame (`a_trains_overlap_brings_the_next_in_on_the_beat`);
+  whole bars without the phase fail it. Not yet heard on real music.
 - **Drawers, built 2026-11-12** (sec 3b): a tile has an upward drawer
   (empty until video) and a downward one, its controls; one height for
   every waveform. A window takes the drawers out of its tiles and gives
