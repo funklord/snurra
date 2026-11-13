@@ -18,6 +18,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/node.h"
+#include "snurra/source.h"
 #include "snurra/tile.h"
 #include "snurra/wire.h"
 
@@ -113,7 +114,10 @@ int main(int argc, char *argv[]) {
 	                                   QStringLiteral("file"));
 	const QCommandLineOption volume(QStringLiteral("volume"), QStringLiteral("The level, 0 to 100."), QStringLiteral("per-cent"));
 	const QCommandLineOption speed(QStringLiteral("speed"), QStringLiteral("The speed, 0.25 to 4."), QStringLiteral("factor"));
-	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed });
+	const QCommandLineOption playlist(QStringLiteral("playlist"), QStringLiteral("Play the files a playlist names (.m3u, .pls), as a train."),
+	                                  QStringLiteral("file"));
+	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
+	                    playlist });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -142,7 +146,12 @@ int main(int argc, char *argv[]) {
 	 * 3c); one opened while another runs is a waveform, paused, until its
 	 * controls are pulled out. Within one launch the first file is first.
 	 */
-	const QStringList files = parser.positionalArguments();
+	/* A playlist, named or given with -playlist as mplayer's, is the files
+	 * it names, in its place in the train. */
+	QStringList files;
+	for (const QString &name : parser.values(playlist)) files << snurra_playlist(name);
+	for (const QString &name : parser.positionalArguments())
+		files << (snurra_is_playlist(name) && QFileInfo(name).isFile() ? snurra_playlist(name) : QStringList{ name });
 	qint64 start_us = 0;
 	if (parser.isSet(start_at) && (start_us = parse_time_us(parser.value(start_at))) < 0) {
 		std::fprintf(stderr, "snurra: -ss takes seconds, m:ss or h:mm:ss, not \"%s\"\n", qPrintable(parser.value(start_at)));

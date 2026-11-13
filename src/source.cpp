@@ -3,9 +3,11 @@
 #include "snurra/bytes_input.h"
 
 #include <QCollator>
+#include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QMap>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QRegularExpression>
@@ -589,7 +591,9 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
 			continue;
 		}
 		const QFileInfo info(url.toLocalFile());
-		if (info.isFile()) {
+		if (info.isFile() && snurra_is_playlist(info.absoluteFilePath())) {
+			found << snurra_playlist(info.absoluteFilePath());
+		} else if (info.isFile()) {
 			found << info.absoluteFilePath();
 		} else if (info.isDir()) {
 			/* A folder of albums, not a home: what is looked at is capped
@@ -610,6 +614,42 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
 		}
 	}
 	return found;
+}
+
+bool snurra_is_playlist(const QString &path) {
+	const QString suffix = QFileInfo(path).suffix().toLower();
+	return suffix == QLatin1String("m3u") || suffix == QLatin1String("m3u8") || suffix == QLatin1String("pls");
+}
+
+QStringList snurra_playlist(const QString &path, int most) {
+	QStringList entries;
+	if (!snurra_is_playlist(path)) return entries;
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) return entries;
+	const QDir beside = QFileInfo(path).absoluteDir();
+	const QStringList lines = QString::fromUtf8(file.read(1 << 20)).split(QLatin1Char('\n'));
+	const bool pls = QFileInfo(path).suffix().compare(QLatin1String("pls"), Qt::CaseInsensitive) == 0;
+	QMap<int, QString> numbered;   /* pls: FileN=, in N's order */
+	static const QRegularExpression file_n(QStringLiteral("^File(\\d+)=(.*)$"), QRegularExpression::CaseInsensitiveOption);
+	for (QString line : lines) {
+		line = line.trimmed();
+		if (line.isEmpty()) continue;
+		if (pls) {
+			const QRegularExpressionMatch match = file_n.match(line);
+			if (match.hasMatch()) numbered.insert(match.captured(1).toInt(), match.captured(2).trimmed());
+		} else if (!line.startsWith(QLatin1Char('#'))) {
+			numbered.insert(int(numbered.size()), line);
+		}
+	}
+	for (const QString &entry : numbered) {
+		if (int(entries.size()) >= most) break;
+		QString name = entry;
+		if (name.startsWith(QLatin1String("file://"), Qt::CaseInsensitive)) name = QUrl(name).toLocalFile();
+		else if (!snurra_is_url(name)) name = QDir::cleanPath(beside.absoluteFilePath(name));
+		if (!snurra_is_url(name) && snurra_is_playlist(name)) continue;
+		entries << name;
+	}
+	return entries;
 }
 
 QStringList snurra_stem_names(const QString &path) {

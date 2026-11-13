@@ -140,6 +140,16 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most = 64);
  */
 QStringList snurra_stem_names(const QString &path);
 
+/*
+ * A playlist's entries (mplayer's -playlist): .m3u and .m3u8 a line each,
+ * comments (#) skipped; .pls its FileN= lines in N's order. A path is
+ * taken from the playlist's folder, a file:// URL as its path, another URL
+ * as it is. Another playlist in it is left out -- no loops -- and so is
+ * all past `most`. Empty for a name that is not a playlist's.
+ */
+bool snurra_is_playlist(const QString &path);
+QStringList snurra_playlist(const QString &path, int most = 1000);
+
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
 bool snurra_drop_offers(const QMimeData *mime);

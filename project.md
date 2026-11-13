@@ -716,6 +716,13 @@ controls; each tile very compact but resizeable).
   forms of `-ss` land exactly, paused, with the level and tempo
   (`mplayers_options_say_where_and_how_it_plays`), and an early full
   screen arrives with the picture; each fails with its line taken out.
+  **Playlists** (`snurra_playlist`): an `.m3u`, `.m3u8` or `.pls`, named
+  as a file or given with `-playlist`, is the files it names in its
+  place in the train; dropped, the same. Paths are taken from the
+  playlist's folder; a playlist inside one is left out, so none loops;
+  at most 1000 entries (assumed). Tested by reading both kinds, a launch
+  of both and a drop (`a_playlist_is_a_train_of_what_it_names`). Not
+  yet: `-loop`.
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;

@@ -12,6 +12,9 @@
 #include <QLibrary>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QMimeData>
+#include <QUrl>
+#include <QMap>
 #include <QProcess>
 #include <QStandardPaths>
 
@@ -42,6 +45,7 @@ private slots:
 	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
 	void mplayers_keys_drive_the_tile();
 	void mplayers_options_say_where_and_how_it_plays();
+	void a_playlist_is_a_train_of_what_it_names();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 	void a_stack_plays_its_lanes_at_once_from_one_time();
@@ -1288,6 +1292,51 @@ void handover_test::mplayers_options_say_where_and_how_it_plays() {
 	QProcess *bad = start({ QStringLiteral("-ss"), QStringLiteral("soon"), QStringLiteral("a.flac") });
 	QVERIFY(bad->waitForFinished(5000));
 	QCOMPARE(bad->exitCode(), 2);
+}
+
+/*
+ * mplayer's playlists: an .m3u -- a comment, a path beside it, an absolute
+ * one, a file:// URL, an http one and a playlist in it, left out -- and a
+ * .pls whose File2 is written before File1. Read, they are their entries
+ * in order; launched, positional or as -playlist, the player's train is
+ * them; dropped, they join as their entries.
+ */
+void handover_test::a_playlist_is_a_train_of_what_it_names() {
+	const QDir dir(m_dir->path());
+	QVERIFY(dir.mkpath(QStringLiteral("lists")));
+	const QString m3u = dir.filePath(QStringLiteral("lists/mix.m3u"));
+	const QString pls = dir.filePath(QStringLiteral("lists/radio.pls"));
+	auto write = [](const QString &path, const QByteArray &text) {
+		QFile file(path);
+		return file.open(QIODevice::WriteOnly) && file.write(text) == text.size();
+	};
+	QVERIFY(write(m3u, "#EXTM3U\n#EXTINF:3,One\none.flac\n\n" + dir.filePath(QStringLiteral("two.flac")).toUtf8()
+	                            + "\nfile://" + dir.filePath(QStringLiteral("three flac.flac")).toUtf8().replace(' ', "%20")
+	                            + "\nhttp://127.0.0.1:9/four\nother.m3u\n"));
+	QVERIFY(write(pls, "[playlist]\nFile2=b.flac\nTitle2=B\nFile1=a.flac\nNumberOfEntries=2\nVersion=2\n"));
+	const QStringList mix{ dir.filePath(QStringLiteral("lists/one.flac")), dir.filePath(QStringLiteral("two.flac")),
+		               dir.filePath(QStringLiteral("three flac.flac")), QStringLiteral("http://127.0.0.1:9/four") };
+	const QStringList radio{ dir.filePath(QStringLiteral("lists/a.flac")), dir.filePath(QStringLiteral("lists/b.flac")) };
+	QCOMPARE(snurra_playlist(m3u), mix);
+	QCOMPARE(snurra_playlist(pls), radio);
+	QCOMPARE(snurra_playlist(m3u, 2), mix.mid(0, 2));
+	QVERIFY(snurra_playlist(dir.filePath(QStringLiteral("two.flac"))).isEmpty());
+	QMimeData mime;
+	mime.setUrls({ QUrl::fromLocalFile(pls) });
+	QCOMPARE(snurra_dropped(&mime), radio);
+
+	QProcess *a = start({ QStringLiteral("--paused"), QStringLiteral("-playlist"), pls, m3u });
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QList<snurra_tile_state> states;
+	QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 6, 5000);
+	QMap<int, QString> train;
+	for (const snurra_tile_state &state : states) {
+		QCOMPARE(state.row, 0);
+		train.insert(state.column, state.source);
+	}
+	QCOMPARE(train.values(), radio + mix);
+	a->terminate();
+	QVERIFY(a->waitForFinished(5000));
 }
 
 QProcess *handover_test::start_process_for_options(const QString &time) {
