@@ -118,6 +118,7 @@ public:
 
 	~ffmpeg_source() override {
 		swr_free(&m_swr);
+		av_channel_layout_uninit(&m_swr_layout);
 		avcodec_free_context(&m_codec);
 		avformat_close_input(&m_format);
 		av_packet_free(&m_packet);
@@ -344,12 +345,25 @@ private:
 
 	size_t pending_frames() const { return m_pending.size() / 2 - m_pending_from; }
 
-	bool make_resampler() {
+	/*
+	 * The resampler for what is decoded: the decoder's word for it at
+	 * first, and again from each frame where the frame says otherwise. On
+	 * FFmpeg 9.0 (Android's release kit, 2026-11-13) an Opus frame's
+	 * layout was not the decoder's, a resampler made for one read the
+	 * other as planes it did not have, and the deck's reader died in
+	 * swr_convert on a null plane.
+	 */
+	bool make_resampler(const AVChannelLayout *layout = nullptr, int format = -1, int rate = 0) {
 		swr_free(&m_swr);
+		if (!layout) layout = &m_codec->ch_layout;
+		if (format < 0) format = m_codec->sample_fmt;
+		if (rate <= 0) rate = m_codec->sample_rate;
+		av_channel_layout_uninit(&m_swr_layout);
+		av_channel_layout_copy(&m_swr_layout, layout);
+		m_swr_format = format;
+		m_swr_rate = rate;
 		AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-		if (swr_alloc_set_opts2(&m_swr, &stereo, AV_SAMPLE_FMT_FLT, m_rate, &m_codec->ch_layout,
-		                        m_codec->sample_fmt, m_codec->sample_rate, 0, nullptr)
-		    < 0)
+		if (swr_alloc_set_opts2(&m_swr, &stereo, AV_SAMPLE_FMT_FLT, m_rate, layout, AVSampleFormat(format), rate, 0, nullptr) < 0)
 			return false;
 		return swr_init(m_swr) >= 0;
 	}
@@ -409,6 +423,12 @@ private:
 	}
 
 	void append(const AVFrame *frame) {
+		if (frame
+		    && (frame->format != m_swr_format || frame->sample_rate != m_swr_rate
+		        || av_channel_layout_compare(&frame->ch_layout, &m_swr_layout) != 0)
+		    && !make_resampler(&frame->ch_layout, frame->format, frame->sample_rate))
+			return;
+		if (!m_swr) return;
 		int in = frame ? frame->nb_samples : 0;
 		const uint8_t *planes[AV_NUM_DATA_POINTERS] = {};
 		if (frame)
@@ -525,6 +545,9 @@ private:
 	AVFormatContext *m_format = nullptr;
 	AVCodecContext *m_codec = nullptr;
 	SwrContext *m_swr = nullptr;
+	AVChannelLayout m_swr_layout{};   /* what m_swr was made for */
+	int m_swr_format = -1;
+	int m_swr_rate = 0;
 	AVPacket *m_packet = nullptr;
 	AVFrame *m_frame = nullptr;
 	std::vector<int> m_audio_streams;   /* the sound tracks, by stream index */
