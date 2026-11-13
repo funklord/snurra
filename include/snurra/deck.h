@@ -2,11 +2,13 @@
 #define SNURRA_DECK_H
 
 #include <QString>
+#include <QStringList>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -122,6 +124,14 @@ public:
 	/* What it was given could not be opened: it plays silence instead. */
 	bool failed() const { return m_failed.load(std::memory_order_acquire); }
 
+	/* The source's sound tracks (a film's languages), empty for one, and
+	 * which plays; known once opened. choose_audio_track takes effect at
+	 * the next seek -- a tile seeks to where it is, so the change crosses
+	 * over as a seek does. */
+	QStringList audio_tracks() const;
+	int audio_track() const { return m_audio_track.load(std::memory_order_acquire); }
+	void choose_audio_track(int track) { m_audio_wanted.store(track, std::memory_order_release); }
+
 	/* A failed deck's stand-in silence made `frames` long -- a picture's
 	 * length, for a file with no sound, so it ends with its picture. */
 	void set_stand_in_length(int64_t frames) { m_stand_in_length.store(frames, std::memory_order_release); }
@@ -213,6 +223,10 @@ private:
 	std::atomic<bool> m_finished{ false };
 	std::atomic<bool> m_failed{ false };
 	std::atomic<int64_t> m_stand_in_length{ -1 };   /* -1: as it is */
+	std::atomic<int> m_audio_wanted{ -1 };
+	std::atomic<int> m_audio_track{ -1 };
+	mutable std::mutex m_audio_mutex;
+	QStringList m_audio_tracks;
 
 	/* The callback's own. */
 	int64_t m_position = 0;

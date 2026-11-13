@@ -153,6 +153,9 @@ public:
 	/* mplayer's z and x: the subtitles shown later (positive) or earlier
 	 * by `us` more, for a file beside the picture that is out of step. */
 	void delay_subtitles(qint64 us);
+	/* mplayer's #: the file's next sound track (a film's languages), from
+	 * where it is, crossed over as a seek. */
+	void next_audio_track();
 	qint64 subtitle_delay() const { return m_subtitle_delay; }
 	QString subtitles_name() const;
 

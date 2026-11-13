@@ -73,7 +73,9 @@ and everything above it knows nothing of SFTP or fuzznet.
   mismatch, as BeerSSH's does; tried both ways (61 and 61 passes,
   headers claiming 63 are refused). BeerSSH measured all of snurra's
   sources compiling against 9.0's headers for arm64; nothing has played
-  against 9.0 yet. A release-kit build needs 9.0's headers given as
+  against 9.0 yet; on 2026-11-13 BeerSSH's CI linked snurra (4fea617)
+  in its Android job against 9.0's headers and the release kit, green. A
+  release-kit build needs 9.0's headers given as
   `FFMPEG_HEADERS`. BeerSSH also measured its APK growing 17 MB with
   snurra when FFmpeg's four libraries go as `ANDROID_EXTRA_LIBS` and no
   QML is pulled in, against 27 MB above.
@@ -988,6 +990,11 @@ controls; each tile very compact but resizeable).
   record upright video so -- is turned by the nearest quarter, the way
   ffmpeg's own output turns it, which the test reads back as its
   reference; the drawer takes the shape shown.
+  A film's sound tracks (its languages) are listed by language and
+  title, FFmpeg's best playing first; mplayer's `#` takes the next, and
+  the source opens its decoder on that stream at the deck's next seek,
+  which the tile makes at once to where it is -- so the change crosses
+  over as a seek does, and lands on the exact frame (2026-11-13).
   A picture without sound plays (3c54730), as long as its picture: the
   picture's reader says the length (its stream's, else the file's) and
   the deck's stand-in silence is told it, so a 3 s GIF is 3 s and ends

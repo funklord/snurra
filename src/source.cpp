@@ -135,13 +135,18 @@ public:
 
 	void set_interrupt(std::function<bool()> interrupted) override { m_interrupted = std::move(interrupted); }
 
-	bool open_streams(bool find_info) {
-		if (find_info && avformat_find_stream_info(m_format, nullptr) < 0) return false;
-		const AVCodec *codec = nullptr;
-		m_stream = av_find_best_stream(m_format, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
-		if (m_stream < 0 || !codec) return false;
+	/* The decoder and resampler for stream `index`, the one read from here
+	 * on; what came before is closed. */
+	bool open_codec(int index) {
+		avcodec_free_context(&m_codec);
+		swr_free(&m_swr);
+		if (index < 0 || index >= int(m_format->nb_streams)) return false;
+		const AVCodec *codec = avcodec_find_decoder(m_format->streams[index]->codecpar->codec_id);
+		if (!codec) return false;
+		m_stream = index;
 		const AVStream *stream = m_format->streams[m_stream];
 		m_codec = avcodec_alloc_context3(codec);
+
 		if (!m_codec || avcodec_parameters_to_context(m_codec, stream->codecpar) < 0) return false;
 		if (avcodec_open2(m_codec, codec, nullptr) < 0) return false;
 		if (!make_resampler()) return false;
@@ -168,9 +173,46 @@ public:
 			if (m_codec->sample_rate != m_rate) preroll_in += 256;
 			m_preroll = m_codec->sample_rate > 0 ? av_rescale(preroll_in, m_rate, m_codec->sample_rate) : 0;
 		}
+		return true;
+	}
+
+	QStringList audio_tracks() const override { return m_audio_streams.size() > 1 ? m_audio_names : QStringList(); }
+	int audio_track() const override {
+		for (size_t i = 0; i < m_audio_streams.size(); ++i)
+			if (m_audio_streams[i] == m_stream) return int(i);
+		return -1;
+	}
+	/* Takes effect from the next seek, which the deck makes at once. */
+	bool choose_audio_track(int track) override {
+		if (track < 0 || track >= int(m_audio_streams.size()) || m_audio_streams[size_t(track)] == m_stream) return false;
+		const int was = m_stream;
+		if (open_codec(m_audio_streams[size_t(track)])) return true;
+		open_codec(was);
+		return false;
+	}
+
+	bool open_streams(bool find_info) {
+		if (find_info && avformat_find_stream_info(m_format, nullptr) < 0) return false;
+		/* Every sound track a decoder exists for, named by its language
+		 * and title; FFmpeg's best (the default-marked, else the most
+		 * channels) plays first. */
+		for (unsigned i = 0; i < m_format->nb_streams; ++i) {
+			const AVStream *in = m_format->streams[i];
+			if (in->codecpar->codec_type != AVMEDIA_TYPE_AUDIO || !avcodec_find_decoder(in->codecpar->codec_id)) continue;
+			QStringList said;
+			if (const AVDictionaryEntry *language = av_dict_get(in->metadata, "language", nullptr, 0))
+				said << QString::fromUtf8(language->value);
+			if (const AVDictionaryEntry *title = av_dict_get(in->metadata, "title", nullptr, 0))
+				said << QString::fromUtf8(title->value);
+			if (said.isEmpty()) said << QStringLiteral("track %1").arg(m_audio_streams.size() + 1);
+			m_audio_streams.push_back(int(i));
+			m_audio_names << said.join(QStringLiteral(", "));
+		}
+		if (!open_codec(av_find_best_stream(m_format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0))) return false;
 		m_packet = av_packet_alloc();
 		m_frame = av_frame_alloc();
 		if (!m_packet || !m_frame) return false;
+		const AVStream *stream = m_format->streams[m_stream];
 
 		if (stream->duration > 0)
 			m_length = av_rescale_q(stream->duration, stream->time_base, AVRational{ 1, m_rate });
@@ -467,6 +509,8 @@ private:
 	SwrContext *m_swr = nullptr;
 	AVPacket *m_packet = nullptr;
 	AVFrame *m_frame = nullptr;
+	std::vector<int> m_audio_streams;   /* the sound tracks, by stream index */
+	QStringList m_audio_names;
 	int m_stream = -1;
 	int64_t m_length = 0;
 	bool m_exact_length = false;

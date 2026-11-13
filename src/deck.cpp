@@ -58,8 +58,18 @@ snurra_deck::snurra_deck(const start_t &start)
 		/* Not for a close that gave up the opening: that is not a failure. */
 		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);
 		m_length.store(m_source->length(), std::memory_order_relaxed);
+		{
+			std::lock_guard<std::mutex> lock(m_audio_mutex);
+			m_audio_tracks = m_source->audio_tracks();
+		}
+		m_audio_track.store(m_source->audio_track(), std::memory_order_release);
 		read_loop();
 	});
+}
+
+QStringList snurra_deck::audio_tracks() const {
+	std::lock_guard<std::mutex> lock(m_audio_mutex);
+	return m_audio_tracks;
 }
 
 snurra_deck::~snurra_deck() {
@@ -225,6 +235,9 @@ void snurra_deck::read_loop() {
 		if (now != generation) {
 			generation = now;
 			m_reader_generation = now;
+			const int wanted = m_audio_wanted.load(std::memory_order_acquire);
+			if (wanted >= 0 && wanted != m_audio_track.load(std::memory_order_relaxed) && m_source->choose_audio_track(wanted))
+				m_audio_track.store(m_source->audio_track(), std::memory_order_release);
 			m_source->seek(m_seek_target.load(std::memory_order_relaxed));
 			ended = false;
 		}

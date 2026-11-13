@@ -22,6 +22,7 @@
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/node.h"
+#include "snurra/source.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
 #include "test_bytes.h"
@@ -49,6 +50,7 @@ private slots:
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
+	void a_films_other_sound_track_plays_from_where_it_is();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -445,6 +447,74 @@ void video_test::a_picture_is_shown_at_its_meant_shape_and_turn() {
 			if (ours != theirs) ++differ;
 		}
 	QCOMPARE(differ, 0);
+}
+
+/*
+ * mplayer's #: a film with two sound tracks, English silent and Swedish a
+ * tone. The source lists both by language and plays the first; the other
+ * chosen, the next seek reads it, from exactly that frame. In a window, #
+ * takes the next and says so.
+ */
+void video_test::a_films_other_sound_track_plays_from_where_it_is() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                         QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("testsrc=s=64x48:r=25:d=4"),
+	                         QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"),
+	                         QStringLiteral("anullsrc=r=48000:cl=stereo"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("sine=f=1000:r=48000:d=4"), QStringLiteral("-map"),
+	                         QStringLiteral("0:v"), QStringLiteral("-map"), QStringLiteral("1:a"), QStringLiteral("-map"),
+	                         QStringLiteral("2:a"), QStringLiteral("-t"), QStringLiteral("4"), QStringLiteral("-c:a"),
+	                         QStringLiteral("flac"), QStringLiteral("-metadata:s:a:0"), QStringLiteral("language=eng"),
+	                         QStringLiteral("-metadata:s:a:1"), QStringLiteral("language=swe"), QStringLiteral("-pix_fmt"),
+	                         QStringLiteral("yuv420p"), m_dir.filePath(QStringLiteral("two.mkv")) });
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+
+	auto loudness = [](snurra_source &source) {
+		std::vector<float> lr(2 * 4800);
+		const int got = source.read(lr.data(), 4800);
+		double sum = 0;
+		for (int i = 0; i < 2 * got; ++i) sum += double(lr[size_t(i)]) * lr[size_t(i)];
+		return got > 0 ? std::sqrt(sum / (2 * got)) : -1.0;
+	};
+	std::unique_ptr<snurra_source> source = snurra_open_source(m_dir.filePath(QStringLiteral("two.mkv")), 48000, 0);
+	QVERIFY(source && !source->stand_in());
+	QCOMPARE(source->audio_tracks(), (QStringList{ QStringLiteral("eng"), QStringLiteral("swe") }));
+	QCOMPARE(source->audio_track(), 0);
+	QVERIFY(loudness(*source) < 0.001);
+	QVERIFY(source->choose_audio_track(1));
+	QCOMPARE(source->audio_track(), 1);
+	source->seek(48000);
+	QCOMPARE(source->position(), int64_t(48000));
+	const double tone = loudness(*source);
+	QVERIFY2(tone > 0.05, qPrintable(QString::number(tone)));
+	QCOMPARE(source->position(), int64_t(48000 + 4800));
+	QVERIFY(!source->choose_audio_track(5));
+	QVERIFY(source->choose_audio_track(0));
+	source->seek(0);
+	QVERIFY(loudness(*source) < 0.001);
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(QStringLiteral("two.mkv"));
+	state.playing = true;
+	state.controls = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_COMPARE_WITH_TIMEOUT(tile->deck()->audio_tracks().size(), 2, 5000);
+	QCOMPARE(tile->deck()->audio_track(), 0);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QTest::keyClick(&node, Qt::Key_NumberSign);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->deck()->audio_track(), 1, 2000);
+	QWidget *view = nullptr;
+	for (QWidget *child : tile->drawer_above()->findChildren<QWidget *>())
+		if (child->accessibleName() == QLatin1String("Video")) view = child;
+	QVERIFY(view);
+	QCOMPARE(view->property("notice").toString(), QStringLiteral("Sound: swe"));
+	QTest::keyClick(&node, Qt::Key_NumberSign);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->deck()->audio_track(), 0, 2000);
 }
 
 int run_video_tests(int argc, char **argv) {

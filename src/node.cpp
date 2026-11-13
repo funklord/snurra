@@ -1127,6 +1127,7 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 	case Qt::Key_J: tile->next_subtitles(); break;
 	case Qt::Key_Z: tile->delay_subtitles(-100000); break;
 	case Qt::Key_X: tile->delay_subtitles(100000); break;
+	case Qt::Key_NumberSign: tile->next_audio_track(); break;
 	case Qt::Key_Q:
 	case Qt::Key_Escape: {
 		const QList<snurra_tile *> all = m_tiles;

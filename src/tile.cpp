@@ -818,6 +818,17 @@ void snurra_tile::delay_subtitles(qint64 us) {
 	show_video_frame();
 }
 
+void snurra_tile::next_audio_track() {
+	const QStringList tracks = m_deck->audio_tracks();
+	if (tracks.size() < 2) return;
+	const int next = (m_deck->audio_track() + 1) % int(tracks.size());
+	m_deck->choose_audio_track(next);
+	seek_by(0);
+	const QString notice = tr("Sound: %1").arg(tracks[next]);
+	if (m_view) m_view->show_notice(notice);
+	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_notice(notice);
+}
+
 /* mplayer's j: the next track, and after the last, none. */
 void snurra_tile::next_subtitles() {
 	if (!m_view) return;

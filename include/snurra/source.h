@@ -2,6 +2,7 @@
 #define SNURRA_SOURCE_H
 
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <functional>
@@ -82,6 +83,16 @@ public:
 	/* A stand-in's length, told it from elsewhere -- a picture's, when the
 	 * file has no sound. Nothing for a real source. */
 	virtual void set_length(int64_t frames) { (void)frames; }
+
+	/* The file's sound tracks -- a film's languages -- by name, and which
+	 * plays; another chosen plays from where the next seek puts it. A
+	 * source of one track, or none, lists none. */
+	virtual QStringList audio_tracks() const { return {}; }
+	virtual int audio_track() const { return -1; }
+	virtual bool choose_audio_track(int track) {
+		(void)track;
+		return false;
+	}
 };
 
 /*
