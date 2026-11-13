@@ -55,10 +55,11 @@ std::vector<float> snurra_peaks_of(snurra_source &source, int64_t length, int co
 }
 
 snurra_peaks::snurra_peaks(const QString &source, int rate, int columns,
-                           std::function<void(int first, const std::vector<float> &values)> piece) {
-	m_thread = std::thread([this, source, rate, columns, piece] {
+                           std::function<void(int first, const std::vector<float> &values)> piece, int audio_track) {
+	m_thread = std::thread([this, source, rate, columns, piece, audio_track] {
 		std::unique_ptr<snurra_source> reader = snurra_open_source(source, rate, 0);
 		if (!reader || reader->length() <= 0) return;
+		if (audio_track >= 0 && reader->choose_audio_track(audio_track)) reader->seek(0);
 		snurra_peaks_of(*reader, reader->length(), columns, [this, &piece](int first, const std::vector<float> &values) {
 			if (m_stop.load(std::memory_order_relaxed)) return false;
 			piece(first, values);

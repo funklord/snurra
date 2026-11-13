@@ -361,6 +361,18 @@ separate offline with Demucs as an outside tool, once, cached; (3) in
 process through an ONNX runtime, later if ever -- large, and not real
 time on Android.
 
+**Step 1 built 2026-11-13.** A `.stem.mp4` or `.stem.m4a`, launched or
+dropped, is four lanes -- drums, bass, other, vocals, Native
+Instruments' order, the mix (track 0) left out -- each from the start of
+the timeline and below what is there, since a lane cannot yet start
+later than the timeline (sec 3b, the holder's). Known by the name, as
+the format's own programs know it. The tile state carries
+`audio_track`, so a deck opens on its stem before a frame is read, a
+handover keeps it, and the waveform and the beats are read from the
+stem, not the mix. The title says which stem. Not yet: the stem names
+from the file's own metadata (NI's `stem` box, which FFmpeg is not known
+to expose), so a file whose stems are in another order is mislabelled.
+
 **Two layouts** (the holder, 2026-11-12). The holder dislikes windows
 that are not rectangles, but the stack needs them, and some systems
 cannot show them. So the player keeps **its normal look** -- tiles with

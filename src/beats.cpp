@@ -271,10 +271,12 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 	return grid;
 }
 
-snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done) {
-	m_thread = std::thread([this, source, rate, done] {
+snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done,
+                           int audio_track) {
+	m_thread = std::thread([this, source, rate, done, audio_track] {
 		std::unique_ptr<snurra_source> reader = snurra_open_source(source, rate, 0);
 		if (!reader || reader->length() <= 0) return;
+		if (audio_track >= 0 && reader->choose_audio_track(audio_track)) reader->seek(0);
 		const snurra_beat_grid grid = snurra_find_beats(*reader, rate, [this] { return m_stop.load(std::memory_order_relaxed); });
 		if (!m_stop.load()) done(grid);
 	});

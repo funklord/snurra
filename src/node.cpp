@@ -197,6 +197,32 @@ void snurra_node::send(QLocalSocket *socket, const snurra_wire::message &m) {
 }
 
 snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
+	/*
+	 * A stem file is a stack of its own (project.md sec 3e, step 1): a lane
+	 * a stem, the mix left out, from the start of the timeline -- below
+	 * what is here, since a lane cannot yet start later than the
+	 * timeline does (sec 3b). Played or paused together, as lanes are;
+	 * the first holds the controls. The first stem's tile is returned.
+	 */
+	const QStringList stems = state.audio_track < 0 ? snurra_stem_names(state.source) : QStringList();
+	if (!stems.isEmpty()) {
+		int row = state.row;
+		if (!m_tiles.isEmpty()) {
+			row = 0;
+			for (snurra_tile *tile : m_tiles) row = qMax(row, tile->row() + 1);
+		}
+		snurra_tile *first = nullptr;
+		for (int i = 0; i < stems.size(); ++i) {
+			snurra_tile_state stem = state;
+			stem.audio_track = i + 1;
+			stem.row = row + i;
+			stem.column = 0;
+			stem.controls = state.controls && i == 0;
+			snurra_tile *tile = add_tile(stem, held);
+			if (!first) first = tile;
+		}
+		return first;
+	}
 	snurra_deck::start_t start;
 	start.source = state.source;
 	start.rate = m_engine->rate();
@@ -207,6 +233,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.level = float(state.level) / 100;
 	start.held = held;
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
+	start.audio_track = state.audio_track;
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);

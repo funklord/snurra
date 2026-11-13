@@ -44,7 +44,8 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
  * snurra_peaks reads the waveform; `done` is called on that thread. */
 class snurra_beats {
 public:
-	snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done);
+	snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done,
+	             int audio_track = -1);   /* as snurra_peaks' */
 	/* From a host's bytes (embed.h), `name` hinting at their kind. */
 	snurra_beats(std::shared_ptr<snurra_bytes> bytes, const QString &name, int rate,
 	             std::function<void(const snurra_beat_grid &)> done);

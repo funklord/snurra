@@ -132,6 +132,14 @@ bool snurra_is_url(const QString &name);
  * link (a browser's) as its URL. Empty when it brings none of these.
  */
 QStringList snurra_dropped(const QMimeData *mime, int folder_most = 64);
+/*
+ * A stem file's stems (project.md sec 3e): Native Instruments' .stem.mp4
+ * (or .stem.m4a) holds the mix as its first sound track and four stems
+ * after it, in this order -- drums, bass, other, vocals. Empty for any
+ * other name. By the name, as the format's own programs know one.
+ */
+QStringList snurra_stem_names(const QString &path);
+
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
 bool snurra_drop_offers(const QMimeData *mime);

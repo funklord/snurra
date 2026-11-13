@@ -559,7 +559,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 
 	QHBoxLayout *top = new QHBoxLayout;
 	m_top = top;
-	const QString name = QFileInfo(state.source).fileName();
+	/* A stem's lane says which stem it is. */
+	const QStringList stems = snurra_stem_names(state.source);
+	const QString stem = state.audio_track >= 1 && state.audio_track <= stems.size() ? stems.at(state.audio_track - 1) : QString();
+	const QString file_name = QFileInfo(state.source).fileName();
+	const QString name = stem.isEmpty() ? file_name : file_name + QStringLiteral(" -- ") + stem;
 	m_title = new QLabel(name.isEmpty() ? state.source : name, this);
 	m_title->setObjectName(QStringLiteral("snurra-handle"));
 	m_title->setCursor(Qt::OpenHandCursor);
@@ -764,7 +768,7 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 	};
 	m_beats.reset();
 	if (bytes) m_beats = std::make_unique<snurra_beats>(std::move(bytes), m_state.source, m_deck->rate(), done);
-	else m_beats = std::make_unique<snurra_beats>(m_state.source, m_deck->rate(), done);
+	else m_beats = std::make_unique<snurra_beats>(m_state.source, m_deck->rate(), done, m_state.audio_track);
 }
 
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
@@ -1129,7 +1133,7 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 	};
 	m_peaks.reset();   /* the last reader stopped before the next begins */
 	if (bytes) m_peaks = std::make_unique<snurra_peaks>(std::move(bytes), m_state.source, m_deck->rate(), COLUMNS, piece);
-	else m_peaks = std::make_unique<snurra_peaks>(m_state.source, m_deck->rate(), COLUMNS, piece);
+	else m_peaks = std::make_unique<snurra_peaks>(m_state.source, m_deck->rate(), COLUMNS, piece, m_state.audio_track);
 }
 
 snurra_tile::~snurra_tile() {
@@ -1157,6 +1161,7 @@ snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_stat
 	start.anchor_us = state.sampled_at_us;
 	start.playing = state.playing;
 	start.level = float(state.level) / 100;
+	start.audio_track = state.audio_track;
 	snurra_tile *tile = new snurra_tile(state, engine.add(start), parent);
 	tile->m_owner = &engine;
 	/* A second read the host allows: the waveform's, the picture's and
@@ -1188,6 +1193,7 @@ snurra_tile_state snurra_tile::state() const {
 	m_deck->last_rendered(frame, at, advanced);
 	now.position_us = frames_to_us(frame, m_deck->rate());
 	now.sampled_at_us = advanced > 0 ? at : snurra_clock_us();
+	if (m_deck->audio_track() >= 0) now.audio_track = m_deck->audio_track();
 	return now;
 }
 

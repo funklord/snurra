@@ -34,8 +34,10 @@ std::vector<float> snurra_peaks_of(snurra_source &source, int64_t length, int co
  */
 class snurra_peaks {
 public:
+	/* `audio_track`: which of the file's sound tracks, as a deck's (a
+	 * stem's lane); -1 the file's own choice. */
 	snurra_peaks(const QString &source, int rate, int columns,
-	             std::function<void(int first, const std::vector<float> &values)> piece);
+	             std::function<void(int first, const std::vector<float> &values)> piece, int audio_track = -1);
 
 	/*
 	 * From bytes of the consumer's own -- a second snurra_bytes, never the

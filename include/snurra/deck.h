@@ -48,6 +48,7 @@ public:
 		bool held = false;             /* silent until a fade brings it in */
 		bool anchored = false;         /* in step with the anchor's clock: a handover's taker */
 		int64_t lead_us = 0;           /* how far ahead the first block is needed */
+		int audio_track = -1;          /* the sound track to open on; -1 the file's choice */
 	};
 
 	explicit snurra_deck(const start_t &start);

@@ -46,7 +46,8 @@ snurra_deck::snurra_deck(const start_t &start)
 	const QString name = start.source;
 	const int64_t fallback = start.fallback_length;
 	std::shared_ptr<snurra_bytes> bytes = start.bytes;
-	m_reader = std::thread([this, name, fallback, bytes] {
+	const int track = start.audio_track;
+	m_reader = std::thread([this, name, fallback, bytes, track] {
 		/* A wait for bytes is given up for a seek elsewhere or a close. */
 		auto interrupted = [this] {
 			return m_stop.load(std::memory_order_relaxed)
@@ -58,6 +59,12 @@ snurra_deck::snurra_deck(const start_t &start)
 		/* Not for a close that gave up the opening: that is not a failure. */
 		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);
 		m_length.store(m_source->length(), std::memory_order_relaxed);
+		/* Opened on its track, before a frame is read: a stem's lane is
+		 * never heard as the mix. */
+		if (track >= 0) {
+			m_audio_wanted.store(track, std::memory_order_release);
+			if (m_source->choose_audio_track(track)) m_source->seek(0);
+		}
 		{
 			std::lock_guard<std::mutex> lock(m_audio_mutex);
 			m_audio_tracks = m_source->audio_tracks();

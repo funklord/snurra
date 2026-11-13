@@ -12,6 +12,8 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QSignalSpy>
+#include <QDataStream>
+#include <QLabel>
 #include <QMimeData>
 #include <QProcess>
 #include <QRegularExpression>
@@ -26,6 +28,7 @@
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/node.h"
+#include "snurra/peaks.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
@@ -62,6 +65,7 @@ private slots:
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
 	void a_films_other_sound_track_plays_from_where_it_is();
+	void a_stem_file_is_a_stack_of_its_stems();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -826,3 +830,77 @@ int run_video_tests(int argc, char **argv) {
 }
 
 #include "video_test.moc"
+
+/*
+ * Stems (project.md sec 3e, step 1): a .stem.mp4 of five sound tracks --
+ * the mix, then drums, bass, other and vocals -- where track k is silent
+ * until k * 0.4 s, so what is read says which track it is. Dropped on an
+ * empty window it is four lanes, one stem each from the start, the mix
+ * left out; each deck opens on its stem, the title says which, and the
+ * waveform is read from the stem too. Dropped again, four more lanes
+ * below. A handover carries the track.
+ */
+void video_test::a_stem_file_is_a_stack_of_its_stems() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString path = m_dir.filePath(QStringLiteral("song.stem.mp4"));
+	QStringList args{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y") };
+	for (int k = 0; k < 5; ++k)
+		args << QStringLiteral("-f") << QStringLiteral("lavfi") << QStringLiteral("-i")
+		     << QStringLiteral("aevalsrc='if(gte(t,%1),0.5*sin(2*PI*440*t),0)':d=2:s=48000").arg(k * 0.4);
+	for (int k = 0; k < 5; ++k) args << QStringLiteral("-map") << QString::number(k);
+	args << QStringLiteral("-c:a") << QStringLiteral("aac") << path;
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, args);
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+	QCOMPARE(snurra_stem_names(path).size(), 4);
+	QVERIFY(snurra_stem_names(m_dir.filePath(QStringLiteral("song.mp4"))).isEmpty());
+
+	/* Each track's own: the first loud column comes k * 0.4 s in. */
+	for (int k = 0; k < 5; ++k) {
+		std::vector<float> columns(100, -1);
+		std::atomic<int> done{ 0 };
+		{
+			snurra_peaks peaks(path, 48000, 100, [&](int first, const std::vector<float> &values) {
+				for (size_t i = 0; i < values.size(); ++i) columns[size_t(first) + i] = values[i];
+				done += int(values.size());
+			}, k);
+			QTRY_COMPARE_WITH_TIMEOUT(done.load(), 100, 10000);
+		}
+		int loud = 0;
+		while (loud < 100 && columns[size_t(loud)] < 0.1f) ++loud;
+		QVERIFY2(qAbs(loud - k * 20) <= 2, qPrintable(QStringLiteral("track %1 is loud from column %2").arg(k).arg(loud)));
+	}
+
+	snurra_node node;
+	node.add_files({ path }, snurra_wire::RIGHT);
+	QCOMPARE(node.tile_count(), 4);
+	const QStringList stems{ QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
+	QList<snurra_tile *> lanes(4, nullptr);
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) {
+		QCOMPARE(tile->column(), 0);
+		QVERIFY(tile->row() >= 0 && tile->row() < 4);
+		lanes[tile->row()] = tile;
+	}
+	for (int i = 0; i < 4; ++i) {
+		QVERIFY(lanes[i]);
+		QTRY_COMPARE_WITH_TIMEOUT(lanes[i]->deck()->audio_track(), i + 1, 5000);
+		QCOMPARE(lanes[i]->state().audio_track, i + 1);
+		QLabel *title = lanes[i]->findChild<QLabel *>(QStringLiteral("snurra-handle"));
+		QVERIFY(title);
+		QCOMPARE(title->text(), QStringLiteral("song.stem.mp4 -- ") + stems[i]);
+	}
+	node.add_files({ path }, snurra_wire::RIGHT);
+	QCOMPARE(node.tile_count(), 8);
+	QList<int> rows;
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) rows << tile->row();
+	std::sort(rows.begin(), rows.end());
+	QCOMPARE(rows, (QList<int>{ 0, 1, 2, 3, 4, 5, 6, 7 }));
+
+	QByteArray bytes;
+	QDataStream out(&bytes, QIODevice::WriteOnly);
+	out << lanes[2]->state();
+	snurra_tile_state back;
+	QDataStream in(bytes);
+	in >> back;
+	QCOMPARE(back.audio_track, 3);
+}

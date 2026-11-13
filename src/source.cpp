@@ -612,6 +612,14 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
 	return found;
 }
 
+QStringList snurra_stem_names(const QString &path) {
+	const QString name = QFileInfo(path).fileName();
+	if (!name.endsWith(QLatin1String(".stem.mp4"), Qt::CaseInsensitive)
+	    && !name.endsWith(QLatin1String(".stem.m4a"), Qt::CaseInsensitive))
+		return {};
+	return { QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
+}
+
 bool snurra_drop_offers(const QMimeData *mime) {
 	if (!mime) return false;
 	if (!mime->hasUrls()) return snurra_is_url(mime->text().trimmed());
