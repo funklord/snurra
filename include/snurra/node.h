@@ -155,7 +155,8 @@ private:
 	 * once, at a time on the group's timeline, in frames. */
 	void play_group(snurra_tile *from, bool playing);
 	void seek_group(snurra_tile *from, qint64 position_us);
-	void start_group_at(int64_t time);
+	/* `moving`: the group is playing, and `time` is its time now. */
+	void start_group_at(int64_t time, bool moving = false);
 	QList<snurra_tile *> lane(int row) const;
 	int64_t lane_start(snurra_tile *tile) const;
 	/* The tile of lane `row` that plays at `time`, and its frame then;

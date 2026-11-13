@@ -58,6 +58,7 @@ private slots:
 	void a_tile_dropped_on_another_trades_places();
 	void the_tempo_reaches_16_and_snaps_to_the_middle();
 	void a_dark_desktop_is_found_where_it_is_written();
+	void a_jump_while_playing_lands_exactly_its_step_on();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -843,6 +844,35 @@ void embed_test::a_dark_desktop_is_found_where_it_is_written() {
 	 * the curves against it. */
 	const QPalette dark = snurra_dark_palette();
 	QCOMPARE(snurra_scheme_of(dark.color(QPalette::Window), dark.color(QPalette::WindowText)), snurra_scheme::dark);
+}
+
+/*
+ * A jump while playing is seamless (the holder, 2026-11-13: "the jump 4
+ * bars isn't transparent"): the track goes on from exactly its step past
+ * where it would have been -- not short by the time the switch takes to
+ * be heard, which put a 4 bar jump off the beat.
+ */
+void embed_test::a_jump_while_playing_lands_exactly_its_step_on() {
+	snurra_node node;
+	snurra_tile_state state = placed(QStringLiteral("a"), 0, 0);
+	state.duration_us = 60000000;
+	state.controls = true;
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	tile->request_playing(true);
+	QTest::qWait(800);
+	const int rate = tile->deck()->rate();
+	const qint64 before_us = snurra_clock_us();
+	const int64_t before = tile->frame_now();
+	tile->jump(1, false);   /* 10 s, a track under ten minutes */
+	QTest::qWait(800);
+	const qint64 after_us = snurra_clock_us();
+	const int64_t after = tile->frame_now();
+	const int64_t expected = before + snurra_us_to_frames(after_us - before_us, rate) + snurra_us_to_frames(10000000, rate);
+	const double off_ms = double(after - expected) * 1000 / rate;
+	qInfo("after the jump: %.1f ms off where it would be", off_ms);
+	QVERIFY2(std::abs(off_ms) < 5, qPrintable(QStringLiteral("%1 ms off its step").arg(off_ms)));
 }
 
 /*

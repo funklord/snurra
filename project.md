@@ -1022,6 +1022,14 @@ controls; each tile very compact but resizeable).
   checks the shared answer -- beside a right edge, under a bottom edge,
   too far, not level, and the nearer of two edges. The marker window
   itself is not yet seen on a real X11 screen.
+- **A jump while playing lands exactly its step on** (2026-11-13, the
+  holder: "the jump 4 bars isn't transparent"): a seek while the group
+  plays is switched a lead ahead -- the output's latency and 50 ms --
+  with the old place playing on until then, but it took the place asked
+  as of the moment asked, so every jump landed that lead short, off the
+  beat: 60 ms here. The time is now carried to the switch
+  (`start_group_at(time, moving)`); measured 0.0 ms off a 10 s step
+  (`a_jump_while_playing_lands_exactly_its_step_on`).
 - **The train plays as one, built 2026-11-12** (sec 3b, step 3): when a
   playing tile comes within 1.5 s of its length less the overlap, the
   next tile in its row is started at frame 0 on that exact moment

@@ -691,7 +691,7 @@ void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
 	                                                    / from->deck()->tempo());
 	for (snurra_tile *tile : m_tiles) {
 		if (tile->playing()) {
-			start_group_at(time);
+			start_group_at(time, true);
 			return;
 		}
 	}
@@ -719,9 +719,16 @@ void snurra_node::step_train(snurra_tile *tile, int direction) {
 	seek_group(next, next->offset_us());
 }
 
-void snurra_node::start_group_at(int64_t time) {
+void snurra_node::start_group_at(int64_t time, bool moving) {
 	m_stopped = false;
-	const qint64 at = snurra_clock_us() + m_engine->latency_us() + 50000;
+	const qint64 now = snurra_clock_us();
+	const qint64 at = now + m_engine->latency_us() + 50000;
+	/* Playing, `time` is the group's time now, and the switch is heard at
+	 * `at`: the old place plays on until then, so the new one is taken as
+	 * far on. Else a jump of 4 bars landed short by the output's latency
+	 * and 50 ms, off the beat -- heard as a skip (the holder, 2026-11-13:
+	 * "the jump 4 bars isn't transparent"). */
+	if (moving) time += snurra_us_to_frames(at - now, m_engine->rate());
 	m_following.clear();   /* every lane starts afresh: no train is mid-way */
 	for (int row : rows()) {
 		int64_t frame = 0;
@@ -760,7 +767,7 @@ void snurra_node::shift_lane(snurra_tile *tile, qint64 delta_us, bool done, bool
 	snurra_tile *clock = nullptr;
 	for (snurra_tile *other : m_tiles)
 		if (other->playing() && (!clock || clock->row() == tile->row())) clock = other;
-	if (clock) start_group_at(group_time(clock));
+	if (clock) start_group_at(group_time(clock), true);
 }
 
 /*
