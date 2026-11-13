@@ -18,11 +18,14 @@
 #include <QPointer>
 #include <QProcess>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QStandardPaths>
 #include <QTreeView>
+
+#include <algorithm>
 #include <QVBoxLayout>
 
 #include "snurra/beats.h"
@@ -172,6 +175,7 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 		const int letters = column == BPM ? 4 : column == KEY ? 5 : 12;
 		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * letters);
 	}
+	fit_columns();
 	m_status = new QLabel(this);
 	/* Wrapped: a long folder's line otherwise set the window's least width,
 	 * wider than a phone (seen 2026-11-13). */
@@ -379,6 +383,31 @@ void snurra_library::stop_scan() {
 	m_stop = true;
 	if (m_thread.joinable()) m_thread.join();
 	m_scanning = false;
+}
+
+void snurra_library::resizeEvent(QResizeEvent *event) {
+	QWidget::resizeEvent(event);
+	fit_columns();
+}
+
+/*
+ * Narrow -- a phone's portrait -- the name had what the four fixed
+ * columns left: 38 of 370 at 412 wide (2026-11-13). Where it would have
+ * under 20 letters, Folder is hidden -- the search still finds by it --
+ * and Artist takes a quarter of what BPM and Key leave; wide again, both
+ * come back as they were first set.
+ */
+void snurra_library::fit_columns() {
+	if (!m_view) return;
+	QHeaderView *header = m_view->header();
+	const int letter = fontMetrics().horizontalAdvance(QLatin1Char('M'));
+	const int width = m_view->viewport()->width() > 0 ? m_view->viewport()->width() : this->width();
+	const int fixed = letter * (12 + 4 + 5 + 12);
+	const bool narrow = width - fixed < letter * 20;
+	if (narrow == m_narrow) return;
+	m_narrow = narrow;
+	header->setSectionHidden(FOLDER, narrow);
+	header->resizeSection(ARTIST, narrow ? std::max(letter * 4, (width - letter * (4 + 5)) / 4) : letter * 12);
 }
 
 void snurra_library::found(const QStringList &paths, bool last) {

@@ -64,7 +64,11 @@ public:
 signals:
 	void play_requested(const QString &path);
 
+protected:
+	void resizeEvent(class QResizeEvent *event) override;
+
 private:
+	void fit_columns();
 	void scan();
 	void stop_scan();
 	void found(const QStringList &paths, bool last);
@@ -73,7 +77,7 @@ private:
 
 	QString m_folder;
 	QLineEdit *m_search;
-	QTreeView *m_view;
+	QTreeView *m_view = nullptr;
 	QLabel *m_status;
 	QStandardItemModel *m_model;
 	library_filter *m_filter;
@@ -85,6 +89,7 @@ private:
 	void stop_tempos();
 	std::atomic<bool> m_stop{ false };
 	bool m_scanning = false;
+	bool m_narrow = false;   /* Folder hidden and Artist narrowed, for the name's sake */
 	QHash<QString, QStandardItem *> m_items;   /* by path: the name's item */
 };
 

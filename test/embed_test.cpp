@@ -8,6 +8,7 @@
  */
 #include <QDial>
 #include <QMimeData>
+#include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
 #include <QElapsedTimer>
@@ -987,10 +988,19 @@ void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 	QTest::qWait(50);
 	a->set_beats(snurra_beat_grid{ 24000, 0, 10, 48000 });   /* the jumps' widest words, "4 bars" */
 	QTest::qWait(50);
+	/* The browser there gives the name half or more (it had 38 of 370:
+	 * Folder hidden, Artist narrowed); wide, Folder is back. */
+	QHeaderView *columns = list->header();
+	qInfo("browser at 412: %d wide, Name %d, Artist %d", list->viewport()->width(), columns->sectionSize(0), columns->sectionSize(1));
+	QVERIFY2(columns->sectionSize(0) * 2 >= list->viewport()->width(), qPrintable(QString::number(columns->sectionSize(0))));
+	QVERIFY(columns->isSectionHidden(4));
 	for (QToolButton *button : deck_a->findChildren<QToolButton *>())
 		if (button->isVisibleTo(&dj) && button->objectName().startsWith(QLatin1String("snurra-")))
 			QVERIFY2(button->width() >= button->sizeHint().width(),
 			         qPrintable(QStringLiteral("%1 %2 wide of %3").arg(button->objectName()).arg(button->width()).arg(button->sizeHint().width())));
+	dj.resize(900, 600);
+	QTest::qWait(50);
+	QVERIFY(!columns->isSectionHidden(4));
 	QVERIFY2(dj.minimumSizeHint().width() <= 412, qPrintable(QString::number(dj.minimumSizeHint().width())));
 	dj.set_crossfader(-1);
 	QCOMPARE(a->deck()->fade_to(), 1.0f);

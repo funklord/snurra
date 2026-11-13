@@ -1059,11 +1059,19 @@ controls; each tile very compact but resizeable).
   in `the_dj_player_loads_two_decks_and_crosses_them` at 412 x 915 with
   a beat, so the jumps carry their widest words: the key lock, key knob,
   key sync and sync got a row of their own when the key's three, beside
-  the tempo, clipped "in key" to 28 of its 47; and the jumps had been
-  42 of their 44 since before, mended by close-setting arrow and step
-  and the controls' sides at 2 px. The player's least width (252) never
-  showed either -- a tile asks only 14 characters, so a crowded row is
-  clipped, not widened -- which is why the check is each button's own. **On a phone it is the app** (2026-11-13): started with no
+  the tempo, clipped "in key" to 28 of its 47; and the jumps, clipped
+  since before (with a beat, "4 bars", 44 of the 53 they ask), have
+  the buttons' row with play and cue only -- the envelope's toggle went
+  to the position's row, whose slider gives way -- arrow and step
+  close-set, the controls' sides 2 px. A first fix (805231b) measured
+  the jumps before the beat's words had been laid out and passed short
+  of them; a check run again after the next change caught it. The
+  player's least width (252) shows none of this -- a tile asks only 14
+  characters, so a crowded row is clipped, not widened -- which is why
+  the check is each button's own. **The browser there** gave the name
+  38 of its 370: under 20 letters' room for it, Folder is hidden (the
+  search still finds by it) and Artist takes a quarter of what BPM and
+  Key leave, the name 204; wide again, both come back. **On a phone it is the app** (2026-11-13): started with no
   file on Android, snurra opens the DJ player full screen and asks for
   the phone's music (READ_MEDIA_AUDIO and _VIDEO, declared in
   `android/AndroidManifest.xml` -- qmake's ANDROID_PERMISSIONS was left

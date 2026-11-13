@@ -779,7 +779,6 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_shape->setText(QStringLiteral("~"));
 	m_shape->setAccessibleName(tr("Edit the envelope"));
 	m_shape->setToolTip(m_shape->accessibleName());
-	transport->addWidget(m_shape);
 	m_position = new QSlider(Qt::Horizontal, m_controls);
 	m_position->setAccessibleName(tr("Position"));
 	m_position->setRange(0, int(qMax<qint64>(1, state.duration_us / 100000)));
@@ -793,6 +792,10 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_time = new QLabel(m_controls);
 	m_time->setObjectName(QStringLiteral("snurra-time"));
 	where->addWidget(m_time);
+	/* The envelope's toggle by the position, whose slider gives way: in
+	 * the buttons' row, with a beat ("4 bars"), a phone's deck gave the
+	 * jumps 44 of the 53 they ask. */
+	where->addWidget(m_shape);
 	strip->addLayout(where);
 	m_level = new QSlider(Qt::Horizontal, m_controls);
 	m_level->setAccessibleName(tr("Level"));
@@ -1036,8 +1039,9 @@ void snurra_tile::nudge(int direction) {
 
 void snurra_tile::show_jumps() {
 	const QString step = jump_step(false);
-	/* Arrow and step close-set, and the controls' sides 2 px: a phone's
-	 * deck, 178 wide, gave the jumps 42 of the 44 they ask. */
+	/* Arrow and step close-set (and the controls' sides 2 px, and the
+	 * envelope's toggle on the position's row): a phone's deck, 178 wide,
+	 * gave the jumps 42 of the 44 they ask. */
 	m_back->setText(QStringLiteral("\u2039") + step);
 	m_forward->setText(step + QStringLiteral("\u203a"));
 	m_back->setAccessibleName(tr("Back %1").arg(step));
