@@ -1170,7 +1170,14 @@ controls; each tile very compact but resizeable).
   frame whose time is not after the one asked -- times from the sound's
   start, the zero the deck counts from, so a container that starts the
   picture late or early is shown so; it seeks itself when asked behind
-  what it has or more than a second past it. The tile asks for the
+  what it has or more than a second past it, and decodes from the key
+  frame to the time playing when each frame comes out, not the time
+  asked when the seek began -- that was behind the sound by the time it
+  got there, 200 to 300 ms after a 9 s skip into a 10 s group of
+  pictures, and then every frame since came out as fast as it decoded:
+  the jitter the holder saw at each skip (2026-11-13). Now the first
+  picture after the skip is within two frames of the sound
+  (`a_skip_shows_the_frame_heard_not_one_behind`). The tile asks for the
   frame at its deck's heard position every 16 ms while the drawer (or
   the full-screen picture) shows. The drawer is the tile's width and the
   picture's shape tall; it opens with the controls, so on the first

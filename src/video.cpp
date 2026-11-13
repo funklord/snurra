@@ -673,14 +673,21 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 				}
 				const int64_t pts_us = av_rescale_q(frame->best_effort_timestamp, stream->time_base, MICROSECONDS) - origin_us;
 				bool seeking = false;
+				int64_t now = seek_target;
 				{
 					std::lock_guard<std::mutex> lock(m_mutex);
 					seeking = m_seeking;
+					now = std::max(seek_target, m_target);
 				}
 				if (seeking) {
 					/* Up to the target, only the last frame is kept: the one
-					 * a screen shows at the target. */
-					if (pts_us <= seek_target) {
+					 * a screen shows at the target -- the target as it is now,
+					 * not as it was asked. Playing, it moves on while the
+					 * reader decodes from the key frame, and stopping at the
+					 * old one showed a frame already behind the sound and
+					 * then every frame since, as fast as they decoded: a
+					 * jitter at each skip (the holder, 2026-11-13). */
+					if (pts_us <= now) {
 						av_frame_free(&pending);
 						pending = av_frame_clone(frame);
 						av_frame_unref(frame);

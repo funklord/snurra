@@ -74,6 +74,7 @@ private slots:
 	void a_picture_is_made_as_wide_as_it_is_shown();
 	void a_local_films_srt_is_found_when_its_bytes_are_given();
 	void a_picture_made_small_is_averaged_not_picked();
+	void a_skip_shows_the_frame_heard_not_one_behind();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1147,3 +1148,54 @@ void video_test::a_picture_made_small_is_averaged_not_picked() {
 	QVERIFY2(darkest > 90 && lightest < 165, qPrintable(QStringLiteral("from %1 to %2, not grey").arg(darkest).arg(lightest)));
 }
 
+/*
+ * A skip while playing (the holder, 2026-11-13: "slight video jitter"):
+ * a film with a key frame each 10 s, skipped 9 s on, makes the reader
+ * decode some 280 frames from the key frame while the sound goes on. The
+ * first picture shown after it is the frame heard then, within a few
+ * frames -- not the frame the skip asked for, by then behind the sound,
+ * followed by every frame since.
+ */
+void video_test::a_skip_shows_the_frame_heard_not_one_behind() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString path = m_dir.filePath(QStringLiteral("longgop.mp4"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("testsrc2=s=1920x1080:r=30:d=20"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("sine=d=20"), QStringLiteral("-c:v"), QStringLiteral("libx264"),
+	                         QStringLiteral("-preset"), QStringLiteral("veryfast"), QStringLiteral("-g"), QStringLiteral("300"),
+	                         QStringLiteral("-keyint_min"), QStringLiteral("300"), QStringLiteral("-sc_threshold"), QStringLiteral("0"),
+	                         QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), path });
+	QVERIFY(ffmpeg.waitForFinished(120000) && ffmpeg.exitCode() == 0);
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = path;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QWidget *view = nullptr;
+	for (QWidget *w : node.findChildren<QWidget *>())
+		if (w->accessibleName() == QLatin1String("Video")) view = w;
+	QVERIFY(view);
+	QTest::qWait(600);
+	tile->seek_by(9000000);
+	QElapsedTimer waited;
+	waited.start();
+	qint64 shown = -1;
+	while (waited.elapsed() < 5000) {
+		QTest::qWait(2);
+		const qint64 pts = view->property("pts").toLongLong();
+		if (pts >= 9000000) {
+			shown = pts;
+			break;
+		}
+	}
+	QVERIFY2(shown >= 0, "no picture after the skip");
+	const qint64 heard = qint64(snurra_frames_to_us(tile->frame_now(), tile->deck()->rate()));
+	qInfo("after the skip: picture %lld us, sound %lld us, %lld ms behind", shown, heard, (heard - shown) / 1000);
+	QVERIFY2(heard - shown < 150000, qPrintable(QStringLiteral("the first picture after the skip, %1 us, is %2 ms behind the sound at %3 us")
+	                                                    .arg(shown).arg((heard - shown) / 1000).arg(heard)));
+}
