@@ -116,8 +116,9 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption speed(QStringLiteral("speed"), QStringLiteral("The speed, 0.25 to 4."), QStringLiteral("factor"));
 	const QCommandLineOption playlist(QStringLiteral("playlist"), QStringLiteral("Play the files a playlist names (.m3u, .pls), as a train."),
 	                                  QStringLiteral("file"));
+	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist });
+	                    playlist, loop });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -183,6 +184,15 @@ int main(int argc, char *argv[]) {
 			if (parser.isSet(subtitles)) tile->set_subtitle_files(parser.value(subtitles).split(QLatin1Char(','), Qt::SkipEmptyParts));
 			if (parser.isSet(full_screen)) tile->set_full_screen(true);
 		}
+	}
+	if (parser.isSet(loop)) {
+		bool number = false;
+		const int times = parser.value(loop).toInt(&number);
+		if (!number || times < 0) {
+			std::fprintf(stderr, "snurra: -loop takes a count, 0 for ever, not \"%s\"\n", qPrintable(parser.value(loop)));
+			return 2;
+		}
+		node.set_loop(times);
 	}
 	node.adjustSize();
 	/* At the pointer -- where the file was clicked, on X11 -- and clamped

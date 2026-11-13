@@ -354,6 +354,7 @@ void snurra_node::remove_tile(snurra_tile *tile) {
 /* Out of the window, its deck left to whoever retires it. */
 void snurra_node::drop_tile(snurra_tile *tile) {
 	m_following.remove(tile);
+	if (tile->playing()) m_stopped = true;   /* gone, not ended */
 	/* A lane's first going: the lane keeps its begin, and its train closes
 	 * up behind it as from the timeline's start -- the next tile takes it. */
 	const QList<snurra_tile *> tiles = lane(tile->row());
@@ -482,6 +483,17 @@ void snurra_node::run_trains() {
 		m_following.insert(tile, following{ next, start });
 	}
 	show_crossfades();
+
+	/* An end, not a pause: the group plays again from the start while
+	 * -loop has plays left. */
+	bool sounding = false;
+	for (snurra_tile *tile : m_tiles) sounding = sounding || tile->playing();
+	if (m_sounding && !sounding && !m_stopped && m_loops_left != 0 && !m_tiles.isEmpty()) {
+		if (m_loops_left > 0) --m_loops_left;
+		start_group_at(0);
+		sounding = true;
+	}
+	m_sounding = sounding;
 }
 
 /*
@@ -550,6 +562,7 @@ int64_t snurra_node::timeline_length(snurra_tile *tile) const {
 
 void snurra_node::play_group(snurra_tile *from, bool playing) {
 	if (!playing) {
+		m_stopped = true;
 		for (snurra_tile *tile : m_tiles)
 			if (tile->playing()) tile->set_playing(false);
 		return;
@@ -645,6 +658,7 @@ void snurra_node::step_train(snurra_tile *tile, int direction) {
 }
 
 void snurra_node::start_group_at(int64_t time) {
+	m_stopped = false;
 	const qint64 at = snurra_clock_us() + m_engine->latency_us() + 50000;
 	m_following.clear();   /* every lane starts afresh: no train is mid-way */
 	for (int row : rows()) {

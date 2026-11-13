@@ -46,6 +46,7 @@ private slots:
 	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_lane_dragged_later_starts_later_on_the_beat();
+	void loop_plays_again_from_the_start();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -525,6 +526,38 @@ void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {
 	emit b->close_requested(b);
 	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 2, 2000);
 	QCOMPARE(c->lane_start_us(), begin);
+}
+
+/*
+ * mplayer's -loop: a 1 s tile, looped twice, plays again from its start
+ * as it ends and then stops; for ever (0), it is still playing after
+ * three of its lengths; paused by hand, it stays paused.
+ */
+void embed_test::loop_plays_again_from_the_start() {
+	snurra_node node;
+	snurra_tile_state state = placed(QStringLiteral("a"), 0, 0);
+	state.duration_us = 1000000;
+	snurra_tile *a = node.add_tile(state);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	node.set_loop(2);
+	a->request_playing(true);
+	QTest::qWait(1500);
+	QVERIFY2(a->playing(), "the second play did not begin");
+	QVERIFY2(a->state().position_us < 700000, qPrintable(QString::number(a->state().position_us)));
+	QTRY_VERIFY_WITH_TIMEOUT(!a->playing(), 2000);
+	QTest::qWait(600);
+	QVERIFY2(!a->playing(), "played a third time");
+
+	node.set_loop(0);
+	QTest::mouseClick(waveform_of(a), Qt::LeftButton, {}, QPoint(0, 5));
+	QTRY_COMPARE_WITH_TIMEOUT(a->state().position_us, qint64(0), 2000);
+	a->request_playing(true);
+	QTest::qWait(3300);
+	QVERIFY2(a->playing(), "for ever ended");
+	a->request_playing(false);
+	QTest::qWait(1500);
+	QVERIFY2(!a->playing(), "a pause was taken for an end");
 }
 
 /*

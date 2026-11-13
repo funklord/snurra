@@ -78,6 +78,11 @@ public:
 	 * square one (project.md sec 3b). */
 	bool drawers_look() const { return m_drawers_look; }
 
+	/* mplayer's -loop: the group played `times` times in all, from the
+	 * timeline's start each time it ends of itself; 0 for ever. 1, once,
+	 * is the default. */
+	void set_loop(int times) { m_loops_left = times <= 0 ? -1 : times - 1; }
+
 protected:
 	/* A tile dragged here from another snurra joins this one (Wayland's
 	 * gesture, sec 3b), and the bare frame moves the window. */
@@ -186,6 +191,9 @@ private:
 	QTimer *m_trains = nullptr;
 	qint64 m_last_started = 0;   /* the last crossfade taken: its start */
 	qint64 m_last_stopped = 0;   /* and its end */
+	int m_loops_left = 0;           /* plays still to come; -1 for ever */
+	bool m_sounding = false;        /* some tile played at the last tick */
+	bool m_stopped = false;         /* by a pause or a tile going: not an end */
 	int m_shift_row = -1;          /* a lane being moved by a drag, */
 	qint64 m_shift_from_us = 0;    /* and where it began before it */
 };

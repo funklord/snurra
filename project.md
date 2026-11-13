@@ -721,8 +721,13 @@ controls; each tile very compact but resizeable).
   place in the train; dropped, the same. Paths are taken from the
   playlist's folder; a playlist inside one is left out, so none loops;
   at most 1000 entries (assumed). Tested by reading both kinds, a launch
-  of both and a drop (`a_playlist_is_a_train_of_what_it_names`). Not
-  yet: `-loop`.
+  of both and a drop (`a_playlist_is_a_train_of_what_it_names`). `-loop N`
+  plays the group N times in all, from the timeline's start each time it
+  ends of itself -- `-loop 0` for ever, as mplayer's; a pause, or the
+  playing tile closed, is not an end (`loop_plays_again_from_the_start`).
+  It found a deck's end still reported after a seek asked and not yet
+  rendered, so a play asked at the end was stopped by the tile's next
+  tick; `ended()` now waits for the seek, as `last_rendered` does.
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;

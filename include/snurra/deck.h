@@ -120,7 +120,14 @@ public:
 	bool locked() const { return m_locked.load(std::memory_order_acquire); }
 
 	/* Played to the end of its source. */
-	bool ended() const { return m_finished.load(std::memory_order_relaxed); }
+	/* Not while a seek is asked and not yet rendered: the end was the old
+	 * place's, and a play from the start asked at the end would otherwise
+	 * be taken for ended before the output's next period (last_rendered
+	 * asks the same). */
+	bool ended() const {
+		return m_finished.load(std::memory_order_relaxed)
+		       && m_generation.load(std::memory_order_acquire) == m_published_generation.load(std::memory_order_acquire);
+	}
 
 	/* What it was given could not be opened: it plays silence instead. */
 	bool failed() const { return m_failed.load(std::memory_order_acquire); }
