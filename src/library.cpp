@@ -138,7 +138,12 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_view->setDragEnabled(true);
 	m_view->setDragDropMode(QAbstractItemView::DragOnly);
-	m_view->header()->setStretchLastSection(true);
+	/* The name takes the room, the folder a fixed share: names were cut to
+	 * a dozen letters beside an empty folder column (seen 2026-11-13). */
+	m_view->header()->setStretchLastSection(false);
+	m_view->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+	m_view->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+	m_view->header()->resizeSection(1, fontMetrics().horizontalAdvance(QLatin1Char('M')) * 14);
 	m_status = new QLabel(this);
 	m_status->setForegroundRole(QPalette::PlaceholderText);
 

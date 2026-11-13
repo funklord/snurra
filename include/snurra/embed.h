@@ -38,8 +38,8 @@
 
 #include "snurra/source.h"
 
-/* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. */
-#define SNURRA_EMBED_VERSION 2
+/* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj. */
+#define SNURRA_EMBED_VERSION 3
 
 /* One thing to play. */
 struct snurra_media {
@@ -86,6 +86,49 @@ signals:
 
 private:
 	std::unique_ptr<snurra_player_private> d;
+};
+
+/*
+ * (3) A simple DJ player -- a simplified Traktor (the holder, 2026-11-13):
+ * two decks side by side, A and B, each a tile with its controls, its
+ * jumps of bars and its sync to the other; an equal-power crossfader
+ * between them; and under them a browser of the music in a folder, whose
+ * tune double-clicked loads onto the deck not playing, or dragged, onto
+ * the deck it is let go on. One layout, decks above and browser below,
+ * for a desktop and for a phone's one static screen alike. A host that
+ * browses its own (BeerSSH's remote files) hides the browser and loads.
+ */
+class snurra_dj_private;
+
+class snurra_dj : public QWidget {
+	Q_OBJECT
+
+public:
+	explicit snurra_dj(QWidget *parent = nullptr);
+	/* Stops at once and cleanly, as snurra_player does. */
+	~snurra_dj() override;
+
+	/* `media` onto deck 0 (A) or 1 (B), paused, in place of what it had.
+	 * False when there is nothing to read, or no such deck. */
+	bool load(int deck, const snurra_media &media);
+	/* What each deck has, empty where nothing. */
+	QString loaded(int deck) const;
+
+	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
+	void set_crossfader(double position);
+	double crossfader() const;
+
+	/* The browser under the decks: shown by default, on the desktop's
+	 * music folder or one chosen in it. */
+	void set_browser_visible(bool visible);
+	void set_browser_folder(const QString &folder);
+
+signals:
+	/* `name` cannot be played, and why, in words for the person. */
+	void failed(const QString &name, const QString &why);
+
+private:
+	std::unique_ptr<snurra_dj_private> d;
 };
 
 #endif

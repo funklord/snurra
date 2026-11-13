@@ -59,6 +59,7 @@ private slots:
 	void the_tempo_reaches_16_and_snaps_to_the_middle();
 	void a_dark_desktop_is_found_where_it_is_written();
 	void a_jump_while_playing_lands_exactly_its_step_on();
+	void the_dj_player_loads_two_decks_and_crosses_them();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -873,6 +874,118 @@ void embed_test::a_jump_while_playing_lands_exactly_its_step_on() {
 	const double off_ms = double(after - expected) * 1000 / rate;
 	qInfo("after the jump: %.1f ms off where it would be", off_ms);
 	QVERIFY2(std::abs(off_ms) < 5, qPrintable(QStringLiteral("%1 ms off its step").arg(off_ms)));
+
+	/* A tile on its own, as a DJ player's deck: the same. */
+	QTemporaryDir dir;
+	QFile file(dir.filePath(QStringLiteral("deck.wav")));
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	/* Steady, so no beat is found and the step is 10 s, not 4 bars:
+	 * make_wav repeats each 65536 frames, which reads as one. */
+	file.write(make_wav_of(48000 * 40, [](int) { return 1000; }));
+	file.close();
+	snurra_dj dj;
+	snurra_media media;
+	media.path = file.fileName();
+	QVERIFY(dj.load(0, media));
+	dj.show();
+	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(deck);
+	QTRY_VERIFY_WITH_TIMEOUT(deck->deck()->length() > 0, 3000);
+	deck->set_playing(true);
+	QTest::qWait(800);
+	const int deck_rate = deck->deck()->rate();
+	const qint64 deck_before_us = snurra_clock_us();
+	const int64_t deck_before = deck->frame_now();
+	deck->jump(1, false);
+	QTest::qWait(800);
+	const int64_t deck_expected = deck_before + snurra_us_to_frames(snurra_clock_us() - deck_before_us, deck_rate)
+	                              + snurra_us_to_frames(10000000, deck_rate);
+	const double deck_off_ms = double(deck->frame_now() - deck_expected) * 1000 / deck_rate;
+	qInfo("a deck after the jump: %.1f ms off where it would be", deck_off_ms);
+	QVERIFY2(std::abs(deck_off_ms) < 5, qPrintable(QStringLiteral("a deck %1 ms off its step").arg(deck_off_ms)));
+}
+
+/*
+ * The DJ player (embed.h 3, the holder's simplified Traktor): two decks
+ * and a browser. Loaded by a call, by a double-click in the browser --
+ * onto the deck that is empty -- and by a drop on a deck; the crossfader
+ * sends A alone, both at equal power, or B alone; sync puts one deck's
+ * beat on the other's; a tune let go over nothing opens no player.
+ */
+void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
+	QTemporaryDir dir;
+	QStringList paths;
+	for (const QString &name : { QStringLiteral("one.wav"), QStringLiteral("two.wav"), QStringLiteral("three.wav") }) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(48000 * 4));
+		paths << file.fileName();
+	}
+	snurra_dj dj;
+	dj.set_browser_folder(dir.path());
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.loaded(0).isEmpty() && dj.loaded(1).isEmpty());
+	snurra_media media;
+	media.path = paths[0];
+	QVERIFY(dj.load(0, media));
+	QCOMPARE(dj.loaded(0), QStringLiteral("one.wav"));
+	QVERIFY(!dj.load(2, media));
+
+	snurra_library *browser = dj.findChild<snurra_library *>();
+	QVERIFY(browser);
+	QTRY_COMPARE_WITH_TIMEOUT(browser->shown().size(), 3, 5000);
+	QTreeView *list = browser->findChild<QTreeView *>();
+	const int row = int(browser->shown().indexOf(paths[2]));
+	const QRect at = list->visualRect(list->model()->index(row, 0));
+	QTest::mouseClick(list->viewport(), Qt::LeftButton, {}, at.center());
+	QTest::mouseDClick(list->viewport(), Qt::LeftButton, {}, at.center());
+	QCOMPARE(dj.loaded(1), QStringLiteral("three.wav"));
+
+	/* Dropped on deck A: in place of what it had. */
+	QWidget *deck_a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	QVERIFY(deck_a);
+	std::unique_ptr<QMimeData> mime(snurra_library::mime_for({ paths[1] }));
+	const QPoint middle = deck_a->rect().center();
+	QDragEnterEvent enter(middle, Qt::CopyAction, mime.get(), Qt::LeftButton, {});
+	QCoreApplication::sendEvent(deck_a, &enter);
+	QVERIFY(enter.isAccepted());
+	QDropEvent drop(QPointF(middle), Qt::CopyAction, mime.get(), Qt::LeftButton, {});
+	QCoreApplication::sendEvent(deck_a, &drop);
+	QCOMPARE(dj.loaded(0), QStringLiteral("two.wav"));
+
+	/* The deck's tile shown: one replaced goes at the next turn of the loop. */
+	auto shown_on = [](QWidget *deck) {
+		for (snurra_tile *tile : deck->findChildren<snurra_tile *>())
+			if (tile->isVisible()) return tile;
+		return static_cast<snurra_tile *>(nullptr);
+	};
+	snurra_tile *a = shown_on(deck_a);
+	snurra_tile *b = shown_on(dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b")));
+	QCOMPARE(a->state().source, paths[1]);
+	QVERIFY(a && b);
+	dj.set_crossfader(-1);
+	QCOMPARE(a->deck()->fade_to(), 1.0f);
+	QVERIFY(b->deck()->fade_to() < 1e-6f);
+	dj.set_crossfader(0);
+	QVERIFY(qAbs(a->deck()->fade_to() - float(M_SQRT1_2)) < 1e-4f && qAbs(b->deck()->fade_to() - float(M_SQRT1_2)) < 1e-4f);
+	dj.set_crossfader(1);
+	QVERIFY(a->deck()->fade_to() < 1e-6f);
+	QCOMPARE(b->deck()->fade_to(), 1.0f);
+
+	/* Sync: B's 126 onto A's 120, from either deck's button. */
+	a->set_beats(snurra_beat_grid{ 24000, 0, 10, 48000 });
+	b->set_beats(snurra_beat_grid{ 48000 * 60.0 / 126, 0, 10, 48000 });
+	QToolButton *sync = nullptr;
+	for (QToolButton *button : b->findChildren<QToolButton *>())
+		if (button->text() == QLatin1String("sync")) sync = button;
+	QVERIFY(sync && sync->isEnabled());
+	sync->click();
+	QVERIFY2(qAbs(b->tempo() - 120.0f / 126) < 1e-3f, qPrintable(QString::number(b->tempo())));
+
+	/* Let go over nothing: no new player. */
+	browser->dragged_out({ paths[0] }, false, QPoint(-10000, -10000));
 }
 
 /*
@@ -990,7 +1103,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 2);   /* 2: snurra_media::subtitles */
+	QCOMPARE(SNURRA_EMBED_VERSION, 3);   /* 2: snurra_media::subtitles; 3: snurra_dj */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

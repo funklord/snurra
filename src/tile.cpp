@@ -881,7 +881,7 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
-	if (m_sync) m_sync->setEnabled(grid.valid() && m_grouped);
+	if (m_sync) m_sync->setEnabled(grid.valid() && (m_grouped || m_sync_available));
 	const double length = double(length_frames());
 	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
 	else m_waveform->set_beats(0, 0);
@@ -1331,8 +1331,50 @@ void snurra_tile::seek(qint64 position_us) {
 		emit seek_requested(this, qBound<qint64>(0, position_us, m_state.duration_us));
 		return;
 	}
-	m_deck->seek(us_to_frames(qBound<qint64>(0, position_us, m_state.duration_us), m_deck->rate()));
+	const int64_t frame = us_to_frames(qBound<qint64>(0, position_us, m_state.duration_us), m_deck->rate());
+	/* Playing, as a window's group does (start_group_at): the old place on
+	 * until a moment a lead ahead, and the new one taken as far on, so a
+	 * jump of bars lands on the beat with no gap (a DJ player's decks). */
+	if (m_state.playing && m_owner) {
+		const qint64 now = snurra_clock_us();
+		const qint64 at = now + m_owner->latency_us() + 50000;
+		const int64_t on = int64_t(std::llround(double(us_to_frames(at - now, m_deck->rate())) * m_deck->tempo()));
+		m_deck->start_at(std::min(frame + on, us_to_frames(m_state.duration_us, m_deck->rate())), at);
+	} else {
+		m_deck->seek(frame);
+	}
 	tick();
+}
+
+/*
+ * Sync (project.md sec 4): this tile's tempo set so its beat runs at the
+ * leader's -- a grid's BPM at its tile's tempo; off by more than a DJ's
+ * range, the double or the half is the beat meant, 87.5 and 175 being one
+ * tempo -- and how far its phase is from the leader's now, the shorter way
+ * round, for the caller to bend out. 0 where either has no beat.
+ */
+void snurra_tile::set_sync_available(bool available) {
+	m_sync_available = available;
+	if (m_sync) m_sync->setEnabled(m_grid.valid() && (m_grouped || m_sync_available));
+}
+
+qint64 snurra_tile::match_beat_of(const snurra_tile *leader) {
+	const snurra_beat_grid mine = beats();
+	if (!leader || !mine.valid() || !leader->beats().valid()) return 0;
+	const snurra_beat_grid theirs = leader->beats();
+	const double target = theirs.bpm() * leader->tempo();
+	double tempo = target / mine.bpm();
+	for (double octave : { 2.0, 0.5 })
+		if (std::abs(std::log2(tempo * octave)) < std::abs(std::log2(tempo))) tempo *= octave;
+	set_tempo(float(tempo));
+	auto phase = [](const snurra_beat_grid &grid, int64_t frame) {
+		const double beats = (double(frame) - grid.first) / grid.period;
+		return beats - std::floor(beats);
+	};
+	double shift = phase(theirs, leader->frame_now()) - phase(mine, frame_now());
+	if (shift > 0.5) shift -= 1;
+	if (shift < -0.5) shift += 1;
+	return qint64(snurra_frames_to_us(std::llround(shift * mine.period), m_deck->rate()));
 }
 
 void snurra_tile::set_playing(bool playing) {

@@ -947,6 +947,24 @@ controls; each tile very compact but resizeable).
   "With a snurra-made widget, look and features can evolve" -- a host
   that places one widget takes each new look and feature without a
   change of its own.
+  **The widgets offered, set by the holder 2026-11-13:** the single
+  player (`snurra_player`) and a simple DJ player, "something that
+  reminds of a simplified traktor"; on a phone the same, "everything is
+  obviously a static screen", with the file browser above or below
+  covering most of it -- "let's see if they diverge". **`snurra_dj`
+  (embed.h 3), step 1:** decks A and B side by side, each a tile with
+  its controls, jumps and sync to the other; an equal-power crossfader
+  under them (cos and sin, -3 dB each in the middle, as a train's
+  crossfade); under that the library, whose tune double-clicked loads
+  onto the deck that is empty, else the one not playing, else the one
+  the crossfader has quieter, and dragged loads onto the deck let go
+  on; a tune let go over nothing opens no player here. `load(deck,
+  media)` for a host that browses its own, `set_browser_visible`.
+  One layout -- decks above, browser below -- for the desktop and the
+  phone until they are seen to need two. An embedded tile's jump is now
+  seamless too, as a window's group's (0.0 ms off its step, 26 ms short
+  before). `snurra --dj [a b]` opens it, seen in Xvfb. Not yet: a
+  channel fader or EQ per deck, cue points, the phone's layout tried.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

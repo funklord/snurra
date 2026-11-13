@@ -862,25 +862,8 @@ bool snurra_node::sync(snurra_tile *tile) {
 			break;
 		}
 	if (!leader) return false;
-	const snurra_beat_grid theirs = leader->beats();
-	/* The beat heard, per second: a grid's BPM at its tile's tempo. Off by
-	 * more than a DJ's range, the double or the half is the beat meant --
-	 * 87.5 and 175 are one tempo. */
-	const double target = theirs.bpm() * leader->tempo();
-	double tempo = target / mine.bpm();
-	for (double octave : { 2.0, 0.5 })
-		if (std::abs(std::log2(tempo * octave)) < std::abs(std::log2(tempo))) tempo *= octave;
-	tile->set_tempo(float(tempo));
-	/* Then the phase: where each is within its beat, now, the shorter way
-	 * round, bent out as a nudge -- kept as the lane's offset too. */
-	auto phase = [](const snurra_beat_grid &grid, int64_t frame) {
-		const double beats = (double(frame) - grid.first) / grid.period;
-		return beats - std::floor(beats);
-	};
-	double shift = phase(theirs, leader->frame_now()) - phase(mine, tile->frame_now());
-	if (shift > 0.5) shift -= 1;
-	if (shift < -0.5) shift += 1;
-	const qint64 delta_us = qint64(snurra_frames_to_us(std::llround(shift * mine.period), m_engine->rate()));
+	/* The phase bent out as a nudge, kept as the lane's offset too. */
+	const qint64 delta_us = tile->match_beat_of(leader);
 	if (delta_us != 0) nudge_lane(tile, delta_us);
 	return true;
 }

@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "snurra/clock.h"
+#include "snurra/embed.h"
 #include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
@@ -121,9 +122,10 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption speed(QStringLiteral("speed"), QStringLiteral("The speed, 0.25 to 4."), QStringLiteral("factor"));
 	const QCommandLineOption playlist(QStringLiteral("playlist"), QStringLiteral("Play the files a playlist names (.m3u, .pls), as a train."),
 	                                  QStringLiteral("file"));
+	const QCommandLineOption dj(QStringLiteral("dj"), QStringLiteral("Open the DJ player: two decks, a crossfader and the music under them."));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop });
+	                    playlist, loop, dj });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -136,6 +138,23 @@ int main(int argc, char *argv[]) {
 	 * Android cannot be given, its arguments being all it has. A process
 	 * this one starts to adopt a tile inherits it. */
 	if (parser.isSet(output)) qputenv("SNURRA_OUTPUT", parser.value(output).toLocal8Bit());
+
+	/* The DJ player (embed.h 3), as a window of its own; with files, the
+	 * first two on its decks. */
+	if (parser.isSet(dj)) {
+		snurra_dj *player = new snurra_dj;
+		player->setAttribute(Qt::WA_DeleteOnClose);
+		player->setWindowTitle(QStringLiteral("snurra -- DJ"));
+		const QStringList given = parser.positionalArguments();
+		for (int deck = 0; deck < 2 && deck < given.size(); ++deck) {
+			snurra_media media;
+			media.path = QFileInfo(given.at(deck)).absoluteFilePath();
+			player->load(deck, media);
+		}
+		player->resize(1000, 700);
+		player->show();
+		return app.exec();
+	}
 
 	snurra_node node;
 	if (!node.listen()) return 1;

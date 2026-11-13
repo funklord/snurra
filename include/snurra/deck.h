@@ -92,6 +92,8 @@ public:
 	 * in the middle.
 	 */
 	void fade(int64_t start_us, int64_t length_us, float from, float to, bool power = false);
+	/* The gain the last fade asked ends at: a crossfader's, held. */
+	float fade_to() const { return m_fade_to.load(std::memory_order_relaxed); }
 
 	/*
 	 * The envelope (project.md sec 3b, step 5): a level curve over the

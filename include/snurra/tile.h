@@ -122,6 +122,13 @@ public:
 	/* Sync (project.md sec 4): asks the window to match this tile's beat to
 	 * another's -- tempo, then phase. */
 	void request_sync() { emit sync_requested(this); }
+	/* Its tempo matched to the leader's beat, and its phase's distance from
+	 * the leader's now, in microseconds, for the caller to bend; 0 where
+	 * either has no beat. */
+	qint64 match_beat_of(const snurra_tile *leader);
+	/* The sync button offered outside a window's group too (a DJ player's
+	 * decks), wherever this track has a beat. */
+	void set_sync_available(bool available);
 
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
 	 * through the deck, and edited on the waveform while the envelope
@@ -278,6 +285,7 @@ private:
 	 * has deleted its decks already, and is not to be called. */
 	QPointer<snurra_engine> m_owner;
 	bool m_grouped = false;
+	bool m_sync_available = false;   /* offered outside a group */
 	bool m_failed_said = false;
 	bool m_settled = false;   /* constructed, readers started: a failure can be judged */
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */
