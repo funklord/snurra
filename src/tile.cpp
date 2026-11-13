@@ -11,6 +11,8 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMetaMethod>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPointer>
@@ -370,6 +372,8 @@ public:
 	std::function<void(QKeyEvent *)> on_key;
 	/* mplayer's wheel: a notch up forward, down back. */
 	std::function<void(int direction)> on_wheel;
+	/* What a drag brings, dropped here; drops are taken only with it. */
+	std::function<void(const QStringList &)> on_drop;
 
 protected:
 	void paintEvent(QPaintEvent *) override {
@@ -403,6 +407,15 @@ protected:
 	}
 	void mouseDoubleClickEvent(QMouseEvent *) override {
 		if (on_leave) on_leave();
+	}
+	void dragEnterEvent(QDragEnterEvent *event) override {
+		if (on_drop && snurra_drop_offers(event->mimeData())) event->acceptProposedAction();
+	}
+	void dropEvent(QDropEvent *event) override {
+		const QStringList files = on_drop ? snurra_dropped(event->mimeData()) : QStringList();
+		if (files.isEmpty()) return;
+		event->acceptProposedAction();
+		on_drop(files);
 	}
 	void wheelEvent(QWheelEvent *event) override {
 		if (!on_wheel) return QWidget::wheelEvent(event);
@@ -1089,6 +1102,10 @@ void snurra_tile::set_full_screen(bool full) {
 		QCoreApplication::sendEvent(window(), event);
 	};
 	view->on_wheel = [this](int direction) { jump(direction, false); };
+	if (isSignalConnected(QMetaMethod::fromSignal(&snurra_tile::files_dropped))) {
+		view->on_drop = [this](const QStringList &files) { emit files_dropped(files); };
+		view->setAcceptDrops(true);
+	}
 	connect(this, &QObject::destroyed, view, &QObject::deleteLater);
 	m_full = view;
 	view->hide_pointer_when_still();

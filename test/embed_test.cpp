@@ -20,6 +20,7 @@
 #include "snurra/engine.h"
 #include "snurra/embed.h"
 #include "snurra/node.h"
+#include "snurra/source.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
 
@@ -41,6 +42,7 @@ private slots:
 	void a_lane_at_a_tempo_keeps_the_groups_time();
 	void sync_matches_a_beat_to_another();
 	void files_dropped_on_a_window_join_it();
+	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
@@ -388,6 +390,53 @@ void embed_test::files_dropped_on_a_window_join_it() {
 	QCOMPARE(places, (QList<QPair<int, int>>{ { 0, 1 }, { 0, 2 }, { 1, 0 } }));
 	/* Titled by what it plays: the first tile's name, and how many more. */
 	QCOMPARE(node.windowTitle(), QStringLiteral("first +3"));
+}
+
+/*
+ * A folder dropped is its tracks (project.md sec 3b): under it, in a
+ * folder of its own too, 2.wav, 10.wav and a film, beside a cover and a
+ * cue sheet. They join as 2, 10, the film -- counted, not spelled -- and
+ * the cover and the sheet make no tile. A link from a browser stays a
+ * URL, after them. A drag still moving never walks the folder.
+ */
+void embed_test::a_folder_or_a_link_dropped_joins_too() {
+	QTemporaryDir dir;
+	QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("album/cd")));
+	const QStringList names{ QStringLiteral("album/2.wav"), QStringLiteral("album/10.wav"), QStringLiteral("album/cd/film.mkv"),
+		                 QStringLiteral("album/cover.jpg"), QStringLiteral("album/album.cue") };
+	for (const QString &name : names) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4800));
+	}
+	const QString link = QStringLiteral("http://127.0.0.1:9/radio");
+	QMimeData mime;
+	mime.setUrls({ QUrl::fromLocalFile(dir.filePath(QStringLiteral("album"))), QUrl(link) });
+	QCOMPARE(snurra_dropped(&mime),
+	         (QStringList{ dir.filePath(names[0]), dir.filePath(names[1]), dir.filePath(names[2]), link }));
+	QCOMPARE(snurra_dropped(&mime, 1), (QStringList{ dir.filePath(names[0]), link }));
+	QMimeData text;
+	text.setText(link + QLatin1Char('\n'));
+	QVERIFY2(snurra_drop_offers(&text), "a link dragged as text is refused");
+	QCOMPARE(snurra_dropped(&text), QStringList{ link });
+
+	snurra_node node;
+	node.add_tile(placed(QStringLiteral("first"), 0, 0));
+	node.resize(400, 200);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	const QPoint at(node.width() - 2, node.height() / 2);
+	QDragEnterEvent enter(at, Qt::CopyAction, &mime, Qt::LeftButton, {});
+	QCoreApplication::sendEvent(&node, &enter);
+	QVERIFY(enter.isAccepted());
+	QDropEvent drop(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, {});
+	QCoreApplication::sendEvent(&node, &drop);
+	QVERIFY(drop.isAccepted());
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 5, 2000);
+	QMap<int, QString> train;
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) train.insert(tile->column(), tile->state().source);
+	QCOMPARE(train.values(), (QStringList{ QStringLiteral("first"), dir.filePath(names[0]), dir.filePath(names[1]),
+	                                       dir.filePath(names[2]), link }));
 }
 
 /*

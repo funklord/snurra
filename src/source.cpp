@@ -2,9 +2,14 @@
 
 #include "snurra/bytes_input.h"
 
+#include <QCollator>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QMimeData>
+#include <QMimeDatabase>
 #include <QRegularExpression>
+#include <QUrl>
 
 #include <algorithm>
 #include <chrono>
@@ -554,6 +559,64 @@ std::unique_ptr<snurra_source> snurra_open_source(std::shared_ptr<snurra_bytes> 
 bool snurra_is_url(const QString &name) {
 	static const QRegularExpression url(QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]+://"));
 	return url.match(name).hasMatch();
+}
+
+/* A folder's own files are only those it plays: by the name's type, so a
+ * cover, a playlist or a cue sheet beside the tracks makes no tile. */
+static bool playable_by_name(const QString &path) {
+	static const QMimeDatabase types;
+	const QString type = types.mimeTypeForFile(path, QMimeDatabase::MatchExtension).name();
+	return type.startsWith(QLatin1String("audio/")) || type.startsWith(QLatin1String("video/"))
+	       || type == QLatin1String("application/ogg");
+}
+
+QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
+	QStringList found;
+	if (!mime) return found;
+	QList<QUrl> urls = mime->urls();
+	/* Some programs drag a link as text alone. */
+	if (urls.isEmpty() && snurra_is_url(mime->text().trimmed())) urls << QUrl(mime->text().trimmed());
+	for (const QUrl &url : urls) {
+		if (!url.isLocalFile()) {
+			if (url.isValid() && snurra_is_url(url.toString())) found << url.toString();
+			continue;
+		}
+		const QFileInfo info(url.toLocalFile());
+		if (info.isFile()) {
+			found << info.absoluteFilePath();
+		} else if (info.isDir()) {
+			/* A folder of albums, not a home: what is looked at is capped
+			 * too, so a drop of / does not walk the disk on the UI thread. */
+			constexpr int LOOKED_AT_MOST = 4096;
+			int looked_at = 0;
+			QStringList inside;
+			QDirIterator it(info.absoluteFilePath(), QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+			while (it.hasNext() && looked_at++ < LOOKED_AT_MOST) {
+				const QString path = it.next();
+				if (playable_by_name(path)) inside << path;
+			}
+			QCollator counting;
+			counting.setNumericMode(true);
+			std::sort(inside.begin(), inside.end(),
+			          [&counting](const QString &a, const QString &b) { return counting.compare(a, b) < 0; });
+			found << inside.mid(0, folder_most);
+		}
+	}
+	return found;
+}
+
+bool snurra_drop_offers(const QMimeData *mime) {
+	if (!mime) return false;
+	if (!mime->hasUrls()) return snurra_is_url(mime->text().trimmed());
+	for (const QUrl &url : mime->urls()) {
+		if (!url.isLocalFile()) {
+			if (url.isValid() && snurra_is_url(url.toString())) return true;
+			continue;
+		}
+		const QFileInfo info(url.toLocalFile());
+		if (info.isFile() || info.isDir()) return true;
+	}
+	return false;
 }
 
 std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate, int64_t fallback_length,

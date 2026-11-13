@@ -211,7 +211,14 @@ does the same with a tile's playback:
 - **Files dropped from a file manager** (2026-11-12): onto a window, a
   tile each, where the drop's side says -- at the right edge the first
   lane's train goes on, at the bottom a new lane starts -- paused, their
-  controls in, as a launch's later files.
+  controls in, as a launch's later files. Since 2026-11-13 (`snurra_dropped`):
+  a folder is the audio and video under it, by the name's type (a cover
+  or a cue sheet makes no tile), sorted as people count (2 before 10),
+  at most 64, with no more than 4096 files looked at so a drop of a home
+  is not a walk of the disk; a link from a browser is its URL. Dropped on
+  the full-screen picture -- a window of its own, all of the player
+  there is to see -- they go on the train. An embedded tile takes no
+  drops: where a host's files come from is the host's.
 - **The snap gesture between processes:** on X11 a tile can find the
   others' windows and snap edge to edge as it is moved; on Wayland a
   program cannot learn other windows' positions, so the gesture there

@@ -12,6 +12,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QSignalSpy>
+#include <QMimeData>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -526,6 +527,18 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
 	                         2000);
 	QTest::keyClick(full, Qt::Key_O);
 	QTRY_VERIFY_WITH_TIMEOUT(full->property("clock").toString().isEmpty(), 2000);
+	/* A file dropped on the picture -- all there is of the window, full
+	 * screen -- goes on the train, after it. */
+	QMimeData mime;
+	mime.setUrls({ QUrl::fromLocalFile(m_dir.filePath(name)) });
+	QDragEnterEvent enter(full->rect().center(), Qt::CopyAction, &mime, Qt::LeftButton, {});
+	QApplication::sendEvent(full, &enter);
+	QVERIFY2(enter.isAccepted(), "the full-screen picture refuses a file");
+	QDropEvent drop(QPointF(full->rect().center()), Qt::CopyAction, &mime, Qt::LeftButton, {});
+	QApplication::sendEvent(full, &drop);
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 2, 2000);
+	for (snurra_tile *other : node.findChildren<snurra_tile *>())
+		if (other != tile) QCOMPARE(qMakePair(other->row(), other->column()), qMakePair(0, 1));
 	QTest::keyClick(full, Qt::Key_F);
 	QVERIFY2(!tile->full_screen(), "f in full screen did not come back");
 }

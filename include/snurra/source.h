@@ -4,6 +4,8 @@
 #include <QString>
 #include <QStringList>
 
+class QMimeData;
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -122,6 +124,17 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 /* Whether `name` is a URL (a scheme and "://"), which goes to FFmpeg as
  * it is, rather than a path. */
 bool snurra_is_url(const QString &name);
+
+/*
+ * What a drag brings that a tile could play (project.md sec 3b), in order:
+ * a file as it is; a folder as the audio and video under it, sorted by
+ * path as people count (2 before 10), at most `folder_most` of them; a
+ * link (a browser's) as its URL. Empty when it brings none of these.
+ */
+QStringList snurra_dropped(const QMimeData *mime, int folder_most = 64);
+/* Whether a drag might bring any, cheaply -- a folder not looked into --
+ * for a drag still moving. */
+bool snurra_drop_offers(const QMimeData *mime);
 
 /*
  * Opens `bytes` through FFmpeg, `name` only a hint at its kind (an

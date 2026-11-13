@@ -198,6 +198,9 @@ signals:
 	void nudge_requested(snurra_tile *tile, qint64 delta_us);
 	void sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
+	/* Files, folders or links dropped on the full-screen picture (a window
+	 * of its own), for the window to add; nothing takes them embedded. */
+	void files_dropped(const QStringList &files);
 	/* A drawer opened, closed or changed height: the window re-fits. */
 	void drawers_changed(snurra_tile *tile);
 

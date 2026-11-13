@@ -35,6 +35,7 @@
 #include "snurra/engine.h"
 #include "snurra/marker.h"
 #include "snurra/snap.h"
+#include "snurra/source.h"
 #include "snurra/tile.h"
 
 namespace {
@@ -217,6 +218,10 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
+	/* Dropped on the full-screen picture, where nothing else of the window
+	 * shows: the train goes on. */
+	connect(tile, &snurra_tile::files_dropped, this,
+	        [this](const QStringList &files) { add_files(files, snurra_wire::RIGHT); });
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
 		/* What plays is what can be stopped (sec 3c): with no controls
 		 * out anywhere, the group stops. */
@@ -1052,23 +1057,14 @@ static bool from_a_peer(const QMimeData *mime, const QString &own) {
 	return !path.isEmpty() && path != own;
 }
 
-/* Files a file manager drags: the local ones snurra could open. */
-static QStringList files_in(const QMimeData *mime) {
-	QStringList files;
-	if (!mime || !mime->hasUrls()) return files;
-	for (const QUrl &url : mime->urls())
-		if (url.isLocalFile() && QFileInfo(url.toLocalFile()).isFile()) files << url.toLocalFile();
-	return files;
-}
-
 void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
-	if (!from_a_peer(event->mimeData(), m_path) && files_in(event->mimeData()).isEmpty()) return;
+	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
 	hint_drop(true, side_at(event->position().toPoint()));
 }
 
 void snurra_node::dragMoveEvent(QDragMoveEvent *event) {
-	if (!from_a_peer(event->mimeData(), m_path) && files_in(event->mimeData()).isEmpty()) return;
+	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
 	hint_drop(true, side_at(event->position().toPoint()));
 }
@@ -1079,13 +1075,13 @@ void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
 
 void snurra_node::dropEvent(QDropEvent *event) {
 	hint_drop(false);
-	const QStringList files = files_in(event->mimeData());
-	if (!files.isEmpty() && !from_a_peer(event->mimeData(), m_path)) {
+	if (!from_a_peer(event->mimeData(), m_path)) {
+		const QStringList files = snurra_dropped(event->mimeData());
+		if (files.isEmpty()) return;
 		add_files(files, side_at(event->position().toPoint()));
 		event->acceptProposedAction();
 		return;
 	}
-	if (!from_a_peer(event->mimeData(), m_path)) return;
 	const QString data = QString::fromUtf8(event->mimeData()->data(QLatin1String(TILE_MIME)));
 	snurra_wire::message merge;
 	merge.type = snurra_wire::MERGE_INTO;
@@ -1108,7 +1104,7 @@ void snurra_node::dropEvent(QDropEvent *event) {
  * Files dropped from a file manager (project.md sec 3b): a tile each, where
  * the drop's side says -- to the right, the first lane's train goes on;
  * below, a new lane, a stack. Paused and their controls in, as a later
- * file of a launch opens (sec 3c).
+ * file of a launch opens (sec 3c). A link stays a URL.
  */
 void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) {
 	int last_row = -1;
@@ -1121,7 +1117,7 @@ void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) 
 	int column = side == snurra_wire::BELOW ? 0 : last_column + 1;
 	for (const QString &file : files) {
 		snurra_tile_state state;
-		state.source = QFileInfo(file).absoluteFilePath();
+		state.source = snurra_is_url(file) ? file : QFileInfo(file).absoluteFilePath();
 		state.duration_us = 180000000;
 		state.sampled_at_us = snurra_clock_us();
 		state.controls = false;
