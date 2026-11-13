@@ -7,6 +7,7 @@ int run_deck_tests(int argc, char **argv);
 int run_embed_tests(int argc, char **argv);
 int run_video_tests(int argc, char **argv);
 int run_beats_tests(int argc, char **argv);
+int run_subtitles_tests(int argc, char **argv);
 
 int main(int argc, char **argv) {
 	/*
@@ -25,5 +26,6 @@ int main(int argc, char **argv) {
 	const int embed = run_embed_tests(argc, argv);
 	const int video = run_video_tests(argc, argv);
 	const int beats = run_beats_tests(argc, argv);
-	return handover || codec || deck || embed || video || beats ? 1 : 0;
+	const int subtitles = run_subtitles_tests(argc, argv);
+	return handover || codec || deck || embed || video || beats || subtitles ? 1 : 0;
 }

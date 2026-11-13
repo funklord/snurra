@@ -21,6 +21,7 @@ class snurra_engine;
 class snurra_peaks;
 class snurra_video;
 class snurra_video_view;
+class snurra_subtitles;
 class snurra_waveform;
 
 /*
@@ -143,6 +144,14 @@ public:
 	void toggle_full_screen() { set_full_screen(!full_screen()); }
 	bool full_screen() const { return bool(m_full); }
 
+	/* Subtitles over the picture (mplayer's v and j): the files beside the
+	 * track, then its own streams. v shows or hides them, j takes the next
+	 * track and, after the last, none. The name of the one showing, or an
+	 * empty string. */
+	void toggle_subtitles();
+	void next_subtitles();
+	QString subtitles_name() const;
+
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
 
@@ -179,6 +188,8 @@ private:
 	void build_video_drawer(bool open);
 	void fit_video_drawer();
 	void show_video_frame();
+	void find_subtitles();
+	void say_subtitles();
 	void read_peaks(std::shared_ptr<snurra_bytes> bytes);
 
 	snurra_tile_state m_state;
@@ -200,6 +211,9 @@ private:
 	QToolButton *m_video_toggle = nullptr;
 	QTimer *m_frames = nullptr;
 	QPointer<QWidget> m_full;   /* the picture full screen, while it is */
+	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitle_tracks;
+	int m_subtitle = -1;            /* the track chosen, or none */
+	bool m_subtitles_shown = true;
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

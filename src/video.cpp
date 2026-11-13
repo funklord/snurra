@@ -1,6 +1,7 @@
 #include "snurra/video.h"
 
 #include "snurra/bytes_input.h"
+#include "snurra/subtitles.h"
 
 #include <QFile>
 
@@ -167,6 +168,28 @@ QImage to_rgb(const AVFrame *from) {
 	return image;
 }
 
+/* A subtitle stream's decoder, and the track its cues go to. */
+struct subtitle_reader {
+	int index = -1;
+	AVCodecContext *codec = nullptr;
+	std::shared_ptr<snurra_subtitles> track;
+};
+
+/* A bitmap subtitle's picture: FFmpeg's palette of 0xAARRGGBB entries
+ * indexed by each pixel. */
+QImage subtitle_image(const AVSubtitleRect *rect) {
+	if (rect->w <= 0 || rect->h <= 0 || !rect->data[0] || !rect->data[1]) return QImage();
+	QImage image(rect->w, rect->h, QImage::Format_ARGB32);
+	const uint32_t *palette = reinterpret_cast<const uint32_t *>(rect->data[1]);
+	const int colours = rect->nb_colors > 0 ? std::min(rect->nb_colors, 256) : 256;
+	for (int y = 0; y < rect->h; ++y) {
+		const uint8_t *row = rect->data[0] + int64_t(y) * rect->linesize[0];
+		QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+		for (int x = 0; x < rect->w; ++x) out[x] = row[x] < colours ? palette[row[x]] : 0;
+	}
+	return image;
+}
+
 }
 
 snurra_video::snurra_video(const QString &path) {
@@ -189,6 +212,16 @@ snurra_video::~snurra_video() {
 QSize snurra_video::size() const {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	return m_size;
+}
+
+std::vector<std::shared_ptr<snurra_subtitles>> snurra_video::subtitle_tracks() const {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return m_subtitles;
+}
+
+int snurra_video::subtitle_default() const {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return m_subtitle_default;
 }
 
 void snurra_video::set_on_open(std::function<void(bool)> on_open) {
@@ -238,6 +271,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	int stream_index = -1;
 	int64_t origin_us = 0;
 	AVStream *stream = nullptr;
+	std::vector<subtitle_reader> subtitles;
 
 	auto opened = [this](bool has_video) {
 		std::function<void(bool)> on_open;
@@ -248,6 +282,39 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		m_has_video.store(has_video, std::memory_order_release);
 		m_opened.store(true, std::memory_order_release);
 		if (on_open) on_open(has_video);
+	};
+
+	/* Every subtitle stream FFmpeg can decode, named by its language and
+	 * title; bitmap and text alike. */
+	auto open_subtitles = [&] {
+		std::vector<std::shared_ptr<snurra_subtitles>> tracks;
+		int marked = -1;
+		for (unsigned i = 0; i < format->nb_streams; ++i) {
+			AVStream *in = format->streams[i];
+			if (in->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE) continue;
+			const AVCodec *decoder = avcodec_find_decoder(in->codecpar->codec_id);
+			if (!decoder) continue;
+			AVCodecContext *context = avcodec_alloc_context3(decoder);
+			if (!context) continue;
+			context->pkt_timebase = in->time_base;
+			if (avcodec_parameters_to_context(context, in->codecpar) < 0 || avcodec_open2(context, decoder, nullptr) < 0) {
+				avcodec_free_context(&context);
+				continue;
+			}
+			QStringList said;
+			if (const AVDictionaryEntry *language = av_dict_get(in->metadata, "language", nullptr, 0))
+				said << QString::fromUtf8(language->value);
+			if (const AVDictionaryEntry *title = av_dict_get(in->metadata, "title", nullptr, 0))
+				said << QString::fromUtf8(title->value);
+			if (said.isEmpty()) said << QStringLiteral("track %1").arg(tracks.size() + 1);
+			auto track = std::make_shared<snurra_subtitles>(said.join(QStringLiteral(", ")));
+			if (marked < 0 && (in->disposition & (AV_DISPOSITION_DEFAULT | AV_DISPOSITION_FORCED))) marked = int(tracks.size());
+			tracks.push_back(track);
+			subtitles.push_back({ int(i), context, track });
+		}
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_subtitles = std::move(tracks);
+		m_subtitle_default = marked;
 	};
 
 	auto open = [&]() -> bool {
@@ -284,11 +351,54 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		else if (format->duration != AV_NOPTS_VALUE && format->duration > 0)
 			length = av_rescale_q(format->duration, AV_TIME_BASE_Q, MICROSECONDS);
 		m_length_us.store(length, std::memory_order_release);
+		open_subtitles();
 		const AVRational rate = av_guess_frame_rate(format, stream, nullptr);
 		std::lock_guard<std::mutex> lock(m_mutex);
 		if (rate.num > 0 && rate.den > 0) m_frame_us = av_rescale_q(1, av_inv_q(rate), MICROSECONDS);
 		m_size = QSize(codec->width, codec->height);
 		return codec->width > 0 && codec->height > 0;
+	};
+
+	auto read_subtitle = [&](subtitle_reader &reader, AVPacket *from) {
+		AVSubtitle subtitle{};
+		int got = 0;
+		if (avcodec_decode_subtitle2(reader.codec, &subtitle, &got, from) < 0 || !got) return;
+		const AVStream *in = format->streams[reader.index];
+		int64_t at = subtitle.pts != AV_NOPTS_VALUE ? subtitle.pts
+		             : from->pts != AV_NOPTS_VALUE ? av_rescale_q(from->pts, in->time_base, MICROSECONDS) : AV_NOPTS_VALUE;
+		if (at == AV_NOPTS_VALUE) {
+			avsubtitle_free(&subtitle);
+			return;
+		}
+		snurra_cue cue;
+		cue.start_us = at + int64_t(subtitle.start_display_time) * 1000 - origin_us;
+		/* The end: the subtitle's own, else the packet's length, else the
+		 * next cue's start (Blu-ray's, which clear with an empty one). */
+		if (subtitle.end_display_time > subtitle.start_display_time && subtitle.end_display_time != UINT32_MAX)
+			cue.end_us = at + int64_t(subtitle.end_display_time) * 1000 - origin_us;
+		else if (from->duration > 0)
+			cue.end_us = cue.start_us + av_rescale_q(from->duration, in->time_base, MICROSECONDS);
+		QSize frame;
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			frame = m_size;
+		}
+		if (reader.codec->width > 0 && reader.codec->height > 0) frame = QSize(reader.codec->width, reader.codec->height);
+		for (unsigned i = 0; i < subtitle.num_rects; ++i) {
+			const AVSubtitleRect *rect = subtitle.rects[i];
+			if (rect->type == SUBTITLE_BITMAP && cue.image.isNull() && !frame.isEmpty()) {
+				cue.image = subtitle_image(rect);
+				cue.place = QRectF(double(rect->x) / frame.width(), double(rect->y) / frame.height(),
+				                   double(rect->w) / frame.width(), double(rect->h) / frame.height());
+			} else if (rect->type == SUBTITLE_ASS && rect->ass) {
+				for (auto &line : snurra_ass_text(QString::fromUtf8(rect->ass), &cue.top)) cue.lines.push_back(std::move(line));
+			} else if (rect->type == SUBTITLE_TEXT && rect->text) {
+				for (const QString &line : QString::fromUtf8(rect->text).split(QLatin1Char('\n')))
+					cue.lines.push_back({ snurra_subtitle_span{ line } });
+			}
+		}
+		avsubtitle_free(&subtitle);
+		reader.track->add(std::move(cue));
 	};
 
 	auto push = [&](const AVFrame *from, int64_t pts_us) {
@@ -324,6 +434,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 					const int64_t ts = av_rescale_q(seek_target + origin_us, MICROSECONDS, stream->time_base);
 					av_seek_frame(format, stream_index, ts, AVSEEK_FLAG_BACKWARD);
 					avcodec_flush_buffers(codec);
+					for (subtitle_reader &reader : subtitles) avcodec_flush_buffers(reader.codec);
 				}
 			}
 
@@ -335,6 +446,9 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 					avcodec_send_packet(codec, nullptr);
 				} else {
 					if (packet->stream_index == stream_index) avcodec_send_packet(codec, packet);
+					else
+						for (subtitle_reader &reader : subtitles)
+							if (packet->stream_index == reader.index) read_subtitle(reader, packet);
 					av_packet_unref(packet);
 				}
 			}
@@ -383,5 +497,6 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	av_frame_free(&frame);
 	av_packet_free(&packet);
 	avcodec_free_context(&codec);
+	for (subtitle_reader &reader : subtitles) avcodec_free_context(&reader.codec);
 	avformat_close_input(&format);
 }

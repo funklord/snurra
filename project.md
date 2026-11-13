@@ -904,6 +904,38 @@ controls; each tile very compact but resizeable).
   tail had dipped the sum to 0.67. A seek while paused, or a tile not
   yet sounding, keeps no tail; the stall rule -- no sound while not
   moving -- holds from 5 ms after a seek, as before it.
+- **Subtitles, built 2026-11-13** (the holder: "yes, subtitles too,
+  embedded and .srt"). `snurra_subtitles` (subtitles.h) is one track of
+  cues -- start, end, lines of styled runs (italic, bold), or a picture
+  placed in fractions of the video -- looked up by time. A `.srt` beside
+  the file (`film.srt`, then `film.en.srt` and the like, in name order)
+  is read whole by snurra's own reader rather than FFmpeg's: UTF-8 or
+  UTF-16 by its mark, else Windows-1252, which FFmpeg's SubRip decoder
+  refuses without iconv (not known to be in the Android kit's FFmpeg);
+  CRLF, a missing number, a period for the comma, a missing hour and a
+  position after the end time all read; `<i>` `<b>` kept, other tags
+  dropped, `{\an8}` puts it at the top. Embedded streams are read by the
+  picture's reader as it demuxes -- SubRip, ASS and MP4's text through
+  FFmpeg's ASS text (overrides, drawings dropped), and bitmaps (PGS,
+  DVD) as pictures; a Blu-ray cue with no end ends at the next, an
+  empty one only ends the one before, a cue read again after a seek is
+  not doubled. Not seen: a cue that began before the key frame a seek
+  lands on, until read again from before it. Shown from the start
+  where a `.srt` lies beside the file (put there to be shown) or a
+  stream is marked default or forced; otherwise none until asked -- a
+  film with twenty languages does not open on the first, as mpv
+  chooses. mplayer's `v` shows or hides them (with none chosen, the
+  first track), `j` takes the next track and after the last none, and
+  a two-second notice says which. Drawn white on a black outline,
+  1/15 of the picture's height, wrapped to its width, near its bottom.
+  Bitmap subtitles are decoded and drawn but no test makes one: FFmpeg
+  cannot encode text to a bitmap, so a PGS file would have to be
+  carried as a fixture. Measured (`subtitles_test`): the reader's
+  cases, ASS text, cue lookup, open-ended and re-read cues, the files
+  found beside a video; SubRip in Matroska, ASS in Matroska and
+  mov_text in MP4 read as the picture passes, italic kept; in a window,
+  the words heard on screen, `v` and `j`. Breaking the embedded read,
+  the Windows-1252 table or the beside-first choice each fails its test.
 - **Video, built 2026-11-12** (sec 3b, the holder: audio, then video,
   in the drawer that opens upward). `snurra_video` decodes a file's
   picture on a thread of its own, six frames ahead, and gives the last

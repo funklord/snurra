@@ -13,8 +13,10 @@
 #include <mutex>
 #include <memory>
 #include <thread>
+#include <vector>
 
 class snurra_bytes;
+class snurra_subtitles;
 
 /* A picture and the time on the track it is shown from, in microseconds. */
 struct snurra_video_frame {
@@ -62,6 +64,13 @@ public:
 
 	snurra_video_frame frame_at(int64_t us);
 
+	/* The subtitle streams in the file, each gathering its cues as the
+	 * picture is read past them (a cue that began before a seek's key frame
+	 * is not seen until read again). Known once opened. */
+	std::vector<std::shared_ptr<snurra_subtitles>> subtitle_tracks() const;
+	/* The stream marked to be shown (default or forced), or -1. */
+	int subtitle_default() const;
+
 private:
 	void run(const QString &path, std::shared_ptr<snurra_bytes> bytes);
 	bool want_seek(int64_t target) const;
@@ -83,6 +92,8 @@ private:
 	std::atomic<bool> m_has_video{ false };
 	std::atomic<bool> m_opened{ false };
 	std::atomic<int64_t> m_length_us{ 0 };
+	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitles;
+	int m_subtitle_default = -1;
 };
 
 #endif

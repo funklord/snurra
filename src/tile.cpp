@@ -1,6 +1,9 @@
 #include "snurra/tile.h"
 
+#include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
+#include <QPainterPath>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -19,6 +22,7 @@
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
+#include "snurra/subtitles.h"
 #include "snurra/video.h"
 
 /*
@@ -261,6 +265,32 @@ public:
 		setProperty("pts", qint64(frame.pts_us));
 		update();
 	}
+	/* The subtitles showing now; `subtitle` is their words, a line each,
+	 * so a test can read what is on screen. */
+	void show_cues(std::vector<snurra_cue> cues) {
+		auto same = [](const snurra_cue &a, const snurra_cue &b) {
+			return a.start_us == b.start_us && a.lines == b.lines && a.image.cacheKey() == b.image.cacheKey();
+		};
+		if (cues.size() == m_cues.size() && std::equal(cues.begin(), cues.end(), m_cues.begin(), same)) return;
+		m_cues = std::move(cues);
+		QStringList words;
+		for (const snurra_cue &cue : m_cues)
+			for (const auto &line : cue.lines) {
+				QString text;
+				for (const snurra_subtitle_span &span : line) text += span.text;
+				words << text;
+			}
+		setProperty("subtitle", words.join(QLatin1Char('\n')));
+		update();
+	}
+	/* A word on screen for two seconds: which subtitles, or none. */
+	void show_notice(const QString &notice) {
+		m_notice = notice;
+		m_notice_age.start();
+		setProperty("notice", notice);
+		update();
+		QTimer::singleShot(NOTICE_MS + 50, this, [this] { update(); });
+	}
 	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
 
 protected:
@@ -272,6 +302,13 @@ protected:
 		const QRect at(QPoint((width() - fitted.width()) / 2, (height() - fitted.height()) / 2), fitted);
 		painter.setRenderHint(QPainter::SmoothPixmapTransform);
 		painter.drawImage(at, m_image);
+		paint_cues(painter, at);
+		if (!m_notice.isEmpty() && m_notice_age.isValid() && m_notice_age.elapsed() < NOTICE_MS) {
+			QFont font = painter.font();
+			font.setPixelSize(qMax(11, at.height() / 20));
+			outlined(painter, at.topLeft() + QPointF(at.height() / 30.0, at.height() / 30.0 + font.pixelSize()),
+			         { { m_notice, false, false } }, font);
+		}
 	}
 	void keyPressEvent(QKeyEvent *event) override {
 		if (event->key() == Qt::Key_Escape && on_leave) on_leave();
@@ -282,7 +319,102 @@ protected:
 	}
 
 private:
+	static constexpr int NOTICE_MS = 2000;
+
+	/* A line of styled runs, white on a black outline, its baseline at
+	 * `at` from its left end; the width it took. */
+	static double outlined(QPainter &painter, QPointF at, const std::vector<snurra_subtitle_span> &line, const QFont &base) {
+		QPainterPath path;
+		double x = at.x();
+		for (const snurra_subtitle_span &span : line) {
+			QFont font = base;
+			font.setItalic(span.italic);
+			font.setBold(span.bold);
+			path.addText(QPointF(x, at.y()), font, span.text);
+			x += QFontMetricsF(font).horizontalAdvance(span.text);
+		}
+		painter.save();
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.strokePath(path, QPen(Qt::black, qMax(2.0, base.pixelSize() / 7.0), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+		painter.fillPath(path, Qt::white);
+		painter.restore();
+		return x - at.x();
+	}
+
+	/* A source line's runs broken at spaces into lines no wider than
+	 * `room`; a word wider than that has a line of its own. */
+	static std::vector<std::vector<snurra_subtitle_span>> wrapped(const std::vector<snurra_subtitle_span> &line, const QFont &base,
+	                                                             double room) {
+		std::vector<std::vector<snurra_subtitle_span>> lines(1);
+		double used = 0;
+		for (const snurra_subtitle_span &span : line) {
+			QFont font = base;
+			font.setItalic(span.italic);
+			font.setBold(span.bold);
+			const QFontMetricsF metrics(font);
+			const QStringList words = span.text.split(QLatin1Char(' '));
+			for (int i = 0; i < words.size(); ++i) {
+				const QString word = words[i] + (i + 1 < words.size() ? QStringLiteral(" ") : QString());
+				const double width = metrics.horizontalAdvance(word.trimmed());
+				if (used > 0 && used + width > room) {
+					lines.emplace_back();
+					used = 0;
+				}
+				if (used == 0 && word.trimmed().isEmpty()) continue;
+				auto &into = lines.back();
+				if (!into.empty() && into.back().italic == span.italic && into.back().bold == span.bold) into.back().text += word;
+				else into.push_back({ word, span.italic, span.bold });
+				used += metrics.horizontalAdvance(word);
+			}
+		}
+		for (auto &out : lines) {
+			if (out.empty()) continue;
+			QString &last = out.back().text;
+			while (last.endsWith(QLatin1Char(' '))) last.chop(1);
+		}
+		return lines;
+	}
+
+	/* Text centred near the bottom of the picture (or its top, where the
+	 * cue asks), at a size that follows the picture's; a picture cue where
+	 * it was placed. */
+	void paint_cues(QPainter &painter, const QRect &at) const {
+		QFont font = painter.font();
+		font.setPixelSize(qMax(11, at.height() / 15));
+		const double margin = at.height() * 0.04;
+		const double room = at.width() * 0.92;
+		const double step = QFontMetricsF(font).lineSpacing();
+		for (const snurra_cue &cue : m_cues) {
+			if (!cue.image.isNull()) {
+				const QRectF place(at.left() + cue.place.x() * at.width(), at.top() + cue.place.y() * at.height(),
+				                   cue.place.width() * at.width(), cue.place.height() * at.height());
+				painter.drawImage(place, cue.image);
+				continue;
+			}
+			std::vector<std::vector<snurra_subtitle_span>> lines;
+			for (const auto &line : cue.lines)
+				for (auto &part : wrapped(line, font, room)) lines.push_back(std::move(part));
+			const double height = step * lines.size();
+			double y = cue.top ? at.top() + margin + QFontMetricsF(font).ascent()
+			                   : at.bottom() - margin - height + QFontMetricsF(font).ascent();
+			for (const auto &line : lines) {
+				double width = 0;
+				for (const snurra_subtitle_span &span : line) {
+					QFont styled = font;
+					styled.setItalic(span.italic);
+					styled.setBold(span.bold);
+					width += QFontMetricsF(styled).horizontalAdvance(span.text);
+				}
+				outlined(painter, QPointF(at.left() + (at.width() - width) / 2, y), line, font);
+				y += step;
+			}
+		}
+	}
+
 	QImage m_image;
+	std::vector<snurra_cue> m_cues;
+	QString m_notice;
+	QElapsedTimer m_notice_age;
 };
 
 snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWidget *parent)
@@ -620,7 +752,69 @@ void snurra_tile::build_video_drawer(bool open) {
 	m_frames = new QTimer(this);
 	m_frames->setInterval(16);
 	connect(m_frames, &QTimer::timeout, this, &snurra_tile::show_video_frame);
+	find_subtitles();
 	set_video_open(open);
+}
+
+/*
+ * The subtitle tracks: a .srt beside the file first, then the file's own
+ * streams. Shown from the start where there is a file beside it -- put
+ * there to be shown -- or a stream marked default or forced; otherwise
+ * none until v or j asks, so a film carrying twenty languages does not
+ * open on the first of them. mpv chooses so too.
+ */
+void snurra_tile::find_subtitles() {
+	m_subtitle_tracks.clear();
+	m_subtitle = -1;
+	const QFileInfo source(m_state.source);
+	if (source.isFile()) {
+		for (const QString &path : snurra_srt_beside(m_state.source)) {
+			QFile file(path);
+			if (!file.open(QIODevice::ReadOnly) || file.size() > 16 * 1024 * 1024) continue;
+			auto track = std::make_shared<snurra_subtitles>(QFileInfo(path).fileName());
+			for (snurra_cue &cue : snurra_read_srt(file.readAll())) track->add(std::move(cue));
+			if (track->size() > 0) m_subtitle_tracks.push_back(track);
+		}
+	}
+	const size_t beside = m_subtitle_tracks.size();
+	for (const auto &track : m_video->subtitle_tracks()) m_subtitle_tracks.push_back(track);
+	if (beside > 0) m_subtitle = 0;
+	else if (m_video->subtitle_default() >= 0) m_subtitle = m_video->subtitle_default();
+}
+
+QString snurra_tile::subtitles_name() const {
+	if (!m_subtitles_shown || m_subtitle < 0 || m_subtitle >= int(m_subtitle_tracks.size())) return QString();
+	return m_subtitle_tracks[size_t(m_subtitle)]->name();
+}
+
+void snurra_tile::say_subtitles() {
+	const QString name = subtitles_name();
+	const QString notice = m_subtitle_tracks.empty() ? tr("No subtitles")
+	                       : name.isEmpty()           ? tr("Subtitles off")
+	                                                  : tr("Subtitles: %1").arg(name);
+	if (m_view) m_view->show_notice(notice);
+	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_notice(notice);
+	show_video_frame();
+}
+
+/* mplayer's v: shown or hidden; with none chosen, the first. */
+void snurra_tile::toggle_subtitles() {
+	if (!m_view) return;
+	if (m_subtitle < 0 && !m_subtitle_tracks.empty()) {
+		m_subtitle = 0;
+		m_subtitles_shown = true;
+	} else {
+		m_subtitles_shown = !m_subtitles_shown;
+	}
+	say_subtitles();
+}
+
+/* mplayer's j: the next track, and after the last, none. */
+void snurra_tile::next_subtitles() {
+	if (!m_view) return;
+	m_subtitles_shown = true;
+	m_subtitle = m_subtitle + 1 < int(m_subtitle_tracks.size()) ? m_subtitle + 1 : -1;
+	say_subtitles();
 }
 
 void snurra_tile::set_video_open(bool open) {
@@ -661,8 +855,17 @@ void snurra_tile::show_video_frame() {
 	if (!m_video) return;
 	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
 	const snurra_video_frame frame = m_video->frame_at(heard);
-	if (m_view) m_view->show_frame(frame);
-	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_frame(frame);
+	const QString name = subtitles_name();
+	std::vector<snurra_cue> cues;
+	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(heard);
+	if (m_view) {
+		m_view->show_frame(frame);
+		m_view->show_cues(cues);
+	}
+	if (m_full) {
+		static_cast<snurra_video_view *>(m_full.data())->show_frame(frame);
+		static_cast<snurra_video_view *>(m_full.data())->show_cues(cues);
+	}
 }
 
 void snurra_tile::set_full_screen(bool full) {

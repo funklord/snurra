@@ -3,7 +3,7 @@
 A media player is rarely small. mplayer was close -- a command line and
 a window -- and the players that replaced it grew into suites. snurra is
 meant to be what mplayer was for the desktop, with a graphical face and
-a DJ's mixing: play a file, its picture in a drawer above it; play
+a DJ's mixing: play a file, its picture and subtitles in a drawer above it; play
 several, side by side as one mix or stacked to sound at once, each with
 its level, its drawn volume curve, its tempo -- with key lock -- and
 jumps of whole bars where it has a beat; and stay out of the way. Each
