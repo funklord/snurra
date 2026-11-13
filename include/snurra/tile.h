@@ -125,6 +125,14 @@ public:
 	/* Sync (project.md sec 4): asks the window to match this tile's beat to
 	 * another's -- tempo, then phase. */
 	void request_sync() { emit sync_requested(this); }
+	void request_key_sync() { emit key_sync_requested(this); }
+	/* The key as heard (beats.h's numbering), -1 for none: its shift,
+	 * and without key lock the tempo's. */
+	int key_heard() const;
+	/* Its key shift set so its key is the leader's on the Camelot wheel --
+	 * the same number, so relative major and minor count as one -- the
+	 * smallest way there. False where either has no key. */
+	bool match_key_of(const snurra_tile *leader);
 	/* Its tempo matched to the leader's beat, and its phase's distance from
 	 * the leader's now, in microseconds, for the caller to bend; 0 where
 	 * either has no beat. */
@@ -227,6 +235,7 @@ signals:
 	 * unless Shift is held. */
 	void shift_requested(snurra_tile *tile, qint64 delta_us, bool done, bool snap);
 	void sync_requested(snurra_tile *tile);
+	void key_sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
 	/* Files, folders or links dropped on the full-screen picture (a window
 	 * of its own), for the window to add; nothing takes them embedded. */
@@ -291,6 +300,7 @@ private:
 	QLabel *m_tempo_label = nullptr;
 	QLabel *m_beat_label = nullptr;
 	class QDial *m_key_shift = nullptr;
+	class QToolButton *m_key_sync = nullptr;
 	void show_beat();
 	int key_shift() const;
 	QToolButton *m_key_lock = nullptr;

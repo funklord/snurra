@@ -263,6 +263,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
+	connect(tile, &snurra_tile::key_sync_requested, this, [this](snurra_tile *asking) { sync_key(asking); });
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
 	connect(tile, &snurra_tile::shift_requested, this, &snurra_node::shift_lane);
 	/* Dropped on the full-screen picture, where nothing else of the window
@@ -866,6 +867,12 @@ bool snurra_node::sync(snurra_tile *tile) {
 	const qint64 delta_us = tile->match_beat_of(leader);
 	if (delta_us != 0) nudge_lane(tile, delta_us);
 	return true;
+}
+
+bool snurra_node::sync_key(snurra_tile *tile) {
+	for (snurra_tile *other : m_tiles)
+		if (other != tile && other->playing() && other->key_heard() >= 0) return tile->match_key_of(other);
+	return false;
 }
 
 void snurra_node::leave_if_empty() {

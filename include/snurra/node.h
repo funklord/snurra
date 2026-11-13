@@ -180,6 +180,9 @@ public:
 	 * leader's -- the first other tile playing with a grid -- and its
 	 * phase bent onto the leader's, as a nudge. False with no leader. */
 	bool sync(snurra_tile *tile);
+	/* Key sync: `tile`'s key moved to the leader's -- the first other tile
+	 * playing with a key. False with no leader. */
+	bool sync_key(snurra_tile *tile);
 private:
 
 	bool m_drawers_look = false;

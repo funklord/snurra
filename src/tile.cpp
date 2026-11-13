@@ -846,6 +846,15 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_shift->setFixedSize(fontMetrics().height() * 2, fontMetrics().height() * 2);
 	m_key_shift->installEventFilter(this);
 	speed->addWidget(m_key_shift);
+	/* Key sync: the key moved to the leader's, as Traktor's key sync. */
+	m_key_sync = new QToolButton(m_controls);
+	m_key_sync->setObjectName(QStringLiteral("snurra-key-sync"));
+	m_key_sync->setAutoRaise(true);
+	m_key_sync->setText(tr("in key"));
+	m_key_sync->setAccessibleName(tr("Key sync"));
+	m_key_sync->setToolTip(tr("Move this tile's key to another playing tile's, the smallest way"));
+	m_key_sync->setEnabled(false);
+	speed->addWidget(m_key_sync);
 	/* Sync: this tile's beat to another playing one's, once both have a
 	 * grid (sec 4). */
 	m_sync = new QToolButton(m_controls);
@@ -918,6 +927,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	});
 	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
 	connect(m_key_shift, &QDial::valueChanged, this, &snurra_tile::set_key_shift);
+	connect(m_key_sync, &QToolButton::clicked, this, &snurra_tile::request_key_sync);
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_cue, &QToolButton::clicked, this, &snurra_tile::cue);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
@@ -979,6 +989,7 @@ void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
 	show_beat();
 	if (m_sync) m_sync->setEnabled(grid.valid() && (m_grouped || m_sync_available));
+	if (m_key_sync) m_key_sync->setEnabled(grid.key >= 0 && (m_grouped || m_sync_available));
 	const double length = double(length_frames());
 	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
 	else m_waveform->set_beats(0, 0);
@@ -1443,13 +1454,6 @@ void snurra_tile::seek(qint64 position_us) {
 	tick();
 }
 
-/*
- * Sync (project.md sec 4): this tile's tempo set so its beat runs at the
- * leader's -- a grid's BPM at its tile's tempo; off by more than a DJ's
- * range, the double or the half is the beat meant, 87.5 and 175 being one
- * tempo -- and how far its phase is from the leader's now, the shorter way
- * round, for the caller to bend out. 0 where either has no beat.
- */
 void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
 	const float asked[3] = { low_db, mid_db, high_db };
 	for (int band = 0; band < 3; ++band) {
@@ -1511,8 +1515,16 @@ void snurra_tile::show_cue() {
 void snurra_tile::set_sync_available(bool available) {
 	m_sync_available = available;
 	if (m_sync) m_sync->setEnabled(m_grid.valid() && (m_grouped || m_sync_available));
+	if (m_key_sync) m_key_sync->setEnabled(m_grid.key >= 0 && (m_grouped || m_sync_available));
 }
 
+/*
+ * Sync (project.md sec 4): this tile's tempo set so its beat runs at the
+ * leader's -- a grid's BPM at its tile's tempo; off by more than a DJ's
+ * range, the double or the half is the beat meant, 87.5 and 175 being one
+ * tempo -- and how far its phase is from the leader's now, the shorter way
+ * round, for the caller to bend out. 0 where either has no beat.
+ */
 qint64 snurra_tile::match_beat_of(const snurra_tile *leader) {
 	const snurra_beat_grid mine = beats();
 	if (!leader || !mine.valid() || !leader->beats().valid()) return 0;
@@ -1640,6 +1652,24 @@ void snurra_tile::set_tempo(float tempo) {
  * the tempo's too -- 6 % faster is a semitone up. */
 int snurra_tile::key_shift() const {
 	return m_state.key_shift + (m_state.key_lock ? 0 : int(std::lround(12 * std::log2(double(m_state.tempo)))));
+}
+
+int snurra_tile::key_heard() const {
+	return snurra_key_shifted(m_grid.key, key_shift());
+}
+
+bool snurra_tile::match_key_of(const snurra_tile *leader) {
+	if (!leader || m_grid.key < 0) return false;
+	const int theirs = leader->key_heard();
+	if (theirs < 0) return false;
+	const int by_tempo = key_shift() - m_state.key_shift;
+	/* Each number is twelve semitones round, so one of these reaches it. */
+	for (int shift : { 0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6 })
+		if (snurra_key_order(snurra_key_shifted(m_grid.key, by_tempo + shift)) / 2 == snurra_key_order(theirs) / 2) {
+			set_key_shift(shift);
+			return true;
+		}
+	return false;
 }
 
 void snurra_tile::show_beat() {

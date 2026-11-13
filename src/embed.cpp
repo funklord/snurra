@@ -299,6 +299,8 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 		const qint64 delta_us = asking->match_beat_of(other);
 		if (delta_us != 0) asking->deck()->bend(snurra_us_to_frames(delta_us, asking->deck()->rate()));
 	});
+	connect(tile, &snurra_tile::key_sync_requested, this,
+	        [this, deck](snurra_tile *asking) { asking->match_key_of(d->decks[1 - deck]->tile); });
 	d->apply_crossfader();
 	return true;
 }

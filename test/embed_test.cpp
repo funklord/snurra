@@ -70,6 +70,7 @@ private slots:
 	void the_library_finds_tempos_only_when_asked();
 	void the_library_shows_each_tunes_key();
 	void a_tile_says_its_beat_and_key_as_heard();
+	void key_sync_moves_a_tile_into_the_leaders_key();
 	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
@@ -1188,6 +1189,50 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	QTest::mouseDClick(knob, Qt::LeftButton);
 	QCOMPARE(tile->state().key_shift, 0);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
+}
+
+/*
+ * Key sync (Traktor's): the leader in A minor, 8A. D minor (7A) goes down
+ * five semitones to A minor; C major (8B, its relative) stays; at +6 %
+ * without key lock D minor is heard as Eb minor (2A) and goes six up.
+ * The leader's own shift counts: shifted two up, to B minor (10A), D
+ * minor goes three down, to B minor too.
+ */
+void embed_test::key_sync_moves_a_tile_into_the_leaders_key() {
+	snurra_node node;
+	snurra_tile_state state = placed(QStringLiteral("a"), 0, 0);
+	state.controls = true;
+	snurra_tile *leader = node.add_tile(state);
+	snurra_tile *mine = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+	snurra_beat_grid grid;
+	grid.rate = 48000;
+	grid.period = 24000;
+	grid.key = 21;
+	leader->set_beats(grid);
+	QToolButton *button = node.findChild<QToolButton *>(QStringLiteral("snurra-key-sync"));
+	QVERIFY(button && button->isEnabled());
+	auto synced = [&](int key, float tempo, bool key_lock) {
+		snurra_beat_grid ours = grid;
+		ours.key = key;
+		mine->set_beats(ours);
+		mine->set_key_lock(key_lock);
+		mine->set_tempo(tempo);
+		mine->set_key_shift(0);
+		if (!mine->match_key_of(leader)) return 99;
+		return mine->state().key_shift;
+	};
+	QCOMPARE(synced(14, 1.0f, true), -5);
+	QCOMPARE(snurra_key_name(mine->key_heard()), QStringLiteral("8A Am"));
+	QCOMPARE(synced(0, 1.0f, true), 0);
+	QCOMPARE(synced(14, 1.06f, false), 6);
+	QCOMPARE(snurra_key_name(mine->key_heard()), QStringLiteral("8A Am"));
+	leader->set_key_shift(2);
+	QCOMPARE(synced(14, 1.0f, true), -3);
+	QCOMPARE(snurra_key_name(mine->key_heard()), QStringLiteral("10A Bm"));
+	snurra_beat_grid none = grid;
+	none.key = -1;
+	mine->set_beats(none);
+	QVERIFY(!mine->match_key_of(leader));
 }
 
 /*

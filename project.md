@@ -1279,6 +1279,14 @@ controls; each tile very compact but resizeable).
   within 0.22 dB in each (`key_lock_keeps_the_pitch_as_the_tempo_moves`).
   The resampler stepping a frame at a time instead leaves the pitch at
   440 and fails it. The tile's key reads as heard, shift and all.
+  **Key sync** beside the knob ("in key", Traktor's): the shift that
+  puts this tile's key on the leader's Camelot number -- relative major
+  and minor being one, as they mix -- the smallest way, the tempo's own
+  pitch counted where key lock is off and the leader's shift counted
+  too; the leader as for Sync, the first other tile playing with a key,
+  or in the DJ player the other deck
+  (`key_sync_moves_a_tile_into_the_leaders_key`, which the tempo's pitch
+  left out fails).
   **Sync** (2026-11-12): a tile's button sets
   its tempo so its beat runs at the leader's -- the first other tile
   playing with a grid, at that tile's tempo; a double or half if nearer
