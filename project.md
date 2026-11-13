@@ -178,7 +178,18 @@ and everything above it knows nothing of SFTP or fuzznet.
       fetch from the start reached the middle as soon anyway (355 ms),
       so this shows the fetch is asked to move, not that it then plays
       sooner; that wants a slow or lossy link (fuzznet's faults build).
-    - Next: Android, where the node lives in another app's sandbox.
+    - **Android: not built, and why.** On a phone the node runs inside
+      fuzzypickles' own app, and Android keeps apps' local sockets apart
+      (SELinux puts each app in its own category; that it refuses one
+      app connecting to another's socket is expected, not measured
+      here). So snurra's phone app reaching the estate would need a
+      node of its own, joined to the estate as one more host -- fuzznet
+      linked into the APK and a pairing in the app -- where
+      fuzzypickles' phone app already embeds snurra and is the estate's
+      player there today. The estate is built for the desktop player;
+      on the phone the build compiles the client and finds no node,
+      so it lists nothing. Whether a phone should have both is the
+      holder's.
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
