@@ -500,6 +500,23 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
 	QVERIFY(tile->playing());
 	QTest::keyClick(full, Qt::Key_Space);
 	QVERIFY2(!tile->playing(), "space in full screen did not pause");
+	/* mplayer's wheel: a notch the small jump -- here 10 s, from 2.5 s
+	 * back to the start; half notches add up, and cancel. */
+	auto wheel = [&](int delta) {
+		QWheelEvent event(QPointF(full->rect().center()), QPointF(full->mapToGlobal(full->rect().center())), QPoint(),
+		                  QPoint(0, delta), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QApplication::sendEvent(full, &event);
+	};
+	tile->hold_at(snurra_us_to_frames(2500000, tile->deck()->rate()));
+	QTRY_COMPARE_WITH_TIMEOUT(tile->state().position_us, qint64(2500000), 2000);
+	wheel(60);
+	wheel(-60);
+	wheel(-60);
+	QTest::qWait(200);
+	QCOMPARE(tile->state().position_us, qint64(2500000));
+	wheel(-60);   /* the second half of a notch: now a whole one */
+	QTRY_COMPARE_WITH_TIMEOUT(tile->state().position_us, qint64(0), 2000);
+
 	QTest::keyClick(full, Qt::Key_O);
 	QTRY_VERIFY_WITH_TIMEOUT(QRegularExpression(QStringLiteral("^0:00:0\\d / 0:00:03$")).match(full->property("clock").toString()).hasMatch(),
 	                         2000);

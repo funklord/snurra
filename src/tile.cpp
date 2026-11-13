@@ -11,6 +11,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <QPointer>
 #include <QPainter>
 #include <QRandomGenerator>
@@ -316,6 +317,8 @@ public:
 	 * window, as if pressed there -- or space, f and the rest do nothing
 	 * once the picture fills the screen. */
 	std::function<void(QKeyEvent *)> on_key;
+	/* mplayer's wheel: a notch up forward, down back. */
+	std::function<void(int direction)> on_wheel;
 
 protected:
 	void paintEvent(QPaintEvent *) override {
@@ -350,6 +353,14 @@ protected:
 	void mouseDoubleClickEvent(QMouseEvent *) override {
 		if (on_leave) on_leave();
 	}
+	void wheelEvent(QWheelEvent *event) override {
+		if (!on_wheel) return QWidget::wheelEvent(event);
+		/* Whole notches, however a touchpad divides them. */
+		m_wheel += event->angleDelta().y();
+		for (; m_wheel >= 120; m_wheel -= 120) on_wheel(1);
+		for (; m_wheel <= -120; m_wheel += 120) on_wheel(-1);
+		event->accept();
+	}
 	void mouseMoveEvent(QMouseEvent *event) override {
 		if (hasMouseTracking()) {
 			unsetCursor();
@@ -361,6 +372,7 @@ protected:
 private:
 	static constexpr int POINTER_MS = 1000;
 	QTimer m_pointer;
+	int m_wheel = 0;   /* eighths of a degree not yet a notch */
 	static constexpr int NOTICE_MS = 2000;
 
 	/* A line of styled runs, white on a black outline, its baseline at
@@ -771,6 +783,7 @@ void snurra_tile::build_video_drawer(bool open) {
 	QVBoxLayout *drawer = new QVBoxLayout(m_above);
 	drawer->setContentsMargins(2, 2, 2, 2);
 	m_view = new snurra_video_view(m_above);
+	m_view->on_wheel = [this](int direction) { jump(direction, false); };
 	drawer->addWidget(m_view);
 	m_maximize = new QToolButton(m_view);
 	m_maximize->setAutoRaise(true);
@@ -1021,6 +1034,7 @@ void snurra_tile::set_full_screen(bool full) {
 		emit touched(this);
 		QCoreApplication::sendEvent(window(), event);
 	};
+	view->on_wheel = [this](int direction) { jump(direction, false); };
 	connect(this, &QObject::destroyed, view, &QObject::deleteLater);
 	m_full = view;
 	view->hide_pointer_when_still();

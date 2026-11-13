@@ -725,6 +725,12 @@ controls; each tile very compact but resizeable).
   into a film, 12694 ms with the reset taken out
   (`a_film_playing_keeps_the_screen_awake`). **Not yet: Wayland**, where
   only the compositor's idle-inhibit protocol or a portal can do it.
+- **mplayer's wheel, 2026-11-13**: over the picture, in its drawer or
+  full screen, a notch up is the small jump forward and down back -- the
+  arrows' step (sec 4), where mplayer's is its 10 s. Whole notches,
+  however a touchpad divides them. Over the waveform the wheel is left
+  alone. Tested in full screen: half a notch does nothing, a whole one
+  jumps.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
