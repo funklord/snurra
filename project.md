@@ -1071,7 +1071,21 @@ controls; each tile very compact but resizeable).
   the check is each button's own. **The browser there** gave the name
   38 of its 370: under 20 letters' room for it, Folder is hidden (the
   search still finds by it) and Artist takes a quarter of what BPM and
-  Key leave, the name 204; wide again, both come back. **On a phone it is the app** (2026-11-13): started with no
+  Key leave, the name 204; wide again, both come back.
+  **Seen on Android** (2026-11-13, an x86_64 build on the `bssh_fold`
+  AVD, read-only, 1768 x 2208 at 420 dpi): unfolded, about 673 dp,
+  both decks loaded and every row whole -- the key row, the toggle by
+  the position, the key found (11B for an A and E, and for a lone 440
+  Hz) -- and the browser with Key. **Not on a fold's cover screen**:
+  at 884 wide, about 336 dp (the Fold3's cover is near 344), each deck
+  has some 150 dp, and "in key" is elided, the EQ's third dial cut off
+  and its names run into the dials; by the offscreen measure the
+  buttons' row with a beat wants some 170. Two decks side by side
+  cannot hold every control with its words there: stacking them takes
+  the screen from the browser, which the holder wants most of; shorter
+  faces ("4" for "4 bars") undo the holder's rule that a jump says its
+  step. Whose: the holder's -- asked, not decided. The console's
+  `fold` did not change this AVD's display; `wm size 884x2208` did. **On a phone it is the app** (2026-11-13): started with no
   file on Android, snurra opens the DJ player full screen and asks for
   the phone's music (READ_MEDIA_AUDIO and _VIDEO, declared in
   `android/AndroidManifest.xml` -- qmake's ANDROID_PERMISSIONS was left
