@@ -669,6 +669,14 @@ would hide snurra's own races run through Qt. Under it the ALSA
 handover test measured 1.0 frame against its 0.25 bar, the callback
 several times slower; it passes without.
 
+**AddressSanitizer with UBSan, 2026-11-13, after the library, tags,
+beat cache, chapters, cue sheets and sorting:** no report over the whole
+suite. One timing bar fails under it and not without: the first picture
+after a 9 s skip into a 1080p long-GOP file (`video_test`) lagged the
+sound 133-156 ms in four runs against its 150 ms bar, where the plain
+build measures 6-50 ms in five -- the instrumented conversion of some
+290 decoded frames, not a fault.
+
 **Codecs keep time, measured** (`codec_test`, the holder 2026-11-12:
 every codec added gets tests of how it keeps time against other files,
 so timing faults are found and fixed before anything depends on them). A
