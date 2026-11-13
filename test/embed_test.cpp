@@ -1140,6 +1140,19 @@ void embed_test::the_library_finds_tempos_only_when_asked() {
 	QVERIFY(bpm_of(dir.filePath(QStringLiteral("c tone.wav"))).isEmpty());
 	QVERIFY(find->isEnabled());
 	QVERIFY(snurra_cached_beats(slow, -1, 48000, kept) && qAbs(kept.bpm() - 120) < 0.1);
+
+	/* Sorted by the column clicked: BPM by number, the tone with none
+	 * last whichever way; Folder, the first order, by path. */
+	QTreeView *view = library.findChild<QTreeView *>();
+	const QString tone_path = dir.filePath(QStringLiteral("c tone.wav"));
+	view->sortByColumn(2, Qt::DescendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ fast, slow, tone_path }));
+	view->sortByColumn(2, Qt::AscendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ slow, fast, tone_path }));
+	view->sortByColumn(0, Qt::DescendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ tone_path, fast, slow }));
+	view->sortByColumn(3, Qt::AscendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ slow, fast, tone_path }));
 }
 
 /*

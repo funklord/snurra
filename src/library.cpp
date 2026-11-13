@@ -71,9 +71,22 @@ protected:
 			if (!text.contains(word, Qt::CaseInsensitive)) return false;
 		return true;
 	}
+	/* By the column clicked, as a DJ's browser sorts: Name and Artist by
+	 * their words, BPM by number, a tune with none after those with one,
+	 * whichever way; Folder -- the first order -- by path. Ties by path. */
 	bool lessThan(const QModelIndex &left, const QModelIndex &right) const override {
 		const QString a = sourceModel()->index(left.row(), 0).data(PATH_ROLE).toString();
 		const QString b = sourceModel()->index(right.row(), 0).data(PATH_ROLE).toString();
+		const int column = left.column();
+		if (column == 2) {
+			const QString x = left.data().toString();
+			const QString y = right.data().toString();
+			if (x.isEmpty() != y.isEmpty()) return (sortOrder() == Qt::AscendingOrder) == y.isEmpty();
+			if (x != y) return x.toDouble() < y.toDouble();
+		} else if (column == 0 || column == 1) {
+			const int words = m_counting.compare(left.data().toString(), right.data().toString());
+			if (words != 0) return words < 0;
+		}
 		return m_counting.compare(a, b) < 0;
 	}
 
@@ -140,6 +153,8 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
 	m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_view->setDragEnabled(true);
+	m_view->setSortingEnabled(true);
+	m_view->sortByColumn(3, Qt::AscendingOrder);   /* the folders' order first */
 	m_view->setDragDropMode(QAbstractItemView::DragOnly);
 	/* The name takes the room, the folder a fixed share: names were cut to
 	 * a dozen letters beside an empty folder column (seen 2026-11-13). */
@@ -362,7 +377,7 @@ void snurra_library::found(const QStringList &paths, bool last) {
 		m_items.insert(path, name);
 		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(), new QStandardItem(where) });
 	}
-	m_filter->sort(0);
+	m_filter->sort(m_filter->sortColumn() < 0 ? 3 : m_filter->sortColumn(), m_filter->sortOrder());
 	m_filter->setDynamicSortFilter(true);
 	if (last) m_scanning = false;
 	say();

@@ -275,6 +275,9 @@ does the same with a tile's playback:
   itself, since it holds a core a while and a phone's battery (Traktor
   analyses on import; snurra waits to be asked). A new folder or the
   library closed stops it (`the_library_finds_tempos_only_when_asked`).
+  A header clicked sorts by its column, as a DJ's browser does: Name and
+  Artist by their words, BPM by number with tunes that have none last
+  whichever way, Folder -- the first order -- by path; ties by path.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the
