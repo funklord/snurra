@@ -211,7 +211,14 @@ does the same with a tile's playback:
 - **Files dropped from a file manager** (2026-11-12): onto a window, a
   tile each, where the drop's side says -- at the right edge the first
   lane's train goes on, at the bottom a new lane starts -- paused, their
-  controls in, as a launch's later files. Since 2026-11-13 (`snurra_dropped`):
+  controls in, as a launch's later files. **Dropped on a tile, a file
+  replaces it** (the holder, 2026-11-13: "I thought it should replace
+  the existing one"): only a strip along the right and bottom edges, a
+  fifth of the window deep (at least two lines), adds; elsewhere on a
+  tile the drop is that tile's, outlined as the drag moves. The new one
+  keeps the place, level, controls and lane begin, plays if the old one
+  did, from its start, at tempo 1 with no envelope or nudge; any further
+  files go after the train. Since 2026-11-13 (`snurra_dropped`):
   a folder is the audio and video under it, by the name's type (a cover,
   a cue sheet or a playlist makes no tile), sorted as people count (2 before 10),
   at most 64, with no more than 4096 files looked at so a drop of a home

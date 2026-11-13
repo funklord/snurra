@@ -1192,11 +1192,20 @@ snurra_wire::side_t snurra_node::side_at(const QPoint &local) const {
 	return right <= below ? snurra_wire::RIGHT : snurra_wire::BELOW;
 }
 
-void snurra_node::hint_drop(bool show, snurra_wire::side_t side) {
+void snurra_node::hint_drop(bool show, snurra_wire::side_t side, snurra_tile *over) {
 	if (!show) {
 		m_drop_hint->hide();
 		return;
 	}
+	/* Over a tile, an outline round it: that one is what goes. */
+	if (over) {
+		m_drop_hint->setStyleSheet(QStringLiteral("background: transparent; border: 3px solid palette(highlight);"));
+		m_drop_hint->setGeometry(over->geometry());
+		m_drop_hint->raise();
+		m_drop_hint->show();
+		return;
+	}
+	m_drop_hint->setStyleSheet(QStringLiteral("background: palette(highlight);"));
 	const int thick = qMax(4, fontMetrics().height() / 2);
 	m_drop_hint->setGeometry(side == snurra_wire::RIGHT ? QRect(width() - thick, 0, thick, height())
 	                                                    : QRect(0, height() - thick, width(), thick));
@@ -1211,16 +1220,33 @@ static bool from_a_peer(const QMimeData *mime, const QString &own) {
 	return !path.isEmpty() && path != own;
 }
 
+/*
+ * Where a drop lands (the holder, 2026-11-13): along the right edge or the
+ * bottom, a strip a fifth of the window deep (at least two lines), it adds
+ * -- a train, a stack; anywhere else on a tile, it is that tile's: files
+ * replace it.
+ */
+snurra_tile *snurra_node::tile_at(const QPoint &local) const {
+	const int strip_x = qMax(fontMetrics().height() * 2, width() / 5);
+	const int strip_y = qMax(fontMetrics().height() * 2, height() / 5);
+	if (local.x() >= width() - strip_x || local.y() >= height() - strip_y) return nullptr;
+	for (snurra_tile *tile : m_tiles)
+		if (tile->isVisible() && tile->geometry().contains(local)) return tile;
+	return nullptr;
+}
+
 void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
 	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
-	hint_drop(true, side_at(event->position().toPoint()));
+	const QPoint at = event->position().toPoint();
+	hint_drop(true, side_at(at), from_a_peer(event->mimeData(), m_path) ? nullptr : tile_at(at));
 }
 
 void snurra_node::dragMoveEvent(QDragMoveEvent *event) {
 	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
-	hint_drop(true, side_at(event->position().toPoint()));
+	const QPoint at = event->position().toPoint();
+	hint_drop(true, side_at(at), from_a_peer(event->mimeData(), m_path) ? nullptr : tile_at(at));
 }
 
 void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
@@ -1230,9 +1256,15 @@ void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
 void snurra_node::dropEvent(QDropEvent *event) {
 	hint_drop(false);
 	if (!from_a_peer(event->mimeData(), m_path)) {
-		const QStringList files = snurra_dropped(event->mimeData());
+		QStringList files = snurra_dropped(event->mimeData());
 		if (files.isEmpty()) return;
-		add_files(files, side_at(event->position().toPoint()));
+		if (snurra_tile *over = tile_at(event->position().toPoint())) {
+			/* The first in its place; any more after the train. */
+			replace_tile(over, files.takeFirst());
+			if (!files.isEmpty()) add_files(files, snurra_wire::RIGHT);
+		} else {
+			add_files(files, side_at(event->position().toPoint()));
+		}
 		event->acceptProposedAction();
 		return;
 	}
@@ -1280,6 +1312,30 @@ void snurra_node::add_files(const QStringList &files, snurra_wire::side_t side) 
 		state.column = column++;
 		add_tile(state);
 	}
+}
+
+/*
+ * A file dropped on a tile takes its place: the same row and column, level,
+ * controls and lane begin; its own track from the start, at tempo 1, with
+ * no envelope, nudge or sound track of the last one's; playing if that
+ * one was.
+ */
+void snurra_node::replace_tile(snurra_tile *tile, const QString &file) {
+	snurra_tile_state state = tile->state();
+	state.source = snurra_is_url(file) ? file : QFileInfo(file).absoluteFilePath();
+	state.duration_us = 180000000;
+	state.position_us = 0;
+	state.sampled_at_us = snurra_clock_us();
+	state.envelope.clear();
+	state.offset_us = 0;
+	state.tempo = 1;
+	state.audio_track = -1;
+	const bool current = m_current == tile;
+	/* In first, then the old one out: the other way the grid closes up
+	 * the gap and renumbers before the new one takes its place. */
+	snurra_tile *taken = add_tile(state);
+	remove_tile(tile);
+	if (current) m_current = taken;
 }
 
 void snurra_node::play_file(const QString &path) {

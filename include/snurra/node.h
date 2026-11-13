@@ -139,7 +139,11 @@ private:
 	void handle_released(snurra_tile *tile, const QPoint &global);
 	void drag_out(snurra_tile *tile);
 	snurra_wire::side_t side_at(const QPoint &local) const;
-	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT);
+	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT, snurra_tile *over = nullptr);
+	/* The tile a drop at `local` lands on, to replace or swap with; none
+	 * in the strip along the right and bottom edges, which add. */
+	snurra_tile *tile_at(const QPoint &local) const;
+	void replace_tile(snurra_tile *tile, const QString &file);
 	void leave_if_empty();
 	void run_trains();
 	void show_crossfades();

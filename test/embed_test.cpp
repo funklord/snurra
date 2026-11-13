@@ -50,6 +50,7 @@ private slots:
 	void a_lane_dragged_later_starts_later_on_the_beat();
 	void loop_plays_again_from_the_start();
 	void the_library_lists_finds_and_hands_out_tunes();
+	void a_file_dropped_on_a_tile_takes_its_place();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -644,6 +645,51 @@ void embed_test::the_library_lists_finds_and_hands_out_tunes() {
 			QCOMPARE(qMakePair(tile->row(), tile->column()), qMakePair(0, 1));
 			QVERIFY(!tile->playing());
 		}
+}
+
+/*
+ * A file dropped on a tile replaces it (the holder, 2026-11-13): A, B, C
+ * in a train; a file dropped on B's middle is in B's place, between A and
+ * C, at B's level, and B is gone. At the right edge it still joins the
+ * train after C.
+ */
+void embed_test::a_file_dropped_on_a_tile_takes_its_place() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("new.wav"));
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav(4800));
+	file.close();
+	snurra_node node;
+	node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_tile *b = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+	node.add_tile(placed(QStringLiteral("c"), 0, 2));
+	b->set_level(40);
+	node.resize(900, 200);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	auto drop_at = [&node, &path](const QPoint &at) {
+		QMimeData mime;
+		mime.setUrls({ QUrl::fromLocalFile(path) });
+		QDragEnterEvent enter(at, Qt::CopyAction, &mime, Qt::LeftButton, {});
+		QCoreApplication::sendEvent(&node, &enter);
+		if (!enter.isAccepted()) return false;
+		QDropEvent event(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, {});
+		QCoreApplication::sendEvent(&node, &event);
+		return event.isAccepted();
+	};
+	const QPoint middle_of_b = b->geometry().center();
+	QVERIFY(drop_at(middle_of_b));
+	QTRY_COMPARE_WITH_TIMEOUT(node.findChildren<snurra_tile *>().size(), 3, 2000);
+	QMap<int, snurra_tile *> train;
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) train.insert(tile->column(), tile);
+	QCOMPARE(train.value(0)->state().source, QStringLiteral("a"));
+	QCOMPARE(train.value(1)->state().source, path);
+	QCOMPARE(train.value(1)->level(), 40);
+	QCOMPARE(train.value(2)->state().source, QStringLiteral("c"));
+
+	QVERIFY(drop_at(QPoint(node.width() - 2, node.height() / 3)));
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 4, 2000);
 }
 
 /*
