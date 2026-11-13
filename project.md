@@ -1055,8 +1055,11 @@ controls; each tile very compact but resizeable).
   its first 8 ms best match the last's end, crossfaded there. Neither
   library is installed here; this is snurra's own. At tempo 1 with no
   key lock a deck takes the plain path, so every exactness measured
-  above stands. The tile: a tempo slider of +-8 % in tenths (a
-  double-click resets it) and a key button, carried by a handover. In a
+  above stands. The tile: a tempo slider of +-16 % in tenths
+  (the holder, 2026-11-13: 12 to 16, "8 % was never enough"; Mixxx
+  offers 16), snapping to the middle when dragged within 0.5 % of it (a
+  double-click resets it; key lock off, so pitch moves with the speed,
+  by default) and a key button, carried by a handover. In a
   window a lane's timeline counts each tile at its tempo -- seeks, group
   starts and when a train's next begins. Measured: varispeed 1.05 on the
   ramp, every frame out 1.05 on from the last to the ramp's own

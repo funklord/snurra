@@ -264,6 +264,8 @@ private:
 	QSlider *m_position;
 	QSlider *m_level;
 	QSlider *m_tempo = nullptr;
+	static constexpr int TEMPO_RANGE = 160;   /* tenths of a per cent: +-16 % */
+	static constexpr int TEMPO_SNAP = 5;      /* +-0.5 %, dragged, is the middle */
 	QLabel *m_tempo_label = nullptr;
 	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_sync = nullptr;

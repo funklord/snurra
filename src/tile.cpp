@@ -701,19 +701,20 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	loud->addWidget(speaker);
 	loud->addWidget(m_level, 1);
 	strip->addLayout(loud);
-	/* The tempo, a DJ's +-8 % in tenths of a per cent, and key lock: with
-	 * it on the pitch stays as the tempo moves (sec 4). A double-click
-	 * puts the tempo back. */
+	/* The tempo, +-16 % in tenths of a per cent -- the holder's 12 to 16,
+	 * "8 % was never enough"; Mixxx offers 16 -- and key lock: off, as a
+	 * turntable, the pitch moves with the tempo; on, it stays (sec 4).
+	 * Dragged, it snaps to the middle; a double-click puts it back. */
 	QHBoxLayout *speed = new QHBoxLayout;
 	m_tempo = new QSlider(Qt::Horizontal, m_controls);
 	m_tempo->setObjectName(QStringLiteral("snurra-tempo"));
 	m_tempo->setAccessibleName(tr("Tempo"));
 	m_tempo->setToolTip(tr("Tempo; a double-click puts it back"));
-	m_tempo->setRange(-80, 80);
+	m_tempo->setRange(-TEMPO_RANGE, TEMPO_RANGE);
 	m_tempo->installEventFilter(this);
 	speed->addWidget(m_tempo, 1);
 	m_tempo_label = new QLabel(m_controls);
-	m_tempo_label->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("-8.0 %")));
+	m_tempo_label->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("-16.0 %")));
 	speed->addWidget(m_tempo_label);
 	m_key_lock = new QToolButton(m_controls);
 	m_key_lock->setObjectName(QStringLiteral("snurra-key-lock"));
@@ -758,7 +759,13 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		set_envelope(envelope);
 	};
 	connect(m_position, &QSlider::sliderMoved, this, [this](int tenths) { seek(qint64(tenths) * 100000); });
-	connect(m_tempo, &QSlider::valueChanged, this, [this](int tenths) { set_tempo(1.0f + float(tenths) / 1000.0f); });
+	connect(m_tempo, &QSlider::valueChanged, this, [this](int tenths) {
+		/* Held near the middle while dragged, it is the middle: a pitch
+		 * fader's centre is felt, not found to the tenth by eye. Keys
+		 * and the speed keys still set any tenth. */
+		if (m_tempo->isSliderDown() && tenths != 0 && std::abs(tenths) <= TEMPO_SNAP) tenths = 0;
+		set_tempo(1.0f + float(tenths) / 1000.0f);
+	});
 	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {

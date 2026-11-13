@@ -7,6 +7,7 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QMimeData>
+#include <QSlider>
 #include <QTreeView>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -52,6 +53,7 @@ private slots:
 	void the_library_lists_finds_and_hands_out_tunes();
 	void a_file_dropped_on_a_tile_takes_its_place();
 	void a_tile_dropped_on_another_trades_places();
+	void the_tempo_reaches_16_and_snaps_to_the_middle();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -733,6 +735,35 @@ void embed_test::a_tile_dropped_on_another_trades_places() {
 	QCOMPARE(place(a), qMakePair(0, 1));
 	QCOMPARE(place(b), qMakePair(1, 0));
 	QCOMPARE(b->lane_start_us(), qint64(1000000));
+}
+
+/*
+ * The tempo slider (the holder, 2026-11-13): +-16 %, key lock off by
+ * default so the pitch moves with it; dragged within 0.5 % of the middle
+ * it is the middle, beyond that its own tenth; set by a key, any tenth.
+ */
+void embed_test::the_tempo_reaches_16_and_snaps_to_the_middle() {
+	snurra_node node;
+	snurra_tile_state state = placed(QStringLiteral("a"), 0, 0);
+	state.controls = true;
+	snurra_tile *tile = node.add_tile(state);
+	QSlider *tempo = node.findChild<QSlider *>(QStringLiteral("snurra-tempo"));
+	QVERIFY(tempo);
+	QCOMPARE(tempo->maximum(), 160);
+	QCOMPARE(tempo->minimum(), -160);
+	QVERIFY2(!tile->key_lock(), "key lock is on by default");
+	tempo->setSliderDown(true);
+	tempo->setValue(4);
+	QCOMPARE(tile->tempo(), 1.0f);
+	tempo->setValue(-5);
+	QCOMPARE(tile->tempo(), 1.0f);
+	tempo->setValue(12);
+	QVERIFY(qAbs(tile->tempo() - 1.012f) < 1e-5f);
+	tempo->setValue(160);
+	QVERIFY(qAbs(tile->tempo() - 1.16f) < 1e-5f);
+	tempo->setSliderDown(false);
+	tempo->setValue(3);
+	QVERIFY(qAbs(tile->tempo() - 1.003f) < 1e-5f);
 }
 
 /*
