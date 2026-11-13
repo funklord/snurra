@@ -23,7 +23,8 @@ TEST_BIN = $(TEST_BUILD_DIR)/snurra-tests
 
 # A ceiling inside the target: the tests start processes, and one that
 # hung would otherwise wait for ever. The suite took 123 s on 2026-11-13
-# (24 cores, load 5), so about twice that.
+# (24 cores, load 5), so about twice that. Killed ten seconds after the
+# signal (-k 10): a run hung in a destructor has outlived SIGTERM alone.
 TEST_TIMEOUT ?= 300
 
 .DEFAULT_GOAL := all
@@ -58,7 +59,7 @@ tests-build: $(TEST_BUILD_DIR)/Makefile FORCE
 # A run over no binary is a failure, not a pass.
 test: $(BIN) tests-build
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
-	timeout $(TEST_TIMEOUT) ./$(TEST_BIN)
+	timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
 
 # --- install -----------------------------------------------------------------
 # The player and its desktop entry, so a file manager offers snurra for
@@ -177,7 +178,7 @@ $(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) $(SNURRA_HDRS) VE
 	$(CXX) $(MK_FLAGS) -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp $(MK_MOCS) -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build
-	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) timeout $(TEST_TIMEOUT) ./$(TEST_BIN)
+	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
 
 # The gate's own suite first, since a gate's pass means something only once
 # the gate is known to work; both are copied from ~/.claude/tool/.
