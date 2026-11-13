@@ -712,6 +712,19 @@ controls; each tile very compact but resizeable).
 - **The pointer leaves the full-screen film, 2026-11-13**: after a second
   still, as mplayer's does (its default delay), back when moved. Tested
   with the full-screen keys; without it the blank pointer never comes.
+- **A film keeps the screen awake, 2026-11-13**, as mplayer's heartbeat
+  does: while a tile's picture plays where it can be seen (the drawer
+  open, or full screen), each ten seconds the X server's idle time is
+  reset (ForceScreenSaver, Reset). That is what the server's own saver
+  and DPMS count from and what lockers read -- TDE's kdesktop, which the
+  holder runs, and xautolock -- so it holds whatever the desktop, where
+  a D-Bus inhibit (org.freedesktop.ScreenSaver) holds only on desktops
+  serving one. libxcb is resolved at run time on Qt's own connection,
+  so no consumer builds against it. Tested on Xvfb by the idle time a
+  saver reads (libXss, resolved by the test too): 1850 ms twelve seconds
+  into a film, 12694 ms with the reset taken out
+  (`a_film_playing_keeps_the_screen_awake`). **Not yet: Wayland**, where
+  only the compositor's idle-inhibit protocol or a portal can do it.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

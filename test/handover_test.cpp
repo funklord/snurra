@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QLibrary>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QProcess>
@@ -41,6 +42,7 @@ private slots:
 	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
 	void mplayers_keys_drive_the_tile();
 	void mplayers_options_say_where_and_how_it_plays();
+	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 	void a_stack_plays_its_lanes_at_once_from_one_time();
 	void a_stack_finds_its_time_in_a_lane_that_is_a_train();
@@ -1291,6 +1293,68 @@ void handover_test::mplayers_options_say_where_and_how_it_plays() {
 QProcess *handover_test::start_process_for_options(const QString &time) {
 	return start({ QStringLiteral("-ss"), time, QStringLiteral("-volume"), QStringLiteral("50"), QStringLiteral("-speed"),
 	               QStringLiteral("1.5"), QStringLiteral("--paused"), QStringLiteral("a.flac") });
+}
+
+/*
+ * How long the X server on `display` has seen no input, in milliseconds,
+ * as a screen saver or locker reads it (MIT-SCREEN-SAVER); -1 where it
+ * cannot be asked. libX11 and libXss are resolved here rather than linked,
+ * so the suite builds where they are not.
+ */
+static qint64 x_idle_ms(const QString &display) {
+	struct info {
+		unsigned long window;
+		int state;
+		int kind;
+		unsigned long til_or_since;
+		unsigned long idle;
+		unsigned long event_mask;
+	};
+	using open_t = void *(*)(const char *);
+	using close_t = int (*)(void *);
+	using root_t = unsigned long (*)(void *);
+	using query_t = int (*)(void *, unsigned long, info *);
+	const auto open = reinterpret_cast<open_t>(QLibrary::resolve(QStringLiteral("X11"), 6, "XOpenDisplay"));
+	const auto close = reinterpret_cast<close_t>(QLibrary::resolve(QStringLiteral("X11"), 6, "XCloseDisplay"));
+	const auto root = reinterpret_cast<root_t>(QLibrary::resolve(QStringLiteral("X11"), 6, "XDefaultRootWindow"));
+	const auto query = reinterpret_cast<query_t>(QLibrary::resolve(QStringLiteral("Xss"), 1, "XScreenSaverQueryInfo"));
+	if (!open || !close || !root || !query) return -1;
+	void *x = open(display.toLocal8Bit().constData());
+	if (!x) return -1;
+	info got {};
+	const qint64 idle = query(x, root(x), &got) ? qint64(got.idle) : -1;
+	close(x);
+	return idle;
+}
+
+/*
+ * A film playing keeps the screen saver and the locker away, as mplayer's
+ * heartbeat does: on an X server nobody touches, twelve seconds in, the
+ * idle time a saver reads has been reset within the last ten.
+ */
+void handover_test::a_film_playing_keeps_the_screen_awake() {
+	const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+	if (ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	if (x_idle_ms(name) < 0) QSKIP("no libX11 or libXss to ask the server's idle time");
+	const QString film = m_dir->filePath(QStringLiteral("film.mp4"));
+	QProcess make;
+	make.start(ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                     QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("testsrc=s=64x48:r=10:d=20"),
+	                     QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=d=20"),
+	                     QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), film });
+	QVERIFY(make.waitForFinished(60000) && make.exitCode() == 0);
+
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	QProcess *a = start({ QStringLiteral("-fs"), film }, QStringLiteral("null"), x11);
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QTest::qWait(12000);
+	const qint64 idle = x_idle_ms(name);
+	qInfo("awake: the X server idle %lld ms, twelve seconds in", idle);
+	QVERIFY2(idle >= 0 && idle < 10500, "the screen saver's idle time was not reset while the film played");
 }
 
 int run_handover_tests(int argc, char **argv) {

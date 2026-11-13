@@ -16,6 +16,7 @@
 #include <QRandomGenerator>
 #include <QSlider>
 #include <QStyle>
+#include <QLibrary>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -939,8 +940,40 @@ void snurra_tile::fit_video_drawer() {
 	m_maximize->move(m_view->width() - m_maximize->sizeHint().width(), 0);
 }
 
+/*
+ * The screen saver put off while a film plays, as mplayer's heartbeat does:
+ * on X11 the server's idle time reset (ForceScreenSaver, Reset), which is
+ * what its own saver and DPMS count from, and what lockers like TDE's and
+ * xautolock read -- so it holds whatever the desktop, where a D-Bus
+ * inhibit holds only on desktops that serve one. libxcb is resolved when
+ * first needed, on Qt's own connection, so nobody linking snurra builds
+ * against it; nothing on Wayland, offscreen or Android.
+ */
+static void keep_screen_awake() {
+#if QT_CONFIG(xcb)
+	auto *x11 = qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QX11Application>() : nullptr;
+	if (!x11 || !x11->connection()) return;
+	struct cookie {
+		unsigned int sequence;   /* xcb_void_cookie_t */
+	};
+	using force_t = cookie (*)(xcb_connection_t *, uint8_t);
+	using flush_t = int (*)(xcb_connection_t *);
+	static const force_t force = reinterpret_cast<force_t>(QLibrary::resolve(QStringLiteral("xcb"), 1, "xcb_force_screen_saver"));
+	static const flush_t flush = reinterpret_cast<flush_t>(QLibrary::resolve(QStringLiteral("xcb"), 1, "xcb_flush"));
+	if (!force || !flush) return;
+	force(x11->connection(), 0);   /* XCB_SCREEN_SAVER_RESET */
+	flush(x11->connection());
+#endif
+}
+
 void snurra_tile::show_video_frame() {
 	if (!m_video) return;
+	/* Each ten seconds while a picture plays where it can be seen. */
+	constexpr qint64 AWAKE_MS = 10000;
+	if (m_state.playing && (m_full || video_open()) && (!m_awake.isValid() || m_awake.elapsed() >= AWAKE_MS)) {
+		keep_screen_awake();
+		m_awake.start();
+	}
 	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
 	const qint64 picture = heard + m_sound_delay;
 	const snurra_video_frame frame = m_video->frame_at(picture);

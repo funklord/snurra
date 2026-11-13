@@ -1,6 +1,7 @@
 #ifndef SNURRA_TILE_H
 #define SNURRA_TILE_H
 
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QWidget>
 
@@ -237,10 +238,11 @@ private:
 	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitle_tracks;
 	int m_subtitle = -1;            /* the track chosen, or none */
 	bool m_subtitles_shown = true;
-	qint64 m_subtitle_delay = 0;
-	qint64 m_sound_delay = 0;
-	bool m_clock = false;   /* mplayer's o: the time over the picture */   /* mplayer's -delay: the picture is shown this much ahead */
-	QStringList m_subtitle_files;   /* a host's, offered first */    /* microseconds the subtitles come later */
+	qint64 m_subtitle_delay = 0;    /* microseconds the subtitles come later */
+	qint64 m_sound_delay = 0;       /* mplayer's -delay: the picture is shown this much ahead */
+	bool m_clock = false;           /* mplayer's o: the time over the picture */
+	QElapsedTimer m_awake;          /* since the screen saver was last put off */
+	QStringList m_subtitle_files;   /* a host's, offered first */
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;
