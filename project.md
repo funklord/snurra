@@ -64,6 +64,19 @@ and everything above it knows nothing of SFTP or fuzznet.
   decoders sec 4 tests and nothing else, would drop most of 45 MB per
   ABI, for a cross build of FFmpeg per ABI kept in the tree's tooling
   (as bbq-predictor keeps OpenSSL's) and a second FFmpeg to keep current.
+  **The kit's FFmpeg version moves (BeerSSH, inbox 20261113T0126Z,
+  2026-11-13):** this machine's 6.12.0 kit is a July pre-release with
+  FFmpeg 7.1 (libavformat 61), the released kit CI installs carries 9.0
+  (63), while the headers come from the desktop (Debian 13: 7.1). The
+  Android rule now compares the header's `LIBAVFORMAT_VERSION_MAJOR`
+  with the `Lavf/NN.` the kit's library names itself by and refuses a
+  mismatch, as BeerSSH's does; tried both ways (61 and 61 passes,
+  headers claiming 63 are refused). BeerSSH measured all of snurra's
+  sources compiling against 9.0's headers for arm64; nothing has played
+  against 9.0 yet. A release-kit build needs 9.0's headers given as
+  `FFMPEG_HEADERS`. BeerSSH also measured its APK growing 17 MB with
+  snurra when FFmpeg's four libraries go as `ANDROID_EXTRA_LIBS` and no
+  QML is pulled in, against 27 MB above.
   The holder's to decide, since it is every consumer's APK too -- BeerSSH
   links snurra.pri.
 - ~~The source interface's shape.~~ **Settled 2026-11-12 by building it**

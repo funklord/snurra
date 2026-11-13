@@ -95,8 +95,23 @@ ANDROID_ARTIFACT = $(ANDROID_BUILD_DIR)/$(TARGET)-$(VERSION)-$(ANDROID_ABI).apk
 FFMPEG_HEADERS ?= $(shell pkg-config --variable=includedir libavformat)
 FFMPEG_DIRS     = libavformat libavcodec libavutil libswresample
 
-$(ANDROID_BUILD_DIR)/ffmpeg-include/.copied:
+#
+# The headers must be the kit's FFmpeg's, or one version's structures are
+# compiled against another's libraries -- which links, and is wrong at run
+# time. They are not always: this machine's kit, a pre-release, carries
+# 7.1 (libavformat 61), the released 6.12.0 kit 9.0 (63), found by
+# BeerSSH's CI (inbox 20261113T0126Z). So the header's major is compared
+# with the one the kit's library names itself by, and a mismatch refused;
+# the kit's library is a prerequisite, so a new kit is checked again.
+FFMPEG_KIT_LIB = $(QT_ANDROID_ROOT)/lib/libavformat.so
+
+$(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 	@test -n "$(ANDROID_BUILD_DIR)" || { echo "ANDROID_BUILD_DIR is empty" >&2; exit 1; }
+	@header=$$(sed -n 's/^#define LIBAVFORMAT_VERSION_MAJOR *\([0-9]*\).*/\1/p' $(FFMPEG_HEADERS)/libavformat/version_major.h); \
+	kit=$$(strings $(FFMPEG_KIT_LIB) | sed -n 's|^.*Lavf/\([0-9]*\)\..*$$|\1|p' | head -1); \
+	if [ -z "$$header" ] || [ -z "$$kit" ]; then echo "android: cannot read FFmpeg's version (headers '$$header', kit '$$kit')" >&2; exit 1; fi; \
+	if [ "$$header" != "$$kit" ]; then echo "android: FFmpeg headers are libavformat $$header, the kit's library $$kit: give FFMPEG_HEADERS for $$kit" >&2; exit 1; fi; \
+	echo "android: FFmpeg headers and kit both libavformat $$kit"
 	mkdir -p $(ANDROID_BUILD_DIR)/ffmpeg-include
 	for d in $(FFMPEG_DIRS); do cp -r $(FFMPEG_HEADERS)/$$d $(ANDROID_BUILD_DIR)/ffmpeg-include/; done
 	touch $@
