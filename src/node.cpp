@@ -336,8 +336,7 @@ void snurra_node::place_tiles() {
 			first = tile;
 	QString title = QStringLiteral("snurra");
 	if (first) {
-		const QString name = QFileInfo(first->state().source).fileName();
-		title = name.isEmpty() ? first->state().source : name;
+		title = snurra_title_of(first->state().source);
 		if (m_tiles.size() > 1) title += QStringLiteral(" +%1").arg(m_tiles.size() - 1);
 	}
 	setWindowTitle(title);

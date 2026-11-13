@@ -706,7 +706,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	/* A stem's lane says which stem it is. */
 	const QStringList stems = snurra_stem_names(state.source);
 	const QString stem = state.audio_track >= 1 && state.audio_track <= stems.size() ? stems.at(state.audio_track - 1) : QString();
-	const QString file_name = QFileInfo(state.source).fileName();
+	/* The host's word for it where it has one: a "fuzznet:ROOT" titled by
+	 * its 64 hex digits otherwise (2026-11-14). */
+	const QString file_name = snurra_title_of(state.source);
 	const QString name = stem.isEmpty() ? file_name : file_name + QStringLiteral(" -- ") + stem;
 	m_title = new QLabel(name.isEmpty() ? state.source : name, this);
 	m_title_base = m_title->text();
@@ -1361,7 +1363,7 @@ void snurra_tile::set_full_screen(bool full) {
 	}
 	snurra_video_view *view = new snurra_video_view;
 	view->setAttribute(Qt::WA_DeleteOnClose);
-	view->setWindowTitle(QFileInfo(m_state.source).fileName());
+	view->setWindowTitle(snurra_title_of(m_state.source));
 	view->on_leave = [this] { set_full_screen(false); };
 	view->on_key = [this](QKeyEvent *event) {
 		emit touched(this);

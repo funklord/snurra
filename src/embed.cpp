@@ -105,7 +105,7 @@ bool snurra_player::open(const snurra_media &media) {
 	d->tiles.append(tile);
 	d->row->addWidget(tile);
 	tile->show();
-	const QString name = media.name.isEmpty() ? QFileInfo(media.path).fileName() : media.name;
+	const QString name = media.name.isEmpty() ? snurra_title_of(media.path) : media.name;
 	connect(tile, &snurra_tile::failed, this,
 	        [this, name] { emit failed(name, tr("snurra cannot play %1: it is not sound or video it can read.").arg(name)); });
 	connect(tile, &snurra_tile::close_requested, this, [this](snurra_tile *closing) {
@@ -285,7 +285,7 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 	tile->set_subtitle_files(subtitles);
 	tile->set_sync_available(true);
 	place->tile = tile;
-	place->name = media.name.isEmpty() ? QFileInfo(media.path).fileName() : media.name;
+	place->name = media.name.isEmpty() ? snurra_title_of(media.path) : media.name;
 	place->empty->hide();
 	place->column->addWidget(tile);
 	tile->show();

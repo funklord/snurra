@@ -173,6 +173,9 @@ void estate_test::a_catalogued_file_is_listed_and_played_from_the_node() {
 	QVERIFY(!snurra_estate_root(QStringLiteral("fuzznet:xyz"), back));
 
 	snurra_estate_install();
+	/* Titled by its catalogued name, not its 64 hex digits. */
+	QCOMPARE(snurra_title_of(named), QStringLiteral("Tone A"));
+	QCOMPARE(snurra_title_of(QStringLiteral("/music/x.mp3")), QStringLiteral("x.mp3"));
 	std::unique_ptr<snurra_source> source = snurra_open_source(named, RATE, RATE);
 	QVERIFY(source);
 	QVERIFY2(source->length() > 0, "a silent stand-in, not the node's file");

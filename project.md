@@ -185,6 +185,13 @@ and everything above it knows nothing of SFTP or fuzznet.
       with it (the whole 13.2, 47.9), 50.0 and 35.7 s without (51.2,
       35.9). The spread swamps any gain. That is fuzznet's playhead
       fetch (its sec 998), reported to it (inbox 20261113T2344Z).
+    - **Titled by its catalogued name**: a tile, the window, the picture's
+      full screen and a DJ deck called an estate file by its 64 hex
+      digits, each making a title of the name's file name. They ask
+      `snurra_title_of` now, which takes a host's word where it has one
+      (`snurra_set_title_resolver`; the estate asks the node once a
+      name) and the file's name otherwise; without the estate's, the
+      test sees the hex and fails.
     - **Android: not built, and why.** On a phone the node runs inside
       fuzzypickles' own app, and Android keeps apps' local sockets apart
       (SELinux puts each app in its own category; that it refuses one

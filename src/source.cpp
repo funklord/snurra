@@ -817,6 +817,27 @@ QString snurra_source_of(const QString &name) {
 	return QFileInfo(name).absoluteFilePath();
 }
 
+namespace {
+snurra_title_resolver titler_set;
+}   // namespace
+
+void snurra_set_title_resolver(snurra_title_resolver resolver) {
+	std::lock_guard<std::mutex> hold(resolver_lock);
+	titler_set = std::move(resolver);
+}
+
+QString snurra_title_of(const QString &name) {
+	snurra_title_resolver titler;
+	{
+		std::lock_guard<std::mutex> hold(resolver_lock);
+		titler = titler_set;
+	}
+	if (titler)
+		if (const QString titled = titler(name); !titled.isEmpty()) return titled;
+	const QString file = QFileInfo(name).fileName();
+	return file.isEmpty() ? name : file;
+}
+
 void snurra_set_bytes_resolver(snurra_bytes_resolver resolver) {
 	std::lock_guard<std::mutex> hold(resolver_lock);
 	resolver_set = std::move(resolver);

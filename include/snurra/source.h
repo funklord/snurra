@@ -135,6 +135,16 @@ std::unique_ptr<snurra_source> snurra_open_source(const QString &name, int rate,
 using snurra_bytes_resolver = std::function<std::shared_ptr<snurra_bytes>(const QString &name)>;
 void snurra_set_bytes_resolver(snurra_bytes_resolver resolver);
 
+/*
+ * What to call `name` in a title: the host's own word for it where it has
+ * one (snurra_set_title_resolver -- the estate's catalogued name for a
+ * "fuzznet:ROOT"), else the file's name, else the name itself. Set once,
+ * at start, as the bytes resolver is.
+ */
+using snurra_title_resolver = std::function<QString(const QString &name)>;
+void snurra_set_title_resolver(snurra_title_resolver resolver);
+QString snurra_title_of(const QString &name);
+
 /* What a tile is given for `name`: a path made absolute, so another
  * process finds it; a URL, or a name with a scheme of its own --
  * "fuzznet:ROOT", "tone:440" -- as it is, which a path made absolute

@@ -1,6 +1,7 @@
 #include "estate.h"
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QPointer>
 #include <QTimer>
 
@@ -131,12 +132,37 @@ void snurra_estate_bytes::want(int64_t offset) {
 	if (fzn_rpc_blob_fetch_at(&m_call, m_root, uint64_t(offset)) == FZN_RPC_OK) m_wants++;
 }
 
+QString snurra_estate_title(const QString &name) {
+	uint8_t root[FZN_RPC_BLOB_HASH_LEN];
+	if (!snurra_estate_root(name, root)) return QString();
+	/* Asked once a name: a tile is titled on the UI thread. */
+	static std::mutex lock;
+	static QHash<QString, QString> known;
+	{
+		std::lock_guard<std::mutex> hold(lock);
+		if (known.contains(name)) return known.value(name);
+	}
+	fzn_rpc_t call;
+	fzn_rpc_init(&call);
+	QString title;
+	auto shown = std::make_unique<fzn_rpc_library_show_resp_t>();
+	if (fzn_rpc_set_node_socket(&call, snurra_estate_socket().constData()) == 0
+	    && fzn_rpc_library_show(&call, root, shown.get()) == FZN_RPC_OK)
+		title = QString::fromUtf8(shown->name, int(shown->name_len));
+	if (!title.isEmpty()) {
+		std::lock_guard<std::mutex> hold(lock);
+		known.insert(name, title);
+	}
+	return title;
+}
+
 void snurra_estate_install() {
 	snurra_set_bytes_resolver([](const QString &name) -> std::shared_ptr<snurra_bytes> {
 		uint8_t root[FZN_RPC_BLOB_HASH_LEN];
 		if (!snurra_estate_root(name, root)) return nullptr;
 		return std::make_shared<snurra_estate_bytes>(root);
 	});
+	snurra_set_title_resolver(snurra_estate_title);
 }
 
 void snurra_estate_offer(snurra_library *library) {

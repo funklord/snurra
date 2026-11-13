@@ -97,7 +97,12 @@ private:
 	void took(const fzn_rpc_library_play_resp_t &reply);
 };
 
-/* Has snurra_open_source open "fuzznet:ROOT" names as snurra_estate_bytes. */
+/* A "fuzznet:ROOT"'s catalogued name, asked of the node once; empty for
+ * another name, or where the node does not say. */
+QString snurra_estate_title(const QString &name);
+
+/* Has snurra_open_source open "fuzznet:ROOT" names as snurra_estate_bytes,
+ * and snurra_title_of call them by their catalogued names. */
 void snurra_estate_install();
 
 /* The catalogue as rows of `library` (its set_entries, source "estate"):
