@@ -1074,7 +1074,13 @@ controls; each tile very compact but resizeable).
   compositor draws behind it (Wayland, or X11's `_NET_WM_CM_S0` owned).
   Seen in a bare Xvfb: A with its controls out beside B, and nothing in
   the corner under B. The shape also leaves the empty corners' clicks to
-  what is behind.
+  what is behind. Under xcb it broke drops (the drag-and-drop handover
+  test): it was cut before the layout had placed the tiles, and is now
+  cut again after every layout and on show; the size grip had a row of
+  its own under the tiles, cut away, where a drop by the bottom edge
+  landed, and now sits over the bottom right corner; and a window that
+  lost a tile kept its width, a cut-away stretch where drops missed, and
+  now narrows to what is left.
   Measured offscreen (`a_drawer_adds_room_and_leaves_every_waveform_as_
   it_was`): A beside B, C below; A's controls out, all three waveforms
   keep their height, A's and B's tops stay level, the drawer sits flush

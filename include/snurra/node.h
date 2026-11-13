@@ -102,6 +102,7 @@ protected:
 	void dropEvent(QDropEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
 	void resizeEvent(QResizeEvent *event) override;
+	bool event(QEvent *event) override;
 	/* mplayer's keys, on the tile last touched (src/node.cpp). */
 	void keyPressEvent(QKeyEvent *event) override;
 

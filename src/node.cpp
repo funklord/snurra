@@ -153,8 +153,11 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	m_grid->setVerticalSpacing(0);   /* drawers meet their tiles */
 	outer->addLayout(m_grid, 1);
 	/* Resizeable, though frameless: the grip in the corner. */
+	/* Over the bottom right corner rather than in a row of its own: a row
+	 * the tiles do not fill was a strip of nothing under them, cut away
+	 * by the shape, where a drop by the bottom edge then landed. */
 	QSizeGrip *grip = new QSizeGrip(this);
-	outer->addWidget(grip, 0, Qt::AlignRight | Qt::AlignBottom);
+	grip->resize(grip->sizeHint());
 
 	setFocusPolicy(Qt::StrongFocus);
 	m_trains = new QTimer(this);
@@ -364,7 +367,19 @@ void snurra_node::fit_to_drawers() {
 
 void snurra_node::resizeEvent(QResizeEvent *event) {
 	QWidget::resizeEvent(event);
+	if (QSizeGrip *grip = findChild<QSizeGrip *>(QString(), Qt::FindDirectChildrenOnly)) {
+		grip->move(width() - grip->width(), height() - grip->height());
+		grip->raise();
+	}
 	reshape();
+}
+
+/* The tiles placed again without the window's size changing -- shown, or
+ * laid out -- is a new shape too: one cut before the layout had placed
+ * them missed a drop on the window under xcb. */
+bool snurra_node::event(QEvent *event) {
+	if (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show) reshape();
+	return QWidget::event(event);
 }
 
 /*
@@ -421,6 +436,15 @@ void snurra_node::drop_tile(snurra_tile *tile) {
 	if (tile->drawer_below()) tile->drawer_below()->hide();
 	tile->deleteLater();
 	place_tiles();
+	/* Narrowed to what is left: where the tile was is nothing now, cut
+	 * away by the shape, and a window wider than its tiles is a target
+	 * for drops that miss them. */
+	QTimer::singleShot(0, this, [this] {
+		if (m_tiles.isEmpty()) return;
+		layout()->activate();
+		if (width() > sizeHint().width()) resize(sizeHint().width(), height());
+	});
+	fit_to_drawers();
 }
 
 /*
