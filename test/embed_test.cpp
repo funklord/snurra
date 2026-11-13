@@ -1149,7 +1149,7 @@ void embed_test::the_library_shows_each_tunes_key() {
 /*
  * A tile's beat and key as heard (a DJ deck's head): 120 BPM in A minor,
  * at +6 % without key lock 127.2 BPM and a semitone up, Bb minor (3A);
- * with key lock the key stays 8A.
+ * with key lock the key stays 8A, and moves only by the key knob.
  */
 void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	snurra_node node;
@@ -1168,6 +1168,25 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 3A"));
 	QCOMPARE(said->toolTip(), QStringLiteral("Key 3A Bbm as heard"));
 	tile->set_key_lock(true);
+	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
+
+	/* The key knob: two semitones up is B minor, kept by a handover, put
+	 * back by a double-click. */
+	QDial *knob = node.findChild<QDial *>(QStringLiteral("snurra-key-shift"));
+	QVERIFY(knob);
+	knob->setValue(2);
+	QCOMPARE(tile->state().key_shift, 2);
+	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 10A"));
+	QByteArray bytes;
+	QDataStream out(&bytes, QIODevice::WriteOnly);
+	out << tile->state();
+	snurra_tile_state back;
+	QDataStream in(bytes);
+	in >> back;
+	QCOMPARE(back.key_shift, 2);
+	QCOMPARE(back.eq_db[0], 0.0f);
+	QTest::mouseDClick(knob, Qt::LeftButton);
+	QCOMPARE(tile->state().key_shift, 0);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
 }
 

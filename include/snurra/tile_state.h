@@ -69,6 +69,9 @@ struct snurra_tile_state {
 	 * (deck.h). */
 	float eq_db[3] = { 0, 0, 0 };
 
+	/* The key moved on its own, in semitones (deck.h). */
+	int key_shift = 0;
+
 	/* Where it is at `now`, carried along from the sample -- either way,
 	 * since a sample's time can be just ahead, when it is heard. */
 	qint64 position_now(qint64 now = snurra_clock_us()) const {
@@ -79,7 +82,7 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	return out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2];
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift);
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -87,8 +90,10 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 row = 0;
 	qint32 column = 0;
 	qint32 audio_track = -1;
+	qint32 key_shift = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2];
+	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2] >> key_shift;
+	state.key_shift = key_shift;
 	state.level = level;
 	state.row = row;
 	state.column = column;

@@ -564,14 +564,16 @@ void deck_test::the_eq_cuts_its_band_and_leaves_the_rest() {
  * doubling.
  */
 void deck_test::key_lock_keeps_the_pitch_as_the_tempo_moves() {
-	auto run = [this](bool key_lock, double &hz, double &speed, double &level_low, double &level_high) {
+	auto run = [this](bool key_lock, double &hz, double &speed, double &level_low, double &level_high, float tempo = 1.2f,
+	                  int shift = 0) {
 		snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:440"));
 		start.fallback_length = RATE * 20;
 		snurra_deck deck(start);
 		int64_t present = snurra_clock_us();
 		play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 10; });
 		deck.set_key_lock(key_lock);
-		deck.set_tempo(1.2f);
+		deck.set_tempo(tempo);
+		deck.set_key_shift(shift);
 		render(deck, present);   /* in */
 		int64_t from_frame = 0, from_us = 0, ignored = 0;
 		deck.last_rendered(from_frame, from_us, ignored);
@@ -604,6 +606,25 @@ void deck_test::key_lock_keeps_the_pitch_as_the_tempo_moves() {
 	QVERIFY2(std::abs(hz - 440) < 1, qPrintable(QStringLiteral("key lock at %1 Hz, not 440").arg(hz)));
 	QVERIFY2(std::abs(speed - 1.2) < 0.01, qPrintable(QStringLiteral("the track went at %1, not 1.2").arg(speed)));
 	QVERIFY2(low > -1 && high < 1, qPrintable(QStringLiteral("the level went from %1 to %2 dB").arg(low).arg(high)));
+
+	/* The key moved on its own (a DJ's key shift): with key lock, 7
+	 * semitones up at 1.2 is a fifth above 440 and the track still at
+	 * 1.2; without, at 1.1, 7 semitones down is 1.1 times a fourth below;
+	 * and an octave up at 1, the track at 1. The level holds through it. */
+	struct shifted_t {
+		bool key_lock;
+		float tempo;
+		int shift;
+	};
+	for (const shifted_t &asked : { shifted_t{ true, 1.2f, 7 }, shifted_t{ false, 1.1f, -7 }, shifted_t{ true, 1.0f, 12 } }) {
+		run(asked.key_lock, hz, speed, low, high, asked.tempo, asked.shift);
+		const double want = 440 * (asked.key_lock ? 1.0 : double(asked.tempo)) * std::pow(2.0, asked.shift / 12.0);
+		qInfo("key lock %d, tempo %.1f, %+d semitones: %.2f Hz (%.2f asked), the track at %.4f, level %.2f to %.2f dB",
+		      int(asked.key_lock), double(asked.tempo), asked.shift, hz, want, speed, low, high);
+		QVERIFY2(std::abs(hz / want - 1) < 0.003, qPrintable(QStringLiteral("%1 Hz, not %2").arg(hz).arg(want)));
+		QVERIFY2(std::abs(speed - double(asked.tempo)) < 0.01, qPrintable(QStringLiteral("the track went at %1, not %2").arg(speed).arg(asked.tempo)));
+		QVERIFY2(low > -1.5 && high < 1.5, qPrintable(QStringLiteral("the level went from %1 to %2 dB").arg(low).arg(high)));
+	}
 }
 
 /*

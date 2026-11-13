@@ -22,7 +22,8 @@ void snurra_stretch::reset(int64_t frame) {
 	m_nominal_out = double(frame);
 	m_have_middle = false;
 	m_out_at = m_out_len = 0;
-	m_key_lock_last = false;
+	m_mode = VARISPEED;
+	m_shift_primed = false;
 }
 
 bool snurra_stretch::have(int64_t until) {
@@ -51,16 +52,37 @@ float snurra_stretch::at(int64_t frame, int channel) const {
 	return m_in_len > 0 ? m_in[size_t(2 * i + channel)] : 0.0f;
 }
 
-bool snurra_stretch::next(float &left, float &right, double tempo, bool key_lock) {
-	if (key_lock != m_key_lock_last) {
+double snurra_stretch::position() const {
+	if (m_mode == VARISPEED) return m_place;
+	if (m_mode == WSOLA) return m_nominal_out;
+	if (!m_shift_primed) return m_nominal_out;
+	return m_shift_from[1] + m_shift_at * (m_shift_from[2] - m_shift_from[1]);
+}
+
+/* WSOLA's next frame, and the track frame it is from. */
+bool snurra_stretch::wsola(float &left, float &right, double tempo, double &from) {
+	if (m_out_at >= m_out_len && !step(tempo)) return false;
+	left = m_out[size_t(2 * m_out_at)];
+	right = m_out[size_t(2 * m_out_at + 1)];
+	++m_out_at;
+	from = m_nominal_out;
+	m_nominal_out += m_out_tempo;
+	return true;
+}
+
+bool snurra_stretch::next(float &left, float &right, double tempo, bool key_lock, double pitch) {
+	const double heard = key_lock ? pitch : tempo * pitch;
+	const mode_t mode = std::abs(heard - (key_lock ? 1.0 : tempo)) < 1e-9 ? (key_lock ? WSOLA : VARISPEED) : SHIFTED;
+	if (mode != m_mode) {
 		/* Switched: go on from where the sound is, the other way. */
 		const double from = position();
-		m_key_lock_last = key_lock;
+		m_mode = mode;
 		m_place = m_nominal = m_nominal_out = from;
 		m_have_middle = false;
 		m_out_at = m_out_len = 0;
+		m_shift_primed = false;
 	}
-	if (!key_lock) {
+	if (mode == VARISPEED) {
 		const int64_t whole = int64_t(std::floor(m_place));
 		const float t = float(m_place - double(whole));
 		if (!have(whole + 3)) return false;
@@ -77,11 +99,50 @@ bool snurra_stretch::next(float &left, float &right, double tempo, bool key_lock
 		drop_before(int64_t(std::floor(m_place)) - 2);
 		return true;
 	}
-	if (m_out_at >= m_out_len && !step(tempo)) return false;
-	left = m_out[size_t(2 * m_out_at)];
-	right = m_out[size_t(2 * m_out_at + 1)];
-	++m_out_at;
-	m_nominal_out += m_out_tempo;
+	if (mode == WSOLA) {
+		double from = 0;
+		return wsola(left, right, tempo, from);
+	}
+	const double kept = tempo / heard;   /* WSOLA's tempo, at the pitch it keeps */
+	if (!m_shift_primed) {
+		/* The first frame twice behind it, so the first out is it. */
+		float l = 0, r = 0;
+		double from = 0;
+		for (int i = 1; i < 4; ++i) {
+			if (!wsola(l, r, kept, from)) return false;
+			m_shift[i][0] = l;
+			m_shift[i][1] = r;
+			m_shift_from[i] = from;
+		}
+		m_shift[0][0] = m_shift[1][0];
+		m_shift[0][1] = m_shift[1][1];
+		m_shift_from[0] = m_shift_from[1];
+		m_shift_at = 0;
+		m_shift_primed = true;
+	}
+	while (m_shift_at >= 1) {
+		float l = 0, r = 0;
+		double from = 0;
+		if (!wsola(l, r, kept, from)) return false;
+		for (int i = 0; i < 3; ++i) {
+			m_shift[i][0] = m_shift[i + 1][0];
+			m_shift[i][1] = m_shift[i + 1][1];
+			m_shift_from[i] = m_shift_from[i + 1];
+		}
+		m_shift[3][0] = l;
+		m_shift[3][1] = r;
+		m_shift_from[3] = from;
+		m_shift_at -= 1;
+	}
+	const float t = float(m_shift_at);
+	for (int channel = 0; channel < 2; ++channel) {
+		const float p0 = m_shift[0][channel];
+		const float p1 = m_shift[1][channel];
+		const float p2 = m_shift[2][channel];
+		const float p3 = m_shift[3][channel];
+		(channel ? right : left) = p1 + 0.5f * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+	}
+	m_shift_at += heard;
 	return true;
 }
 

@@ -20,6 +20,13 @@
  * `tempo` times the step out apart, each placed, within 15 ms, where its
  * first 8 ms best match the end of the last, and the two crossfaded there.
  * The pitch stays; the tempo moves. Written here, no library.
+ *
+ * A pitch of its own (`pitch`, a ratio; a DJ's key shift): WSOLA at the
+ * tempo over the pitch heard, which keeps the pitch, then its frames read
+ * by the same cubic at the pitch heard a frame, which raises it and gives
+ * the tempo back. The pitch heard is `pitch` with key lock, the tempo
+ * times it without. Where it comes to 1 the two ways above are taken, as
+ * they were.
  */
 class snurra_stretch {
 public:
@@ -30,10 +37,10 @@ public:
 	void reset(int64_t frame);
 
 	/* The next frame out; false when the track has not enough in yet. */
-	bool next(float &left, float &right, double tempo, bool key_lock);
+	bool next(float &left, float &right, double tempo, bool key_lock, double pitch = 1);
 
 	/* The track frame the next frame out is from. */
-	double position() const { return m_key_lock_last ? m_nominal_out : m_place; }
+	double position() const;
 
 private:
 	bool have(int64_t until);   /* the track in, up to frame `until` (exclusive) */
@@ -60,7 +67,17 @@ private:
 	int m_out_at = 0;
 	int m_out_len = 0;
 	double m_out_tempo = 1;
-	bool m_key_lock_last = false;
+
+	/* The pitch of its own: the last four frames out of WSOLA, stereo,
+	 * with the track frame each is from; the next frame out lies at
+	 * m_shift_at between the second and the third. */
+	enum mode_t { VARISPEED, WSOLA, SHIFTED };
+	mode_t m_mode = VARISPEED;
+	float m_shift[4][2] = {};
+	double m_shift_from[4] = {};
+	double m_shift_at = 0;
+	bool m_shift_primed = false;
+	bool wsola(float &left, float &right, double tempo, double &from);
 };
 
 #endif

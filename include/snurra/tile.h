@@ -118,6 +118,8 @@ public:
 	void set_tempo(float tempo);
 	float tempo() const { return m_state.tempo; }
 	void set_key_lock(bool on);
+	/* The key moved on its own, in semitones (deck.h); its dial follows. */
+	void set_key_shift(int semitones);
 	bool key_lock() const { return m_state.key_lock; }
 
 	/* Sync (project.md sec 4): asks the window to match this tile's beat to
@@ -288,6 +290,7 @@ private:
 	static constexpr int TEMPO_SNAP = 5;      /* +-0.5 %, dragged, is the middle */
 	QLabel *m_tempo_label = nullptr;
 	QLabel *m_beat_label = nullptr;
+	class QDial *m_key_shift = nullptr;
 	void show_beat();
 	int key_shift() const;
 	QToolButton *m_key_lock = nullptr;

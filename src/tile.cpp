@@ -835,6 +835,17 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_lock->setAccessibleName(tr("Key lock"));
 	m_key_lock->setToolTip(tr("Key lock: the pitch stays as the tempo moves"));
 	speed->addWidget(m_key_lock);
+	/* The key shift, a DJ's key knob: semitones, 0 at the top, an octave
+	 * either way; a double-click puts it back. */
+	m_key_shift = new QDial(m_controls);
+	m_key_shift->setObjectName(QStringLiteral("snurra-key-shift"));
+	m_key_shift->setAccessibleName(tr("Key shift"));
+	m_key_shift->setToolTip(tr("Key shift, in semitones; a double-click puts it back"));
+	m_key_shift->setRange(-12, 12);
+	m_key_shift->setNotchesVisible(true);
+	m_key_shift->setFixedSize(fontMetrics().height() * 2, fontMetrics().height() * 2);
+	m_key_shift->installEventFilter(this);
+	speed->addWidget(m_key_shift);
 	/* Sync: this tile's beat to another playing one's, once both have a
 	 * grid (sec 4). */
 	m_sync = new QToolButton(m_controls);
@@ -906,6 +917,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 		set_tempo(1.0f + float(tenths) / 1000.0f);
 	});
 	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
+	connect(m_key_shift, &QDial::valueChanged, this, &snurra_tile::set_key_shift);
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_cue, &QToolButton::clicked, this, &snurra_tile::cue);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
@@ -927,6 +939,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	show_cue();
 	set_tempo(state.tempo);
 	set_key_lock(state.key_lock);
+	set_key_shift(state.key_shift);
 	set_eq(state.eq_db[0], state.eq_db[1], state.eq_db[2]);
 	tick();
 
@@ -1623,9 +1636,10 @@ void snurra_tile::set_tempo(float tempo) {
 	show_beat();
 }
 
-/* Without key lock a tempo is a pitch: 6 % faster is a semitone up. */
+/* The key as heard against the track's: its shift, and without key lock
+ * the tempo's too -- 6 % faster is a semitone up. */
 int snurra_tile::key_shift() const {
-	return m_state.key_lock ? 0 : int(std::lround(12 * std::log2(double(m_state.tempo))));
+	return m_state.key_shift + (m_state.key_lock ? 0 : int(std::lround(12 * std::log2(double(m_state.tempo)))));
 }
 
 void snurra_tile::show_beat() {
@@ -1644,6 +1658,15 @@ void snurra_tile::set_key_lock(bool on) {
 	m_key_lock->blockSignals(true);
 	m_key_lock->setChecked(on);
 	m_key_lock->blockSignals(false);
+	show_beat();
+}
+
+void snurra_tile::set_key_shift(int semitones) {
+	m_state.key_shift = std::clamp(semitones, -12, 12);
+	m_deck->set_key_shift(m_state.key_shift);
+	m_key_shift->blockSignals(true);
+	m_key_shift->setValue(m_state.key_shift);
+	m_key_shift->blockSignals(false);
 	show_beat();
 }
 
@@ -1771,6 +1794,10 @@ bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
 		QMetaObject::invokeMethod(this, [this] { fit_video_drawer(); }, Qt::QueuedConnection);
 	if (watched == m_tempo && event->type() == QEvent::MouseButtonDblClick) {
 		set_tempo(1);
+		return true;
+	}
+	if (watched == m_key_shift && event->type() == QEvent::MouseButtonDblClick) {
+		set_key_shift(0);
 		return true;
 	}
 	for (QDial *dial : m_eq)

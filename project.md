@@ -1265,8 +1265,21 @@ controls; each tile very compact but resizeable).
   to 10 s stands at 11 s of its track and goes on 1.10 times as fast.
   mplayer's speed keys drive it (2026-11-12): ] and [ by 10 %, each the
   other's inverse, } and { double and halve, backspace back to 1 --
-  tested by key presses through X. Not yet: pitch shifting on its own;
-  key detection since built (sec 3b, the library). **Sync** (2026-11-12): a tile's button sets
+  tested by key presses through X. **The key shift** (2026-11-13, a
+  DJ's key knob, with the key now shown -- sec 3b, the library): a dial
+  of semitones, an octave either way, 0 at the top and back on a
+  double-click, carried by a handover; on top of the tempo's pitch
+  without key lock, alone with it. WSOLA at the tempo over the pitch
+  heard keeps the pitch, then its frames are read by the same cubic at
+  the pitch heard a frame, which raises it and gives the tempo back; at
+  a pitch heard of 1 the two plain ways run as before, so an unshifted
+  deck is exactly what it was. Measured on the 440 Hz tone: key lock at
+  1.2, +7, 659.24 Hz (659.26 asked); no key lock at 1.1, -7, 323.03 Hz;
+  key lock at 1, +12, 880.00 Hz; the track at its tempo and the level
+  within 0.22 dB in each (`key_lock_keeps_the_pitch_as_the_tempo_moves`).
+  The resampler stepping a frame at a time instead leaves the pitch at
+  440 and fails it. The tile's key reads as heard, shift and all.
+  **Sync** (2026-11-12): a tile's button sets
   its tempo so its beat runs at the leader's -- the first other tile
   playing with a grid, at that tile's tempo; a double or half if nearer
   -- then bends its phase onto the leader's, the shorter way round, as a

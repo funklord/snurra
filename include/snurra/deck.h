@@ -73,6 +73,10 @@ public:
 	void set_tempo(float tempo) { m_tempo.store(std::clamp(tempo, 0.25f, 4.0f), std::memory_order_relaxed); }
 	float tempo() const { return m_tempo.load(std::memory_order_relaxed); }
 	void set_key_lock(bool on) { m_key_lock.store(on, std::memory_order_relaxed); }
+	/* The key moved on its own, in semitones, -12 to 12 (a DJ's key
+	 * shift): on top of the tempo's without key lock, alone with it. */
+	void set_key_shift(int semitones) { m_key_shift.store(std::clamp(semitones, -12, 12), std::memory_order_relaxed); }
+	int key_shift() const { return m_key_shift.load(std::memory_order_relaxed); }
 
 	/* A nudge (project.md sec 4), as a turntable's: `frames` more of the
 	 * track (fewer, negative) played over the next moments, at most a
@@ -245,6 +249,7 @@ private:
 	void make_eq();
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
+	std::atomic<int> m_key_shift{ 0 };
 	std::atomic<int64_t> m_bend_asked{ 0 };
 	std::atomic<uint64_t> m_generation{ 1 };   /* bumped by every seek */
 	std::atomic<int64_t> m_seek_target{ 0 };
