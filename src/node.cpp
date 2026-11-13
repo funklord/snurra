@@ -1149,8 +1149,14 @@ void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
 	 * marker is where its new window opens -- release() places it there.
 	 */
 	if (m_tiles.size() > 1) {
-		if (frameGeometry().contains(global)) mark(QRect(), QRect());
-		else mark(QRect(global, tile->size()), QRect());
+		if (frameGeometry().contains(global)) {
+			mark(QRect(), QRect());
+			snurra_tile *over = tile_at(mapFromGlobal(global), false);
+			hint_drop(over && over != tile, snurra_wire::RIGHT, over);
+		} else {
+			hint_drop(false);
+			mark(QRect(global, tile->size()), QRect());
+		}
 		return;
 	}
 	/* A lone tile: the window moves with the hand, and the marker says
@@ -1213,6 +1219,13 @@ void snurra_node::hint_drop(bool show, snurra_wire::side_t side, snurra_tile *ov
 	m_drop_hint->show();
 }
 
+/* The index of one of this process's own tiles in a drag of it, or -1. */
+static int own_tile(const QMimeData *mime, const QString &own) {
+	if (!mime || !mime->hasFormat(QLatin1String(TILE_MIME))) return -1;
+	const QString data = QString::fromUtf8(mime->data(QLatin1String(TILE_MIME)));
+	return data.section(QLatin1Char('\n'), 0, 0) == own ? data.section(QLatin1Char('\n'), 1, 1).toInt() : -1;
+}
+
 /* A drag of one of this process's own tiles is not a join. */
 static bool from_a_peer(const QMimeData *mime, const QString &own) {
 	if (!mime || !mime->hasFormat(QLatin1String(TILE_MIME))) return false;
@@ -1226,16 +1239,21 @@ static bool from_a_peer(const QMimeData *mime, const QString &own) {
  * -- a train, a stack; anywhere else on a tile, it is that tile's: files
  * replace it.
  */
-snurra_tile *snurra_node::tile_at(const QPoint &local) const {
+snurra_tile *snurra_node::tile_at(const QPoint &local, bool strips) const {
 	const int strip_x = qMax(fontMetrics().height() * 2, width() / 5);
 	const int strip_y = qMax(fontMetrics().height() * 2, height() / 5);
-	if (local.x() >= width() - strip_x || local.y() >= height() - strip_y) return nullptr;
+	if (strips && (local.x() >= width() - strip_x || local.y() >= height() - strip_y)) return nullptr;
 	for (snurra_tile *tile : m_tiles)
 		if (tile->isVisible() && tile->geometry().contains(local)) return tile;
 	return nullptr;
 }
 
 void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
+	if (own_tile(event->mimeData(), m_path) >= 0) {
+		event->acceptProposedAction();
+		hint_drop(false);
+		return;
+	}
 	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
 	const QPoint at = event->position().toPoint();
@@ -1243,6 +1261,19 @@ void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
 }
 
 void snurra_node::dragMoveEvent(QDragMoveEvent *event) {
+	/* One of this window's own tiles: over another, the two trade places. */
+	const int own = own_tile(event->mimeData(), m_path);
+	if (own >= 0) {
+		snurra_tile *over = tile_at(event->position().toPoint(), false);
+		if (over && own < m_tiles.size() && over != m_tiles.at(own)) {
+			event->acceptProposedAction();
+			hint_drop(true, snurra_wire::RIGHT, over);
+		} else {
+			event->ignore();
+			hint_drop(false);
+		}
+		return;
+	}
 	if (!from_a_peer(event->mimeData(), m_path) && !snurra_drop_offers(event->mimeData())) return;
 	event->acceptProposedAction();
 	const QPoint at = event->position().toPoint();
@@ -1255,6 +1286,14 @@ void snurra_node::dragLeaveEvent(QDragLeaveEvent *) {
 
 void snurra_node::dropEvent(QDropEvent *event) {
 	hint_drop(false);
+	const int own = own_tile(event->mimeData(), m_path);
+	if (own >= 0) {
+		snurra_tile *over = tile_at(event->position().toPoint(), false);
+		if (!over || own >= m_tiles.size() || over == m_tiles.at(own)) return;
+		swap_tiles(m_tiles.at(own), over);
+		event->acceptProposedAction();
+		return;
+	}
 	if (!from_a_peer(event->mimeData(), m_path)) {
 		QStringList files = snurra_dropped(event->mimeData());
 		if (files.isEmpty()) return;
@@ -1336,6 +1375,23 @@ void snurra_node::replace_tile(snurra_tile *tile, const QString &file) {
 	snurra_tile *taken = add_tile(state);
 	remove_tile(tile);
 	if (current) m_current = taken;
+}
+
+/*
+ * Two tiles trade places (the holder, 2026-11-13: one dragged directly on
+ * top of another "they should switch places"). A lane's begin stays with
+ * the lane: the places' begins are traded back, so a late lane still
+ * starts where it did with whatever now heads it.
+ */
+void snurra_node::swap_tiles(snurra_tile *a, snurra_tile *b) {
+	const int a_row = a->row();
+	const int a_column = a->column();
+	const qint64 a_begin = a->lane_start_us();
+	a->set_place(b->row(), b->column());
+	a->set_lane_start_us(b->lane_start_us());
+	b->set_place(a_row, a_column);
+	b->set_lane_start_us(a_begin);
+	place_tiles();
 }
 
 void snurra_node::play_file(const QString &path) {
@@ -1449,11 +1505,14 @@ void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 	const QPoint from = m_drag_from;
 	m_drag_from = QPoint();
 	mark(QRect(), QRect());
+	hint_drop(false);
 	if (from.isNull()) return;
 
-	/* In a group, a tile dropped outside the window is pulled out there. */
+	/* In a group, a tile dropped outside the window is pulled out there;
+	 * on another of its tiles, the two trade places. */
 	if (m_tiles.size() > 1) {
 		if (!frameGeometry().contains(global)) release(int(m_tiles.indexOf(tile)), global);
+		else if (snurra_tile *over = tile_at(mapFromGlobal(global), false); over && over != tile) swap_tiles(tile, over);
 		return;
 	}
 

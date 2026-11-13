@@ -218,7 +218,13 @@ does the same with a tile's playback:
   tile the drop is that tile's, outlined as the drag moves. The new one
   keeps the place, level, controls and lane begin, plays if the old one
   did, from its start, at tempo 1 with no envelope or nudge; any further
-  files go after the train. Since 2026-11-13 (`snurra_dropped`):
+  files go after the train. **A tile let go on another of its window
+  trades places with it** (the holder, same day): the title's release on
+  X11, its drag and drop on Wayland, the other tile outlined as it
+  passes; the lanes' begins stay with the places, so a late lane starts
+  where it did with whatever now heads it. Moving a whole joined window
+  is still the bare frame between tiles (the holder: "not sure how yet";
+  to be refined). Since 2026-11-13 (`snurra_dropped`):
   a folder is the audio and video under it, by the name's type (a cover,
   a cue sheet or a playlist makes no tile), sorted as people count (2 before 10),
   at most 64, with no more than 4096 files looked at so a drop of a home

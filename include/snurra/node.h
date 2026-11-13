@@ -142,7 +142,9 @@ private:
 	void hint_drop(bool show, snurra_wire::side_t side = snurra_wire::RIGHT, snurra_tile *over = nullptr);
 	/* The tile a drop at `local` lands on, to replace or swap with; none
 	 * in the strip along the right and bottom edges, which add. */
-	snurra_tile *tile_at(const QPoint &local) const;
+	snurra_tile *tile_at(const QPoint &local, bool strips = true) const;
+	/* Two tiles of this window trade places (and their lanes' begins). */
+	void swap_tiles(snurra_tile *a, snurra_tile *b);
 	void replace_tile(snurra_tile *tile, const QString &file);
 	void leave_if_empty();
 	void run_trains();

@@ -51,6 +51,7 @@ private slots:
 	void loop_plays_again_from_the_start();
 	void the_library_lists_finds_and_hands_out_tunes();
 	void a_file_dropped_on_a_tile_takes_its_place();
+	void a_tile_dropped_on_another_trades_places();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -690,6 +691,48 @@ void embed_test::a_file_dropped_on_a_tile_takes_its_place() {
 
 	QVERIFY(drop_at(QPoint(node.width() - 2, node.height() / 3)));
 	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 4, 2000);
+}
+
+/*
+ * A tile let go on another of its window trades places with it (the
+ * holder, 2026-11-13): A and B in a train, C below beginning 1 s late.
+ * A's title let go over C: A heads the lower lane, still 1 s late, and C
+ * the upper. Then, as Wayland's drag and drop, A dropped on B.
+ */
+void embed_test::a_tile_dropped_on_another_trades_places() {
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_tile *b = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+	snurra_tile *c = node.add_tile(placed(QStringLiteral("c"), 1, 0));
+	c->set_lane_start_us(1000000);
+	node.resize(600, 300);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	auto place = [](snurra_tile *tile) { return qMakePair(tile->row(), tile->column()); };
+
+	const QPoint on_c = node.mapToGlobal(c->geometry().center());
+	emit a->handle_moved(a, node.mapToGlobal(a->geometry().center()));
+	emit a->handle_moved(a, on_c);
+	emit a->handle_released(a, on_c);
+	QCOMPARE(place(a), qMakePair(1, 0));
+	QCOMPARE(place(c), qMakePair(0, 0));
+	QCOMPARE(a->lane_start_us(), qint64(1000000));
+	QCOMPARE(c->lane_start_us(), qint64(0));
+	QTRY_VERIFY_WITH_TIMEOUT(a->geometry().top() > c->geometry().top(), 2000);
+
+	/* The window's own index of A, its first tile added: 0. */
+	QMimeData mime;
+	mime.setData(QStringLiteral("application/x-snurra-tile"), (node.socket_path() + QStringLiteral("\n0")).toUtf8());
+	const QPoint on_b = b->geometry().center();
+	QDragEnterEvent enter(on_b, Qt::MoveAction, &mime, Qt::LeftButton, {});
+	QCoreApplication::sendEvent(&node, &enter);
+	QVERIFY(enter.isAccepted());
+	QDropEvent drop(QPointF(on_b), Qt::MoveAction, &mime, Qt::LeftButton, {});
+	QCoreApplication::sendEvent(&node, &drop);
+	QVERIFY(drop.isAccepted());
+	QCOMPARE(place(a), qMakePair(0, 1));
+	QCOMPARE(place(b), qMakePair(1, 0));
+	QCOMPARE(b->lane_start_us(), qint64(1000000));
 }
 
 /*
