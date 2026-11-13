@@ -20,6 +20,7 @@
 #include "snurra/engine.h"
 #include "snurra/embed.h"
 #include "snurra/node.h"
+#include "snurra/beats.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
@@ -44,6 +45,7 @@ private slots:
 	void files_dropped_on_a_window_join_it();
 	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
+	void a_lane_dragged_later_starts_later_on_the_beat();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -439,6 +441,81 @@ void embed_test::a_folder_or_a_link_dropped_joins_too() {
 	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) train.insert(tile->column(), tile->state().source);
 	QCOMPARE(train.values(), (QStringList{ QStringLiteral("first"), dir.filePath(names[0]), dir.filePath(names[1]),
 	                                       dir.filePath(names[2]), link }));
+}
+
+/*
+ * A lane may start later than the timeline (project.md sec 3b): A and B
+ * stacked, 4 s each. B's waveform dragged with Ctrl by half its width
+ * moves B's lane to begin at 2 s. Paused, a seek to 1 s holds B at its
+ * start and a seek to 3 s holds it 1 s in; played from 0, B waits silent
+ * and comes in at 2 s. Then with beats -- A's every 0.5 s from 0, B's
+ * first at 0.1 s -- a drag to 1.3 s snaps to 1.4 s, so B's first beat
+ * lands on A's at 1.5 s; Shift held, it stays at 1.3 s.
+ */
+void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_tile *b = node.add_tile(placed(QStringLiteral("b"), 1, 0));
+	node.resize(400, 300);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QWidget *wave_a = waveform_of(a);
+	QWidget *wave_b = waveform_of(b);
+	QVERIFY(wave_a && wave_b);
+	const int w = wave_b->width();
+	auto drag = [&](double fraction, Qt::KeyboardModifiers held) {
+		const QPointF from(w / 4.0, wave_b->height() / 2.0);
+		const QPointF to = from + QPointF(fraction * w, 0);
+		QMouseEvent press(QEvent::MouseButtonPress, from, wave_b->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, held);
+		QCoreApplication::sendEvent(wave_b, &press);
+		QMouseEvent move(QEvent::MouseMove, to, wave_b->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, held);
+		QCoreApplication::sendEvent(wave_b, &move);
+		QMouseEvent release(QEvent::MouseButtonRelease, to, wave_b->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, held);
+		QCoreApplication::sendEvent(wave_b, &release);
+	};
+	const qint64 pixel_us = 4000000 / w + 1;
+	drag(0.5, Qt::ControlModifier);
+	QVERIFY2(qAbs(b->lane_start_us() - 2000000) <= pixel_us, qPrintable(QString::number(b->lane_start_us())));
+	QCOMPARE(a->lane_start_us(), qint64(0));
+
+	auto seek_a = [&](double fraction) {
+		QTest::mouseClick(wave_a, Qt::LeftButton, {}, QPoint(int(fraction * wave_a->width()), wave_a->height() / 2));
+	};
+	seek_a(0.25);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(a->state().position_us - 1000000) < 50000, 2000);
+	QCOMPARE(b->state().position_us, qint64(0));
+	seek_a(0.75);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(b->state().position_us - 1000000) < 50000, 2000);
+
+	seek_a(0);
+	QTRY_VERIFY_WITH_TIMEOUT(b->state().position_us == 0 && a->state().position_us < 50000, 2000);
+	a->request_playing(true);
+	QTest::qWait(1000);
+	QVERIFY2(b->playing(), "the late lane is not on its way");
+	/* Said as how long before its start: a second, of the two. */
+	QVERIFY2(qAbs(b->state().position_us + 1000000) < 150000, qPrintable(QString::number(b->state().position_us)));
+	QTest::qWait(1600);
+	QVERIFY2(qAbs(b->state().position_us - 600000) < 250000, qPrintable(QString::number(b->state().position_us)));
+	a->request_playing(false);
+
+	const int rate = b->deck()->rate();
+	a->set_beats(snurra_beat_grid{ rate * 0.5, 0, 2, rate });
+	b->set_beats(snurra_beat_grid{ rate * 0.5, rate * 0.1, 2, rate });
+	b->set_lane_start_us(0);
+	drag(0.325, Qt::ControlModifier);
+	QVERIFY2(qAbs(b->lane_start_us() - 1400000) <= 25, qPrintable(QString::number(b->lane_start_us())));
+	b->set_lane_start_us(0);
+	drag(0.325, Qt::ControlModifier | Qt::ShiftModifier);
+	QVERIFY2(qAbs(b->lane_start_us() - 1300000) <= pixel_us, qPrintable(QString::number(b->lane_start_us())));
+
+	/* A handover keeps it. */
+	QByteArray bytes;
+	QDataStream out(&bytes, QIODevice::WriteOnly);
+	out << b->state();
+	snurra_tile_state back;
+	QDataStream in(bytes);
+	in >> back;
+	QCOMPARE(back.lane_start_us, b->lane_start_us());
 }
 
 /*

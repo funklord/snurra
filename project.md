@@ -261,14 +261,29 @@ does the same with a tile's playback:
   play at the same time: a row is a sequence, and what plays at once is
   stacked. A merge does not realign what is playing -- it is heard as
   nothing (above) -- so lanes merged while playing run apart until the
-  group is next played or sought. Not yet: a lane starting later than
-  the timeline's start; it comes with the layout below or with
-  envelopes.
-- **Beat-snapping:** a dragged tile's start or overlap snaps to the
-  other's beat grid, which needs tempo and beat analysis per file (Mixxx
-  analyses on load; aubio and the Queen Mary vamp plugins are the usual
-  libraries -- their licences are the holder's to weigh before one is
-  linked).
+  group is next played or sought. **A lane may start later than the
+  timeline** (the holder, 2026-11-13: "lanes may start later, snap drags
+  to beats"): its begin is kept by its first tile (`lane_start_us`,
+  carried by a handover) and said on that tile's waveform as `+m:ss.s`.
+  It is set by dragging any of the lane's waveforms with Ctrl -- Ctrl,
+  since it is already the key that moves a track in time (the nudge),
+  and the waveform, since that is the track to move -- never before the
+  timeline's start. Played from before it, the lane waits, its first
+  tile started for the moment on the shared clock that its begin
+  names (a start to come, as a train's next tile's); paused, it holds at
+  its start. Released while the group plays, the group is started
+  again where it was, so the move is heard at once -- a gap of the
+  output's latency, as a seek. A tile put in front of a lane's first
+  takes over as first with no begin of its own: the begin stays with
+  the tile that had it, not yet moved to the new first.
+- **Beat-snapping:** a train's overlap snaps to the two grids (step 6),
+  and a lane dragged later snaps so its first beat, at its tempo and
+  offset, lands on the nearest beat of the tile another lane plays at
+  that moment -- the first lane, in row order, with a beat there; by
+  less than half a beat, and not at all where either has no grid. Shift
+  held while dragging, it goes where it is put -- the one modifier left,
+  Ctrl being the drag's own (an assumption, 2026-11-13: not checked
+  against an editor's convention).
 - **Envelopes:** a level curve per tile, drawn on it; the crossfade of a
   train is two of them. Settled with step 5 (2026-11-12): points of
   (time into the track, gain 0 to 1), straight lines in amplitude
@@ -1247,9 +1262,8 @@ marker and a merge by ear is the first thing to do.
 Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
 over SSH as the other trees are. Settled since: audio first, then video
 as a drawer (sec 3); beat analysis by Mixxx's method for now, licensing
-once the program works (the holder, 2026-11-12). Open, the holder's: a
-lane starting later than the timeline's start (sec 3b); an FFmpeg of
-snurra's own for Android (sec 3).
+once the program works (the holder, 2026-11-12). Open, the holder's: an
+FFmpeg of snurra's own for Android (sec 3).
 
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox

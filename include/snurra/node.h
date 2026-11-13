@@ -137,11 +137,17 @@ private:
 	int64_t lane_start(snurra_tile *tile) const;
 	/* The tile of lane `row` that plays at `time`, and its frame then;
 	 * none past the lane's end. */
-	snurra_tile *lane_at(int row, int64_t time, int64_t &frame) const;
+	snurra_tile *lane_at(int row, int64_t time, int64_t &frame, int64_t *wait = nullptr) const;
+	/* Where lane `row` begins on the timeline, in frames: its first
+	 * tile's lane start (tile_state.h). */
+	int64_t lane_begin(int row) const;
+	void shift_lane(snurra_tile *tile, qint64 delta_us, bool done, bool snap);
+	int64_t snapped_begin(int row, int64_t begin) const;
 	int64_t overlap(snurra_tile *tile, snurra_tile *next) const;
 	void step_train(snurra_tile *tile, int direction);
 	QList<int> rows() const;
 	int64_t time_of(snurra_tile *tile) const;
+	int64_t group_time(snurra_tile *from) const;
 	int64_t timeline_length(snurra_tile *tile) const;
 	void nudge_lane(snurra_tile *tile, qint64 delta_us);
 public:
@@ -180,6 +186,8 @@ private:
 	QTimer *m_trains = nullptr;
 	qint64 m_last_started = 0;   /* the last crossfade taken: its start */
 	qint64 m_last_stopped = 0;   /* and its end */
+	int m_shift_row = -1;          /* a lane being moved by a drag, */
+	qint64 m_shift_from_us = 0;    /* and where it began before it */
 };
 
 #endif

@@ -108,6 +108,10 @@ public:
 	/* How far this tile's track is ahead of its lane's time: nudges. */
 	qint64 offset_us() const { return m_state.offset_us; }
 	void set_offset_us(qint64 offset) { m_state.offset_us = offset; }
+	/* Where its lane begins on the group's timeline, kept by the lane's
+	 * first tile (tile_state.h) and said on its waveform. */
+	qint64 lane_start_us() const { return m_state.lane_start_us; }
+	void set_lane_start_us(qint64 us);
 
 	/* Track frames a frame out (1: as recorded), and key lock (sec 4). */
 	void set_tempo(float tempo);
@@ -196,6 +200,10 @@ signals:
 	void play_requested(snurra_tile *tile, bool playing);
 	void seek_requested(snurra_tile *tile, qint64 position_us);
 	void nudge_requested(snurra_tile *tile, qint64 delta_us);
+	/* The waveform dragged with Ctrl: its lane moved along the timeline by
+	 * `delta_us` from where the drag began; `done` on the release; `snap`
+	 * unless Shift is held. */
+	void shift_requested(snurra_tile *tile, qint64 delta_us, bool done, bool snap);
 	void sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
 	/* Files, folders or links dropped on the full-screen picture (a window

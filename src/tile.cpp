@@ -105,6 +105,16 @@ public:
 	}
 	std::function<void(const QList<QPointF> &)> on_envelope;
 
+	/* Said small at the top left: where its lane begins, when late. */
+	void set_note(const QString &note) {
+		if (note == m_note) return;
+		m_note = note;
+		update();
+	}
+
+	/* A drag with Ctrl: the lane moved, by fractions of this track. */
+	std::function<void(double fraction, bool done, bool snap)> on_shift;
+
 	/* A train's crossfade, as fractions of the track: the fade in from
 	 * its start, the fade out to its end; 0 for none. */
 	void set_crossfade(double in, double out) {
@@ -122,6 +132,11 @@ protected:
 		paint_beats();
 		paint_crossfade();
 		paint_envelope();
+		if (!m_note.isEmpty()) {
+			QPainter painter(this);
+			painter.setPen(palette().color(QPalette::Text));
+			painter.drawText(rect().adjusted(3, 1, -3, -1), Qt::AlignLeft | Qt::AlignTop, m_note);
+		}
 		(void)event;
 	}
 
@@ -246,6 +261,11 @@ protected:
 	}
 
 	void mousePressEvent(QMouseEvent *event) override {
+		if (!m_editing && on_shift && event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
+			m_shifting = true;
+			m_shift_x = event->position().x();
+			return;
+		}
 		if (!m_editing) {
 			if (on_seek && width() > 0) on_seek(qBound(0.0, event->position().x() / width(), 1.0));
 			return;
@@ -266,6 +286,11 @@ protected:
 	}
 
 	void mouseMoveEvent(QMouseEvent *event) override {
+		if (m_shifting) {
+			on_shift((event->position().x() - m_shift_x) / qMax(1, width()), false,
+			         !(event->modifiers() & Qt::ShiftModifier));
+			return;
+		}
 		if (!m_editing || m_grabbed < 0 || m_grabbed >= m_envelope.size()) return;
 		const QPointF at = event->position();
 		/* Out of the waveform by more than a grab's reach: it goes, shown
@@ -279,7 +304,13 @@ protected:
 		update();
 	}
 
-	void mouseReleaseEvent(QMouseEvent *) override {
+	void mouseReleaseEvent(QMouseEvent *event) override {
+		if (m_shifting) {
+			m_shifting = false;
+			on_shift((event->position().x() - m_shift_x) / qMax(1, width()), true,
+			         !(event->modifiers() & Qt::ShiftModifier));
+			return;
+		}
 		if (!m_editing || m_grabbed < 0) return;
 		if (m_outside && m_grabbed < m_envelope.size()) m_envelope.removeAt(m_grabbed);
 		m_grabbed = -1;
@@ -298,6 +329,9 @@ private:
 	double m_beat_period = 0;   /* fractions of the track; 0: no grid */
 	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
 	QList<QPointF> m_envelope;
+	QString m_note;
+	bool m_shifting = false;   /* a Ctrl drag moving the lane */
+	double m_shift_x = 0;      /* where it began, in pixels */
 	double m_fade_in = 0;    /* fractions of the track; 0: none */
 	double m_fade_out = 0;
 	bool m_editing = false;
@@ -587,6 +621,13 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_waveform = new snurra_waveform(state.source, this);
 	m_waveform->setAccessibleName(tr("Waveform"));
 	m_waveform->on_seek = [this](double fraction) { seek(qint64(fraction * m_state.duration_us)); };
+	/* A fraction of this track is that much of its lane's time, at its
+	 * tempo. Only in a group: alone there is no timeline to move along. */
+	m_waveform->on_shift = [this](double fraction, bool done, bool snap) {
+		if (!m_grouped) return;
+		const double frames = fraction * double(length_frames()) / double(m_deck->tempo());
+		emit shift_requested(this, qint64(snurra_frames_to_us(std::llround(frames), m_deck->rate())), done, snap);
+	};
 	column->addWidget(m_waveform, 1);
 
 	/* The downward drawer: the controls (sec 3c). */
@@ -735,6 +776,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_controls(state.controls);
 	set_playing(state.playing);
 	set_envelope(state.envelope);
+	set_lane_start_us(state.lane_start_us);
 	set_tempo(state.tempo);
 	set_key_lock(state.key_lock);
 	tick();
@@ -1260,6 +1302,17 @@ void snurra_tile::set_envelope(const QList<QPair<qint64, float>> &points) {
 		frames.emplace_back(us_to_frames(point.first, m_deck->rate()), qBound(0.0f, point.second, 1.0f));
 	m_deck->set_envelope(frames);
 	show_envelope();
+}
+
+void snurra_tile::set_lane_start_us(qint64 us) {
+	m_state.lane_start_us = qMax<qint64>(0, us);
+	/* To a tenth: a start on a beat is finer than a second. */
+	const qint64 tenths = (m_state.lane_start_us + 50000) / 100000;
+	m_waveform->set_note(m_state.lane_start_us > 0 ? QStringLiteral("+%1:%2.%3")
+	                                                         .arg(tenths / 600)
+	                                                         .arg(tenths / 10 % 60, 2, 10, QLatin1Char('0'))
+	                                                         .arg(tenths % 10)
+	                                               : QString());
 }
 
 void snurra_tile::set_crossfade(double in, double out) {

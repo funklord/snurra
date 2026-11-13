@@ -245,6 +245,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
 	connect(tile, &snurra_tile::seek_requested, this, &snurra_node::seek_group);
+	connect(tile, &snurra_tile::shift_requested, this, &snurra_node::shift_lane);
 	/* Dropped on the full-screen picture, where nothing else of the window
 	 * shows: the train goes on. */
 	connect(tile, &snurra_tile::files_dropped, this,
@@ -522,9 +523,14 @@ QList<snurra_tile *> snurra_node::lane(int row) const {
 	return tiles;
 }
 
+int64_t snurra_node::lane_begin(int row) const {
+	const QList<snurra_tile *> tiles = lane(row);
+	return tiles.isEmpty() ? 0 : snurra_us_to_frames(tiles.first()->lane_start_us(), m_engine->rate());
+}
+
 int64_t snurra_node::lane_start(snurra_tile *tile) const {
 	const QList<snurra_tile *> tiles = lane(tile->row());
-	int64_t start = 0;
+	int64_t start = lane_begin(tile->row());
 	for (int i = 0; i < tiles.size() && tiles.at(i) != tile; ++i) {
 		const int64_t length = timeline_length(tiles.at(i));
 		start += length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
@@ -544,7 +550,26 @@ void snurra_node::play_group(snurra_tile *from, bool playing) {
 			if (tile->playing()) tile->set_playing(false);
 		return;
 	}
-	start_group_at(time_of(from));
+	start_group_at(group_time(from));
+}
+
+/*
+ * The group's time, from `from` where it says it: a late lane not yet
+ * begun stands at its first frame, which says only that the time is not
+ * past its begin -- then another lane's tile, one that has begun, says it.
+ */
+int64_t snurra_node::group_time(snurra_tile *from) const {
+	auto begun = [this](snurra_tile *tile) {
+		const QList<snurra_tile *> tiles = lane(tile->row());
+		return lane_begin(tile->row()) == 0 || tiles.isEmpty() || tiles.first() != tile
+		       || tile->frame_now() > snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+	};
+	if (begun(from)) return time_of(from);
+	for (snurra_tile *tile : m_tiles)
+		if (tile->playing() && begun(tile)) return time_of(tile);
+	for (snurra_tile *tile : m_tiles)
+		if (begun(tile)) return std::min(time_of(tile), time_of(from));
+	return time_of(from);
 }
 
 QList<int> snurra_node::rows() const {
@@ -554,9 +579,17 @@ QList<int> snurra_node::rows() const {
 	return rows;
 }
 
-snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame) const {
+snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame, int64_t *wait) const {
 	const QList<snurra_tile *> tiles = lane(row);
-	int64_t start = 0;
+	int64_t start = lane_begin(row);
+	if (wait) *wait = 0;
+	/* Before a late lane begins: its first tile, from its start, after the
+	 * wait -- a start on the shared clock still to come (deck.h). */
+	if (!tiles.isEmpty() && time < start) {
+		frame = std::max<int64_t>(0, snurra_us_to_frames(tiles.first()->offset_us(), m_engine->rate()));
+		if (wait) *wait = start - time;
+		return tiles.first();
+	}
 	for (int i = 0; i < tiles.size(); ++i) {
 		const int64_t length = timeline_length(tiles.at(i));
 		const int64_t own = length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
@@ -612,12 +645,78 @@ void snurra_node::start_group_at(int64_t time) {
 	m_following.clear();   /* every lane starts afresh: no train is mid-way */
 	for (int row : rows()) {
 		int64_t frame = 0;
-		snurra_tile *chosen = lane_at(row, time, frame);
+		int64_t wait = 0;
+		snurra_tile *chosen = lane_at(row, time, frame, &wait);
 		for (snurra_tile *tile : lane(row)) {
-			if (tile == chosen) tile->play_from(frame, at);
+			if (tile == chosen) tile->play_from(frame, at + snurra_frames_to_us(wait, m_engine->rate()));
 			else if (tile->playing()) tile->set_playing(false);
 		}
 	}
+}
+
+/*
+ * A lane moved along the timeline (project.md sec 3b): the waveform of any
+ * of its tiles dragged with Ctrl, the lane's begin following the pointer
+ * -- never before the timeline's start -- and said on its first tile. The
+ * begin snaps so the lane's first beat falls on a beat of another lane
+ * playing there (snapped_begin); Shift held, it goes where it is put.
+ * Released while the group plays, the group is started again where it
+ * was, so the moved lane is heard where it now is.
+ */
+void snurra_node::shift_lane(snurra_tile *tile, qint64 delta_us, bool done, bool snap) {
+	const QList<snurra_tile *> tiles = lane(tile->row());
+	if (tiles.isEmpty()) return;
+	if (m_shift_row != tile->row()) {
+		m_shift_row = tile->row();
+		m_shift_from_us = tiles.first()->lane_start_us();
+	}
+	int64_t begin = std::max<int64_t>(0, snurra_us_to_frames(m_shift_from_us + delta_us, m_engine->rate()));
+	if (snap) begin = snapped_begin(tile->row(), begin);
+	tiles.first()->set_lane_start_us(qint64(snurra_frames_to_us(begin, m_engine->rate())));
+	if (!done) return;
+	m_shift_row = -1;
+	/* The time now, from a tile sounding in another lane if one is: the
+	 * moved lane's own tiles no longer say it. */
+	snurra_tile *clock = nullptr;
+	for (snurra_tile *other : m_tiles)
+		if (other->playing() && (!clock || clock->row() == tile->row())) clock = other;
+	if (clock) start_group_at(group_time(clock));
+}
+
+/*
+ * Where lane `row` begins if it is to come in on the beat: its first
+ * tile's first beat, at its tempo and offset, moved onto the nearest beat
+ * of the tile another lane plays at that moment -- the first such lane
+ * with a beat. By less than half a beat; never before the timeline's
+ * start. Unchanged where either has no beat.
+ */
+int64_t snurra_node::snapped_begin(int row, int64_t begin) const {
+	const QList<snurra_tile *> tiles = lane(row);
+	if (tiles.isEmpty()) return begin;
+	snurra_tile *mine = tiles.first();
+	const snurra_beat_grid grid = mine->beats();
+	if (!grid.valid()) return begin;
+	const double tempo = mine->deck()->tempo();
+	const double offset = double(snurra_us_to_frames(mine->offset_us(), m_engine->rate()));
+	const double beat = double(begin) + (grid.first - offset) / tempo;   /* the first beat, on the timeline */
+	for (int other : rows()) {
+		if (other == row) continue;
+		int64_t frame = 0;
+		int64_t wait = 0;
+		snurra_tile *theirs = lane_at(other, int64_t(beat), frame, &wait);
+		if (!theirs || wait > 0 || !theirs->beats().valid()) continue;
+		const snurra_beat_grid their = theirs->beats();
+		const double their_tempo = theirs->deck()->tempo();
+		const double their_offset = double(snurra_us_to_frames(theirs->offset_us(), m_engine->rate()));
+		/* Their beats on the timeline: lane_start + (track frame - offset) / tempo. */
+		const double origin = double(lane_start(theirs)) + (their.first - their_offset) / their_tempo;
+		const double period = their.period / their_tempo;
+		const double nearest = origin + std::round((beat - origin) / period) * period;
+		double snapped = double(begin) + (nearest - beat);
+		while (snapped < 0) snapped += period;
+		return std::llround(snapped);
+	}
+	return begin;
 }
 
 /* The group's time where `tile` is now: its place in its lane, less how
