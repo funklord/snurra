@@ -394,16 +394,18 @@ void embed_test::files_dropped_on_a_window_join_it() {
 
 /*
  * A folder dropped is its tracks (project.md sec 3b): under it, in a
- * folder of its own too, 2.wav, 10.wav and a film, beside a cover and a
- * cue sheet. They join as 2, 10, the film -- counted, not spelled -- and
- * the cover and the sheet make no tile. A link from a browser stays a
+ * folder of its own too, 2.wav, 10.wav and a film, beside a cover, a
+ * cue sheet and three playlists (.m3u, .pls and .asx, which
+ * shared-mime-info types as audio/). They join as 2, 10, the film --
+ * counted, not spelled -- and the rest make no tile. A link from a browser stays a
  * URL, after them. A drag still moving never walks the folder.
  */
 void embed_test::a_folder_or_a_link_dropped_joins_too() {
 	QTemporaryDir dir;
 	QVERIFY(QDir(dir.path()).mkpath(QStringLiteral("album/cd")));
 	const QStringList names{ QStringLiteral("album/2.wav"), QStringLiteral("album/10.wav"), QStringLiteral("album/cd/film.mkv"),
-		                 QStringLiteral("album/cover.jpg"), QStringLiteral("album/album.cue") };
+		                 QStringLiteral("album/cover.jpg"), QStringLiteral("album/album.cue"),
+		                 QStringLiteral("album/album.m3u"), QStringLiteral("album/radio.pls"), QStringLiteral("album/list.asx") };
 	for (const QString &name : names) {
 		QFile file(dir.filePath(name));
 		QVERIFY(file.open(QIODevice::WriteOnly));

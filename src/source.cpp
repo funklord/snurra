@@ -562,12 +562,19 @@ bool snurra_is_url(const QString &name) {
 }
 
 /* A folder's own files are only those it plays: by the name's type, so a
- * cover, a playlist or a cue sheet beside the tracks makes no tile. */
+ * cover or a cue sheet beside the tracks makes no tile. Nor a playlist,
+ * though shared-mime-info files .m3u, .pls and .asx under audio/: the
+ * first is known as text, and the other two are named, having no text
+ * among their ancestors in Qt's database (measured, Qt 6.8). */
 static bool playable_by_name(const QString &path) {
 	static const QMimeDatabase types;
-	const QString type = types.mimeTypeForFile(path, QMimeDatabase::MatchExtension).name();
-	return type.startsWith(QLatin1String("audio/")) || type.startsWith(QLatin1String("video/"))
-	       || type == QLatin1String("application/ogg");
+	const QMimeType type = types.mimeTypeForFile(path, QMimeDatabase::MatchExtension);
+	const QString name = type.name();
+	if (type.inherits(QStringLiteral("text/plain")) || type.inherits(QStringLiteral("application/xml"))
+	    || name == QLatin1String("audio/x-scpls") || name == QLatin1String("audio/x-ms-asx"))
+		return false;
+	return name.startsWith(QLatin1String("audio/")) || name.startsWith(QLatin1String("video/"))
+	       || name == QLatin1String("application/ogg");
 }
 
 QStringList snurra_dropped(const QMimeData *mime, int folder_most) {
