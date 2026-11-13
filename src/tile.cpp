@@ -81,6 +81,13 @@ public:
 		update();
 	}
 
+	/* The cue point, a fraction of the track; negative for none: a mark
+	 * down from the top, a DJ's cue triangle. */
+	void set_cue(double fraction) {
+		m_cue_at = fraction;
+		update();
+	}
+
 	void set_beats(double first, double period) {
 		m_beat_first = first;
 		m_beat_period = period;
@@ -132,6 +139,15 @@ protected:
 		paint_beats();
 		paint_crossfade();
 		paint_envelope();
+		if (m_cue_at >= 0) {
+			QPainter painter(this);
+			painter.setRenderHint(QPainter::Antialiasing);
+			const double x = m_cue_at * width();
+			const double size = qMax(4.0, height() / 6.0);
+			painter.setPen(Qt::NoPen);
+			painter.setBrush(QColor(0xf0, 0xa0, 0x30));
+			painter.drawPolygon(QPolygonF{ QPointF(x - size, 0), QPointF(x + size, 0), QPointF(x, size * 1.4) });
+		}
 		if (!m_note.isEmpty()) {
 			QPainter painter(this);
 			painter.setPen(palette().color(QPalette::Text));
@@ -330,6 +346,7 @@ private:
 	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
 	QList<QPointF> m_envelope;
 	QString m_note;
+	double m_cue_at = -1;
 	bool m_shifting = false;   /* a Ctrl drag moving the lane */
 	double m_shift_x = 0;      /* where it began, in pixels */
 	double m_fade_in = 0;    /* fractions of the track; 0: none */
@@ -703,6 +720,13 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_play->setAutoRaise(true);
 	m_play->setCheckable(true);
 	transport->addWidget(m_play);
+	m_cue = new QToolButton(m_controls);
+	m_cue->setObjectName(QStringLiteral("snurra-cue"));
+	m_cue->setAutoRaise(true);
+	m_cue->setText(tr("cue"));
+	m_cue->setAccessibleName(tr("Cue"));
+	m_cue->setToolTip(tr("Paused, set the cue here; playing, go back to it and stop"));
+	transport->addWidget(m_cue);
 	/* Jumps (the holder, 2026-11-12): one pair, whose step is the track's
 	 * -- bars where it has a beat, else time or a share of it -- and says
 	 * so on its face. Held, they go on; with Ctrl, they nudge. */
@@ -827,6 +851,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	});
 	connect(m_key_lock, &QToolButton::toggled, this, &snurra_tile::set_key_lock);
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
+	connect(m_cue, &QToolButton::clicked, this, &snurra_tile::cue);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
 		m_deck->set_level(float(level) / 100);
@@ -843,6 +868,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_playing(state.playing);
 	set_envelope(state.envelope);
 	set_lane_start_us(state.lane_start_us);
+	show_cue();
 	set_tempo(state.tempo);
 	set_key_lock(state.key_lock);
 	tick();
@@ -1353,6 +1379,21 @@ void snurra_tile::seek(qint64 position_us) {
  * tempo -- and how far its phase is from the leader's now, the shorter way
  * round, for the caller to bend out. 0 where either has no beat.
  */
+void snurra_tile::cue() {
+	if (m_state.playing) {
+		if (m_state.cue_us < 0) return;
+		request_playing(false);
+		seek(m_state.cue_us);
+		return;
+	}
+	m_state.cue_us = frames_to_us(frame_now(), m_deck->rate());
+	show_cue();
+}
+
+void snurra_tile::show_cue() {
+	m_waveform->set_cue(m_state.cue_us >= 0 && m_state.duration_us > 0 ? double(m_state.cue_us) / double(m_state.duration_us) : -1);
+}
+
 void snurra_tile::set_sync_available(bool available) {
 	m_sync_available = available;
 	if (m_sync) m_sync->setEnabled(m_grid.valid() && (m_grouped || m_sync_available));
@@ -1525,6 +1566,7 @@ void snurra_tile::tick() {
 		m_state.duration_us = frames_to_us(length, m_deck->rate());
 		m_position->setRange(0, int(qMax<qint64>(1, m_state.duration_us / 100000)));
 		show_envelope();
+		show_cue();
 		set_beats(m_grid);
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);

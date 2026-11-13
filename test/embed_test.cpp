@@ -60,6 +60,7 @@ private slots:
 	void a_dark_desktop_is_found_where_it_is_written();
 	void a_jump_while_playing_lands_exactly_its_step_on();
 	void the_dj_player_loads_two_decks_and_crosses_them();
+	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -986,6 +987,48 @@ void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 
 	/* Let go over nothing: no new player. */
 	browser->dragged_out({ paths[0] }, false, QPoint(-10000, -10000));
+}
+
+/*
+ * The cue, a DJ's (the holder's simplified Traktor): paused at 2 s, the
+ * cue button sets it there; played on, the button goes back to 2 s and
+ * stops; a handover keeps it.
+ */
+void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
+	QTemporaryDir dir;
+	QFile file(dir.filePath(QStringLiteral("cue.wav")));
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav_of(48000 * 20, [](int) { return 1000; }));
+	file.close();
+	snurra_dj dj;
+	snurra_media media;
+	media.path = file.fileName();
+	QVERIFY(dj.load(0, media));
+	dj.show();
+	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(deck);
+	QTRY_COMPARE_WITH_TIMEOUT(deck->state().duration_us, qint64(20000000), 3000);
+	QToolButton *cue = deck->findChild<QToolButton *>(QStringLiteral("snurra-cue"));
+	QVERIFY(cue);
+	QCOMPARE(deck->cue_us(), qint64(-1));
+	deck->seek_by(2000000);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(deck->state().position_us - 2000000) < 20000, 2000);
+	cue->click();
+	QVERIFY2(qAbs(deck->cue_us() - 2000000) < 20000, qPrintable(QString::number(deck->cue_us())));
+	deck->set_playing(true);
+	QTest::qWait(700);
+	QVERIFY(deck->state().position_us > 2400000);
+	cue->click();
+	QVERIFY2(!deck->playing(), "the cue did not stop it");
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(deck->state().position_us - deck->cue_us()) < 20000, 2000);
+
+	QByteArray bytes;
+	QDataStream out(&bytes, QIODevice::WriteOnly);
+	out << deck->state();
+	snurra_tile_state back;
+	QDataStream in(bytes);
+	in >> back;
+	QCOMPARE(back.cue_us, deck->cue_us());
 }
 
 /*

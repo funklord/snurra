@@ -966,8 +966,12 @@ controls; each tile very compact but resizeable).
   before). `snurra --dj [a b]` opens it, seen in Xvfb -- and at 412 x 915, a
   phone's portrait, the one layout holds: each deck half the width, the
   browser most of the screen, the tempo slider the first control
-  squeezed. Not yet: a
-  channel fader or EQ per deck, cue points, the phone's layout tried.
+  squeezed. **The cue** (every tile, so a window's too): a CDJ's and
+  Traktor's -- paused, the cue button sets it where the track stands;
+  playing, it goes back there and stops; marked on the waveform by a
+  triangle from the top, kept by a handover (`cue_us`). A deck's level
+  slider is its channel fader. Not yet: an
+  EQ per deck, the phone's layout tried on a phone.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

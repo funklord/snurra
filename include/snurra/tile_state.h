@@ -61,6 +61,10 @@ struct snurra_tile_state {
 	 * timeline does (project.md sec 3b). */
 	qint64 lane_start_us = 0;
 
+	/* The cue point, a DJ's (project.md sec 4): microseconds into the
+	 * track, -1 for none. */
+	qint64 cue_us = -1;
+
 	/* Where it is at `now`, carried along from the sample -- either way,
 	 * since a sample's time can be just ahead, when it is heard. */
 	qint64 position_now(qint64 now = snurra_clock_us()) const {
@@ -71,7 +75,7 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	return out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us;
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us;
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -80,7 +84,7 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 column = 0;
 	qint32 audio_track = -1;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us;
+	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us;
 	state.level = level;
 	state.row = row;
 	state.column = column;

@@ -270,6 +270,9 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 	dj_deck *place = d->decks[deck];
 	snurra_tile_state state;
 	state.source = media.bytes ? media.name : media.path;
+	/* The stand-in length until the track says its own, as everywhere:
+	 * 0 clamped every seek to the start until then. */
+	state.duration_us = 180000000;
 	state.playing = false;
 	state.controls = true;
 	state.sampled_at_us = snurra_clock_us();

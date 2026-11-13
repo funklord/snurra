@@ -130,6 +130,11 @@ public:
 	 * decks), wherever this track has a beat. */
 	void set_sync_available(bool available);
 
+	/* The cue (a CDJ's, Traktor's): paused, it is set where the track
+	 * stands; playing, the track goes back to it and stops. */
+	void cue();
+	qint64 cue_us() const { return m_state.cue_us; }
+
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard
 	 * through the deck, and edited on the waveform while the envelope
 	 * control (in the controls, sec 3c) is on. */
@@ -276,6 +281,8 @@ private:
 	QLabel *m_tempo_label = nullptr;
 	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_sync = nullptr;
+	QToolButton *m_cue = nullptr;
+	void show_cue();
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;
 	std::unique_ptr<snurra_beats> m_beats;
