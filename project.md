@@ -919,8 +919,14 @@ controls; each tile very compact but resizeable).
   FFmpeg's ASS text (overrides, drawings dropped), and bitmaps (PGS,
   DVD) as pictures; a Blu-ray cue with no end ends at the next, an
   empty one only ends the one before, a cue read again after a seek is
-  not doubled. Not seen: a cue that began before the key frame a seek
-  lands on, until read again from before it. Shown from the start
+  not doubled. A seek lands on the key frame before its target, so the
+  line on screen there began before anything read: after each seek a
+  second reader of the file, every other stream discarded, reads the
+  subtitle packets from 10 s before the target up to it -- or up to
+  1 MB past where the picture's reader stands, bounded inside FFmpeg's
+  read by its interrupt callback, since one read with the rest
+  discarded runs on to the next subtitle however far. Files only: a
+  host's bytes may not be there. Shown from the start
   where a `.srt` lies beside the file (put there to be shown) or a
   stream is marked default or forced; otherwise none until asked -- a
   film with twenty languages does not open on the first, as mpv

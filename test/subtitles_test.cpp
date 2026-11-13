@@ -61,6 +61,7 @@ private slots:
 	void the_srt_beside_a_video_is_found();
 	void an_embedded_stream_is_read_as_the_picture_passes();
 	void a_blu_ray_picture_subtitle_is_shown_where_it_was_placed();
+	void a_seek_into_a_line_shows_that_line();
 	void a_tile_shows_the_words_heard_and_v_and_j_change_them();
 
 private:
@@ -379,6 +380,39 @@ void subtitles_test::a_blu_ray_picture_subtitle_is_shown_where_it_was_placed() {
 	QCOMPARE(cue.place.y(), 30.0 / 48);
 	QCOMPARE(cue.place.width(), 48.0 / 64);
 	QCOMPARE(cue.place.height(), 10.0 / 48);
+}
+
+/* A key frame each second, and a line from 1.5 s to 5.5 s: a seek to
+ * 4.5 s lands on the key frame at 4 s, after the line began. */
+void subtitles_test::a_seek_into_a_line_shows_that_line() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QFile srt(m_dir.filePath(QStringLiteral("long.srt")));
+	QVERIFY(srt.open(QIODevice::WriteOnly));
+	srt.write("1\n00:00:01,500 --> 00:00:05,500\nthe long line\n\n2\n00:00:06,000 --> 00:00:06,500\nlast\n");
+	srt.close();
+	QStringList args{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+		          QStringLiteral("-i"), QStringLiteral("testsrc=s=64x48:r=25:d=7"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+		          QStringLiteral("-i"), QStringLiteral("sine=f=440:d=7"), QStringLiteral("-i"), srt.fileName(),
+		          QStringLiteral("-map"), QStringLiteral("0:v"), QStringLiteral("-map"), QStringLiteral("1:a"), QStringLiteral("-map"),
+		          QStringLiteral("2:s"), QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-g"), QStringLiteral("25"),
+		          QStringLiteral("-keyint_min"), QStringLiteral("25"), QStringLiteral("-c:s"), QStringLiteral("srt"),
+		          QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), m_dir.filePath(QStringLiteral("seek.mkv")) };
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, args);
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+
+	snurra_video video(m_dir.filePath(QStringLiteral("seek.mkv")));
+	QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+	const auto tracks = video.subtitle_tracks();
+	QCOMPARE(tracks.size(), size_t(1));
+	/* Straight to 4.5 s, as a jump or a click on the position does. */
+	QTRY_VERIFY_WITH_TIMEOUT(video.frame_at(4500000).pts_us >= 4400000, 5000);
+	QTRY_COMPARE_WITH_TIMEOUT(words_at(*tracks[0], 4500000), QStringLiteral("the long line"), 2000);
+	/* And again, back and on, the second reader used twice. */
+	QTRY_VERIFY_WITH_TIMEOUT(video.frame_at(500000).pts_us >= 400000, 5000);
+	QTRY_VERIFY_WITH_TIMEOUT(video.frame_at(6200000).pts_us >= 6100000, 5000);
+	QTRY_COMPARE_WITH_TIMEOUT(words_at(*tracks[0], 6200000), QStringLiteral("last"), 2000);
+	QCOMPARE(tracks[0]->size(), size_t(2));
 }
 
 void subtitles_test::a_tile_shows_the_words_heard_and_v_and_j_change_them() {

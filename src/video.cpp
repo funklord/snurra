@@ -401,6 +401,76 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		reader.track->add(std::move(cue));
 	};
 
+	/*
+	 * A seek reads on from the key frame before its target, so a cue that
+	 * began before that -- the line on screen at the target -- would not
+	 * be seen until read again. So after a seek, a second reader of the
+	 * file, every stream but the subtitles discarded, reads their packets
+	 * from PREROLL before the target up to it, or up to where the
+	 * picture's reader stands in the file, whichever comes first: sparse
+	 * subtitles would otherwise have it read on through the film for the
+	 * next one. A file only: a host's bytes may not be here yet.
+	 */
+	AVFormatContext *preroll = nullptr;
+	std::vector<subtitle_reader> preroll_readers;
+	bool preroll_failed = false;
+	/* Inside one read too: with the other streams discarded, a single
+	 * av_read_frame reads on to the next subtitle packet, however far. */
+	struct preroll_bound {
+		AVFormatContext *format = nullptr;
+		int64_t stand = INT64_MAX;
+		snurra_video *video = nullptr;
+	} bound;
+	bound.video = this;
+	auto preroll_subtitles = [&](int64_t target) {
+		constexpr int64_t PREROLL = 10 * int64_t(1000000);
+		if (subtitles.empty() || bytes || preroll_failed) return;
+		if (!preroll) {
+			preroll_failed = true;
+			preroll = avformat_alloc_context();
+			if (!preroll) return;
+			bound.format = preroll;
+			preroll->interrupt_callback.opaque = &bound;
+			preroll->interrupt_callback.callback = [](void *opaque) -> int {
+				const preroll_bound *at = static_cast<const preroll_bound *>(opaque);
+				if (at->format->pb && avio_tell(at->format->pb) > at->stand) return 1;
+				std::lock_guard<std::mutex> lock(at->video->m_mutex);
+				return at->video->m_stop ? 1 : 0;
+			};
+			if (avformat_open_input(&preroll, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return;
+			if (avformat_find_stream_info(preroll, nullptr) < 0 || preroll->nb_streams != format->nb_streams) return;
+			for (unsigned i = 0; i < preroll->nb_streams; ++i) preroll->streams[i]->discard = AVDISCARD_ALL;
+			for (const subtitle_reader &reader : subtitles) {
+				AVStream *in = preroll->streams[reader.index];
+				in->discard = AVDISCARD_DEFAULT;
+				const AVCodec *decoder = avcodec_find_decoder(in->codecpar->codec_id);
+				AVCodecContext *context = decoder ? avcodec_alloc_context3(decoder) : nullptr;
+				if (!context) return;
+				context->pkt_timebase = in->time_base;
+				preroll_readers.push_back({ reader.index, context, reader.track });
+				if (avcodec_parameters_to_context(context, in->codecpar) < 0 || avcodec_open2(context, decoder, nullptr) < 0) return;
+			}
+			preroll_failed = false;
+		}
+		for (subtitle_reader &reader : preroll_readers) avcodec_flush_buffers(reader.codec);
+		const int64_t from = std::max<int64_t>(0, target + origin_us - PREROLL);
+		if (av_seek_frame(preroll, -1, av_rescale_q(from, MICROSECONDS, AV_TIME_BASE_Q), AVSEEK_FLAG_BACKWARD) < 0) return;
+		bound.stand = avio_tell(format->pb) + (1 << 20);
+		AVPacket *read = av_packet_alloc();
+		while (read && av_read_frame(preroll, read) >= 0) {
+			const AVStream *in = preroll->streams[read->stream_index];
+			const bool past = read->pts != AV_NOPTS_VALUE
+			                  && av_rescale_q(read->pts, in->time_base, MICROSECONDS) > target + origin_us;
+			if (!past)
+				for (subtitle_reader &reader : preroll_readers)
+					if (read->stream_index == reader.index) read_subtitle(reader, read);
+			av_packet_unref(read);
+			if (past) break;
+		}
+		av_packet_free(&read);
+		bound.stand = INT64_MAX;
+	};
+
 	auto push = [&](const AVFrame *from, int64_t pts_us) {
 		snurra_video_frame next{ to_rgb(from), pts_us };
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -435,6 +505,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 					av_seek_frame(format, stream_index, ts, AVSEEK_FLAG_BACKWARD);
 					avcodec_flush_buffers(codec);
 					for (subtitle_reader &reader : subtitles) avcodec_flush_buffers(reader.codec);
+					preroll_subtitles(seek_target);
 				}
 			}
 
@@ -498,5 +569,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	av_packet_free(&packet);
 	avcodec_free_context(&codec);
 	for (subtitle_reader &reader : subtitles) avcodec_free_context(&reader.codec);
+	for (subtitle_reader &reader : preroll_readers) avcodec_free_context(&reader.codec);
+	avformat_close_input(&preroll);
 	avformat_close_input(&format);
 }
