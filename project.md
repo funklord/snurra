@@ -808,7 +808,11 @@ controls; each tile very compact but resizeable).
   a server that never answers lets the window close in 99 ms
   (`a_url_that_never_answers_lets_the_window_close`) -- without the
   interrupts it never closed. A live stream has no length: the tile
-  keeps its three-minute stand-in length (not yet better).
+  shows its three-minute stand-in, but plays on past it to the stream's
+  own end -- measured 2026-11-13 with a live Matroska over HTTP under a
+  1 s stand-in, heard to its 3 s end -- since a deck ends only where its
+  source does and a train skips a tile of no known length. Only the
+  shown length is wrong (not yet better).
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
