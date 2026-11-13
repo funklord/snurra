@@ -249,6 +249,23 @@ does the same with a tile's playback:
   opens as a tile of its own where it was let go. The process goes once
   the library and the window are both closed. Listed on a thread of its
   own, at most 50000 tunes of 200000 files looked at.
+- **Dark where the desktop is** (the holder, 2026-11-13: the players
+  are light on a dark TDE desktop that has no light/dark status;
+  `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the
+  first that answers: `$SNURRA_THEME`; Qt's own colour scheme; the file
+  a desktop with no status writes -- TDE's and KDE 3's `kdeglobals`
+  ([General] windowBackground against windowForeground, `0,42,78` and
+  `220,220,220` here), LXQt's `lxqt.conf` ([Palette] window_color
+  against window_text_color), the running session's first; then the
+  palette Qt was given. Not the sources' rank: the palette always
+  answers, light where Qt is not integrated, so asked earlier it would
+  hide the file. The scheme's name is never read (it says nothing in
+  most), and the desktop's hue is not taken: dark means snurra's own dark
+  scheme, in Fusion, its accents chosen against its own ground. Unknown
+  leaves Qt's default -- a wrong dark is unreadable, a wrong light only
+  plain. The player only; a host embedding the library keeps its own.
+  Not done: the freedesktop portal (Qt DBus is not linked; TDE has none),
+  and Plasma 5/6's own kdeglobals keys, not readable on this machine.
 - **The snap gesture between processes:** on X11 a tile can find the
   others' windows and snap edge to edge as it is moved; on Wayland a
   program cannot learn other windows' positions, so the gesture there

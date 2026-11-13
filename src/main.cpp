@@ -20,6 +20,7 @@
 #include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
+#include "snurra/theme.h"
 #include "snurra/tile.h"
 #include "snurra/wire.h"
 
@@ -82,6 +83,9 @@ qint64 parse_time_us(const QString &text) {
  */
 int main(int argc, char *argv[]) {
 	QApplication app(argc, argv);
+	/* Dark where the desktop is (project.md sec 3b), in snurra's own
+	 * colours; a host embedding the library keeps its own palette. */
+	snurra_follow_desktop(app);
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
 	quit_on_signals(app);
 

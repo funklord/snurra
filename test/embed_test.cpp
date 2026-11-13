@@ -7,6 +7,8 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QMimeData>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include <QSlider>
 #include <QTreeView>
 #include <QSignalSpy>
@@ -25,6 +27,7 @@
 #include "snurra/beats.h"
 #include "snurra/library.h"
 #include "snurra/source.h"
+#include "snurra/theme.h"
 #include "snurra/tile.h"
 #include "test_bytes.h"
 
@@ -54,6 +57,7 @@ private slots:
 	void a_file_dropped_on_a_tile_takes_its_place();
 	void a_tile_dropped_on_another_trades_places();
 	void the_tempo_reaches_16_and_snaps_to_the_middle();
+	void a_dark_desktop_is_found_where_it_is_written();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -764,6 +768,56 @@ void embed_test::the_tempo_reaches_16_and_snaps_to_the_middle() {
 	tempo->setSliderDown(false);
 	tempo->setValue(3);
 	QVERIFY(qAbs(tile->tempo() - 1.003f) < 1e-5f);
+}
+
+/*
+ * A dark desktop with no dark status (the holder's TDE, 2026-11-13): its
+ * kdeglobals, or LXQt's lxqt.conf, read as one comparison -- the window's
+ * ground against its text. A file without the pair says nothing. In a TDE
+ * session the file is asked before the palette, which always answers
+ * (light, unintegrated); $SNURRA_THEME overrides all.
+ */
+void embed_test::a_dark_desktop_is_found_where_it_is_written() {
+	QTemporaryDir home;
+	auto write = [&home](const QString &name, const QByteArray &text) {
+		QVERIFY(QDir(home.path()).mkpath(QFileInfo(home.filePath(name)).path()));
+		QFile file(home.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(text);
+	};
+	write(QStringLiteral("dark/kdeglobals"), "[General]\nalternateBackground=237,244,249\nwindowBackground=0,42,78\n"
+	                                         "windowForeground=220,220,220\n[WM]\nactiveBackground=65,101,148\n");
+	write(QStringLiteral("light/kdeglobals"), "[General]\nwindowBackground=239,239,239\nwindowForeground=0,0,0\n");
+	write(QStringLiteral("none/kdeglobals"), "[General]\nXftHintStyle=hintfull\n");
+	write(QStringLiteral("lxqt.conf"), "[General]\ntheme=frost\n[Palette]\nwindow_color=#232323\nwindow_text_color=#d0d0d0\n");
+	write(QStringLiteral("lxqt-plain.conf"), "[General]\ntheme=frost\n");
+	QCOMPARE(snurra_scheme_from_kdeglobals(home.filePath(QStringLiteral("dark/kdeglobals"))), snurra_scheme::dark);
+	QCOMPARE(snurra_scheme_from_kdeglobals(home.filePath(QStringLiteral("light/kdeglobals"))), snurra_scheme::light);
+	QCOMPARE(snurra_scheme_from_kdeglobals(home.filePath(QStringLiteral("none/kdeglobals"))), snurra_scheme::unknown);
+	QCOMPARE(snurra_scheme_from_kdeglobals(home.filePath(QStringLiteral("missing"))), snurra_scheme::unknown);
+	QCOMPARE(snurra_scheme_from_lxqt(home.filePath(QStringLiteral("lxqt.conf"))), snurra_scheme::dark);
+	QCOMPARE(snurra_scheme_from_lxqt(home.filePath(QStringLiteral("lxqt-plain.conf"))), snurra_scheme::unknown);
+
+	/* A TDE session: $TDEHOME/share/config/kdeglobals. */
+	write(QStringLiteral("tde/share/config/kdeglobals"), "[General]\nwindowBackground=0,42,78\nwindowForeground=220,220,220\n");
+	const QByteArray was_desktop = qgetenv("XDG_CURRENT_DESKTOP");
+	const QByteArray was_tde = qgetenv("TDEHOME");
+	qputenv("XDG_CURRENT_DESKTOP", "TDE");
+	qputenv("TDEHOME", home.filePath(QStringLiteral("tde")).toLocal8Bit());
+	if (QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Unknown)
+		QCOMPARE(snurra_desktop_scheme(), snurra_scheme::dark);
+	qputenv("SNURRA_THEME", "light");
+	QCOMPARE(snurra_desktop_scheme(), snurra_scheme::light);
+	qunsetenv("SNURRA_THEME");
+	qputenv("XDG_CURRENT_DESKTOP", was_desktop);
+	qputenv("TDEHOME", was_tde);
+	if (was_tde.isEmpty()) qunsetenv("TDEHOME");
+	if (was_desktop.isEmpty()) qunsetenv("XDG_CURRENT_DESKTOP");
+
+	/* The dark scheme reads: text against ground, the played waveform and
+	 * the curves against it. */
+	const QPalette dark = snurra_dark_palette();
+	QCOMPARE(snurra_scheme_of(dark.color(QPalette::Window), dark.color(QPalette::WindowText)), snurra_scheme::dark);
 }
 
 /*
