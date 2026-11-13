@@ -353,7 +353,36 @@ public:
 		 * it -- the drawer, a window that may be translucent -- is not
 		 * painted again for each frame. */
 		setAttribute(Qt::WA_OpaquePaintEvent);
+		setMouseTracking(true);
+		m_corner_shown.setSingleShot(true);
+		m_corner_shown.setInterval(CORNER_MS);
+		QObject::connect(&m_corner_shown, &QTimer::timeout, this, [this] {
+			if (m_corner && !m_corner->underMouse()) m_corner->hide();
+		});
 	}
+	/*
+	 * The full-screen button, as YouTube's and most players' now: in the
+	 * picture's bottom right corner while the pointer moves over it, gone
+	 * two seconds after it stops or leaves -- the picture's, not a
+	 * button always on the film. `full` says which way it goes.
+	 */
+	void set_corner(bool full, std::function<void()> pressed) {
+		if (!m_corner) {
+			m_corner = new QToolButton(this);
+			m_corner->setAutoRaise(true);
+			m_corner->setFocusPolicy(Qt::NoFocus);
+			m_corner->setIconSize(QSize(24, 24));
+			m_corner->setStyleSheet(QStringLiteral("QToolButton { background: rgba(0, 0, 0, 120); border-radius: 4px; }"));
+			m_corner->hide();
+		}
+		m_corner->setIcon(style()->standardIcon(full ? QStyle::SP_TitleBarNormalButton : QStyle::SP_TitleBarMaxButton));
+		m_corner->setAccessibleName(full ? QObject::tr("Leave full screen") : QObject::tr("Full screen"));
+		m_corner->setToolTip(m_corner->accessibleName());
+		m_corner->disconnect();
+		QObject::connect(m_corner, &QToolButton::clicked, this, [pressed] { pressed(); });
+		place_corner();
+	}
+	QToolButton *corner() const { return m_corner; }
 	void show_frame(const snurra_video_frame &frame) {
 		if (!frame.valid() || frame.pts_us == property("pts").toLongLong()) return;
 		m_image = frame.image;
@@ -400,7 +429,10 @@ public:
 		setMouseTracking(true);
 		m_pointer.setSingleShot(true);
 		m_pointer.setInterval(POINTER_MS);
-		QObject::connect(&m_pointer, &QTimer::timeout, this, [this] { setCursor(Qt::BlankCursor); });
+		QObject::connect(&m_pointer, &QTimer::timeout, this, [this] {
+			setCursor(Qt::BlankCursor);
+			if (m_corner) m_corner->hide();   /* a still film is the film alone */
+		});
 		m_pointer.start();
 	}
 	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
@@ -463,8 +495,21 @@ protected:
 		for (; m_wheel <= -120; m_wheel += 120) on_wheel(-1);
 		event->accept();
 	}
+	void resizeEvent(QResizeEvent *event) override {
+		place_corner();
+		QWidget::resizeEvent(event);
+	}
+	void leaveEvent(QEvent *event) override {
+		if (m_corner && !m_corner->underMouse()) m_corner->hide();
+		QWidget::leaveEvent(event);
+	}
 	void mouseMoveEvent(QMouseEvent *event) override {
-		if (hasMouseTracking()) {
+		if (m_corner) {
+			m_corner->show();
+			m_corner->raise();
+			m_corner_shown.start();
+		}
+		if (m_pointer.interval() == POINTER_MS) {   /* full screen: hides when still */
 			unsetCursor();
 			m_pointer.start();
 		}
@@ -472,8 +517,17 @@ protected:
 	}
 
 private:
+	void place_corner() {
+		if (!m_corner) return;
+		const QSize size = m_corner->sizeHint();
+		const int margin = qMax(4, height() / 40);
+		m_corner->move(width() - size.width() - margin, height() - size.height() - margin);
+	}
 	static constexpr int POINTER_MS = 1000;
+	static constexpr int CORNER_MS = 2000;
 	QTimer m_pointer;
+	QTimer m_corner_shown;
+	QToolButton *m_corner = nullptr;
 	int m_wheel = 0;   /* eighths of a degree not yet a notch */
 	static constexpr int NOTICE_MS = 2000;
 
@@ -909,13 +963,8 @@ void snurra_tile::build_video_drawer(bool open) {
 	m_view = new snurra_video_view(m_above);
 	m_view->on_wheel = [this](int direction) { jump(direction, false); };
 	drawer->addWidget(m_view);
-	m_maximize = new QToolButton(m_view);
-	m_maximize->setAutoRaise(true);
-	m_maximize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-	m_maximize->setAccessibleName(tr("Full screen"));
-	m_maximize->setToolTip(m_maximize->accessibleName());
-	m_maximize->setFocusPolicy(Qt::NoFocus);
-	connect(m_maximize, &QToolButton::clicked, this, [this] { set_full_screen(!m_full); });
+	m_view->set_corner(false, [this] { set_full_screen(!m_full); });
+	m_maximize = m_view->corner();
 	m_above->installEventFilter(this);
 
 	m_video_toggle = new QToolButton(this);
@@ -1074,7 +1123,6 @@ void snurra_tile::fit_video_drawer() {
 		m_above->setFixedHeight(height);
 		emit drawers_changed(this);
 	}
-	m_maximize->move(m_view->width() - m_maximize->sizeHint().width(), 0);
 }
 
 /*
@@ -1159,6 +1207,7 @@ void snurra_tile::set_full_screen(bool full) {
 		QCoreApplication::sendEvent(window(), event);
 	};
 	view->on_wheel = [this](int direction) { jump(direction, false); };
+	view->set_corner(true, [this] { set_full_screen(false); });
 	if (isSignalConnected(QMetaMethod::fromSignal(&snurra_tile::files_dropped))) {
 		view->on_drop = [this](const QStringList &files) { emit files_dropped(files); };
 		view->setAcceptDrops(true);

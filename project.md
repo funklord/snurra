@@ -1172,8 +1172,12 @@ controls; each tile very compact but resizeable).
   the full-screen picture) shows. The drawer is the tile's width and the
   picture's shape tall; it opens with the controls, so on the first
   tile only, and the window grows up so the tiles stay still on screen;
-  a maximize button shows the picture full screen, Escape or a
-  double-click brings it back. Pictures are converted to RGB here, not
+  a full-screen button shows the picture full screen, Escape or a
+  double-click brings it back. The button is YouTube's and most
+  players' now (the holder, 2026-11-13): in the picture's bottom right
+  corner while the pointer moves over it, gone two seconds after it
+  stops or leaves; full screen the same button leaves, and goes with
+  the pointer after a second still. Pictures are converted to RGB here, not
   by libswscale, which this machine had no headers for and a tiny
   player need not link -- in whole numbers from tables made once a
   frame since 2026-11-13, when the holder found video "very poor": in

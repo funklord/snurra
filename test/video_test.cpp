@@ -15,6 +15,7 @@
 #include <QDataStream>
 #include <QLabel>
 #include <QMimeData>
+#include <QToolButton>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -68,6 +69,7 @@ private slots:
 	void a_stem_file_is_a_stack_of_its_stems();
 	void colours_are_ffmpegs_own_data();
 	void colours_are_ffmpegs_own();
+	void a_full_screen_button_shows_while_the_pointer_moves();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -961,4 +963,59 @@ void video_test::colours_are_ffmpegs_own() {
 			                                                         .arg(colour).arg(want[0]).arg(want[1]).arg(want[2])
 			                                                         .arg(got[0]).arg(got[1]).arg(got[2])));
 	}
+}
+
+/*
+ * The full-screen button, as YouTube's (the holder, 2026-11-13): hidden
+ * on a still picture, in its bottom right corner while the pointer moves
+ * over it, gone again after; pressed, full screen, where the same button
+ * -- now "Leave full screen" -- comes with a move and brings it back.
+ */
+void video_test::a_full_screen_button_shows_while_the_pointer_moves() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString name = QStringLiteral("button.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(name);
+	state.controls = true;
+	state.playing = false;
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QWidget *small = nullptr;
+	for (QWidget *w : node.findChildren<QWidget *>())
+		if (w->accessibleName() == QLatin1String("Video")) small = w;
+	QVERIFY(small);
+	auto button_of = [](QWidget *view) {
+		for (QToolButton *b : view->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly)) return b;
+		return static_cast<QToolButton *>(nullptr);
+	};
+	auto move_over = [](QWidget *view) {
+		const QPointF at = view->rect().center();
+		QMouseEvent move(QEvent::MouseMove, at, view->mapToGlobal(at), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+		QApplication::sendEvent(view, &move);
+	};
+	QToolButton *button = button_of(small);
+	QVERIFY(button);
+	QVERIFY2(!button->isVisible(), "the button is on a still picture");
+	move_over(small);
+	QVERIFY(button->isVisible());
+	QVERIFY2(button->geometry().right() > small->width() * 3 / 4 && button->geometry().bottom() > small->height() * 3 / 4,
+	         "the button is not in the bottom right corner");
+	QTRY_VERIFY_WITH_TIMEOUT(!button->isVisible(), 3000);
+	move_over(small);
+	button->click();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->full_screen(), 3000);
+	QWidget *full = nullptr;
+	for (QWidget *top : QApplication::topLevelWidgets())
+		if (top->accessibleName() == QLatin1String("Video") && top->isVisible()) full = top;
+	QVERIFY(full);
+	QToolButton *leave = button_of(full);
+	QVERIFY(leave);
+	move_over(full);
+	QVERIFY(leave->isVisible());
+	QCOMPARE(leave->accessibleName(), QStringLiteral("Leave full screen"));
+	leave->click();
+	QTRY_VERIFY_WITH_TIMEOUT(!tile->full_screen(), 3000);
 }
