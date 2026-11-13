@@ -85,6 +85,13 @@ public:
 
 	/* The cue point, a fraction of the track; negative for none: a mark
 	 * down from the top, a DJ's cue triangle. */
+	/* Where chapters begin, as fractions of the track: a mark up from
+	 * the bottom each, a mix's tracks. */
+	void set_chapters(const QList<double> &starts) {
+		m_chapter_starts = starts;
+		update();
+	}
+
 	void set_cue(double fraction) {
 		m_cue_at = fraction;
 		update();
@@ -141,6 +148,15 @@ protected:
 		paint_beats();
 		paint_crossfade();
 		paint_envelope();
+		if (!m_chapter_starts.isEmpty()) {
+			QPainter painter(this);
+			painter.setPen(palette().color(QPalette::Text));
+			const int reach = qMax(4, height() / 4);
+			for (double at : m_chapter_starts) {
+				const int x = int(at * width());
+				if (x > 0) painter.drawLine(x, height() - reach, x, height());
+			}
+		}
 		if (m_cue_at >= 0) {
 			QPainter painter(this);
 			painter.setRenderHint(QPainter::Antialiasing);
@@ -349,6 +365,7 @@ private:
 	QList<QPointF> m_envelope;
 	QString m_note;
 	double m_cue_at = -1;
+	QList<double> m_chapter_starts;
 	bool m_shifting = false;   /* a Ctrl drag moving the lane */
 	double m_shift_x = 0;      /* where it began, in pixels */
 	double m_fade_in = 0;    /* fractions of the track; 0: none */
@@ -677,6 +694,10 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	const QString file_name = QFileInfo(state.source).fileName();
 	const QString name = stem.isEmpty() ? file_name : file_name + QStringLiteral(" -- ") + stem;
 	m_title = new QLabel(name.isEmpty() ? state.source : name, this);
+	m_title_base = m_title->text();
+	/* A mix's tracklist: chapters, read from a file here (a URL's or a
+	 * host's bytes are not opened twice for it). */
+	if (QFileInfo(state.source).isFile()) m_chapters = snurra_read_chapters(state.source);
 	m_title->setObjectName(QStringLiteral("snurra-handle"));
 	m_title->setCursor(Qt::OpenHandCursor);
 	m_title->setToolTip(state.source);
@@ -1434,6 +1455,34 @@ void snurra_tile::cue() {
 	show_cue();
 }
 
+int snurra_tile::chapter_at(qint64 us) const {
+	int found = -1;
+	for (size_t i = 0; i < m_chapters.size(); ++i)
+		if (m_chapters[i].start_us <= us + 1000) found = int(i);
+	return found;
+}
+
+QString snurra_tile::chapter_title() const {
+	return m_chapter_shown >= 0 ? m_chapters[size_t(m_chapter_shown)].title : QString();
+}
+
+/* mplayer's ! and @: the chapter before or after the one playing, from
+ * its start; before the first, the track's start. */
+void snurra_tile::step_chapter(int direction) {
+	if (m_chapters.empty()) return;
+	const int now = chapter_at(frames_to_us(frame_now(), m_deck->rate()));
+	const int to = now + direction;
+	if (to >= int(m_chapters.size())) return;
+	seek(to < 0 ? 0 : m_chapters[size_t(to)].start_us);
+}
+
+void snurra_tile::show_chapters() {
+	QList<double> starts;
+	if (m_state.duration_us > 0)
+		for (const snurra_chapter &chapter : m_chapters) starts << double(chapter.start_us) / double(m_state.duration_us);
+	m_waveform->set_chapters(starts);
+}
+
 void snurra_tile::show_cue() {
 	m_waveform->set_cue(m_state.cue_us >= 0 && m_state.duration_us > 0 ? double(m_state.cue_us) / double(m_state.duration_us) : -1);
 }
@@ -1611,7 +1660,17 @@ void snurra_tile::tick() {
 		m_position->setRange(0, int(qMax<qint64>(1, m_state.duration_us / 100000)));
 		show_envelope();
 		show_cue();
+		show_chapters();
 		set_beats(m_grid);
+	}
+	/* The chapter playing, said after the name: a mix's track. */
+	if (!m_chapters.empty()) {
+		const int now = chapter_at(frames_to_us(frame_now(), m_deck->rate()));
+		if (now != m_chapter_shown) {
+			m_chapter_shown = now;
+			const QString title = now >= 0 ? m_chapters[size_t(now)].title : QString();
+			m_title->setText(title.isEmpty() ? m_title_base : m_title_base + QStringLiteral(" -- ") + title);
+		}
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
 	/* No sound, and only then a failure if no picture either: a GIF or a

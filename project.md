@@ -801,6 +801,14 @@ controls; each tile very compact but resizeable).
   forms of `-ss` land exactly, paused, with the level and tempo
   (`mplayers_options_say_where_and_how_it_plays`), and an early full
   screen arrives with the picture; each fails with its line taken out.
+  **Chapters** (`snurra_read_chapters`, 2026-11-13, for hydra's saved
+  mixes): a local file's chapters -- a mix's tracklist in Matroska or
+  MP4, "Artist - Title" -- are marked on the waveform from the bottom
+  edge, the one playing is said after the file's name in the title, and
+  mplayer's ! and @ step to the previous and next one's start (before
+  the first, the track's start), through the group as any seek
+  (`a_mixs_chapters_are_its_tracklist`). A URL's and a host's bytes are
+  not opened a second time for them. Not yet: a .cue beside the file.
   **Playlists** (`snurra_playlist`): an `.m3u`, `.m3u8` or `.pls`, named
   as a file or given with `-playlist`, is the files it names in its
   place in the train; dropped, the same. Paths are taken from the

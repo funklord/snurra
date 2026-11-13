@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "snurra/beats.h"
+#include "snurra/source.h"
 #include "snurra/tile_state.h"
 
 class QHBoxLayout;
@@ -133,6 +134,11 @@ public:
 	/* The cue (a CDJ's, Traktor's): paused, it is set where the track
 	 * stands; playing, the track goes back to it and stops. */
 	void cue();
+	/* Chapters, a mix's tracklist (source.h): how many, the title of the
+	 * one playing, and mplayer's ! and @ stepping between them. */
+	int chapter_count() const { return int(m_chapters.size()); }
+	QString chapter_title() const;
+	void step_chapter(int direction);
 	/* The EQ (deck.h), low, mid and high in dB; its dials follow. */
 	void set_eq(float low_db, float mid_db, float high_db);
 	qint64 cue_us() const { return m_state.cue_us; }
@@ -284,6 +290,11 @@ private:
 	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_sync = nullptr;
 	QToolButton *m_cue = nullptr;
+	std::vector<snurra_chapter> m_chapters;
+	int m_chapter_shown = -1;
+	QString m_title_base;   /* the title before a chapter's is added */
+	int chapter_at(qint64 us) const;
+	void show_chapters();
 	class QDial *m_eq[3] = { nullptr, nullptr, nullptr };
 	void show_cue();
 	QToolButton *m_back = nullptr;

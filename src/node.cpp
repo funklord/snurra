@@ -1498,7 +1498,7 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
  * mplayer's 3, m mutes, ] [ } { and backspace set the tempo as
  * mplayer's speed, f the picture full screen, . a frame on, paused, + and
  * - the sound's delay against the picture, < and > the train's previous
- * and next tile, o the time over the picture, q and escape quit. On the tile last touched, or the first with its controls
+ * and next tile, ! and @ the previous and next chapter, o the time over the picture, q and escape quit. On the tile last touched, or the first with its controls
  * out, or the first. A tile played from the keyboard has its controls
  * pulled out first: what plays is what can be stopped (sec 3c).
  */
@@ -1553,6 +1553,8 @@ void snurra_node::keyPressEvent(QKeyEvent *event) {
 	case Qt::Key_NumberSign: tile->next_audio_track(); break;
 	case Qt::Key_Period: tile->step_frame(); break;
 	case Qt::Key_O: tile->toggle_clock(); break;
+	case Qt::Key_Exclam: tile->step_chapter(-1); break;
+	case Qt::Key_At: tile->step_chapter(1); break;
 	case Qt::Key_Less: step_train(tile, -1); break;
 	case Qt::Key_Greater: step_train(tile, 1); break;
 	case Qt::Key_Plus: tile->delay_sound(100000); break;

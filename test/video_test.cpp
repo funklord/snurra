@@ -80,6 +80,7 @@ private slots:
 	void a_skip_shows_the_frame_heard_not_one_behind();
 	void a_far_target_while_on_the_way_is_a_new_seek();
 	void the_library_shows_a_files_own_title_and_artist();
+	void a_mixs_chapters_are_its_tracklist();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1282,4 +1283,56 @@ void video_test::the_library_shows_a_files_own_title_and_artist() {
 	library.set_search(QStringLiteral("somebody"));
 	QCOMPARE(library.shown(), QStringList{ dir.filePath(QStringLiteral("01 track.flac")) });
 	QCOMPARE(QDir(dir.path()).entryList(QDir::Files, QDir::Name), before);
+}
+
+/*
+ * Chapters, a mix's tracklist (hydra's saved mixes, inbox 20261113T1442Z):
+ * a Matroska file of three, 0, 3 and 6 s. The tile has them, says the one
+ * playing after the file's name, and mplayer's @ and ! step between them.
+ */
+void video_test::a_mixs_chapters_are_its_tracklist() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QTemporaryDir dir;
+	const QString meta = dir.filePath(QStringLiteral("chapters.txt"));
+	QFile file(meta);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(";FFMETADATA1\n"
+	           "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=3000\ntitle=One - First\n"
+	           "[CHAPTER]\nTIMEBASE=1/1000\nSTART=3000\nEND=6000\ntitle=Two - Second\n"
+	           "[CHAPTER]\nTIMEBASE=1/1000\nSTART=6000\nEND=9000\ntitle=Three - Third\n");
+	file.close();
+	const QString mix = dir.filePath(QStringLiteral("mix.mka"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("sine=d=9"), QStringLiteral("-i"), meta, QStringLiteral("-map_metadata"),
+	                         QStringLiteral("1"), QStringLiteral("-map_chapters"), QStringLiteral("1"), QStringLiteral("-c:a"),
+	                         QStringLiteral("libopus"), mix });
+	QVERIFY(ffmpeg.waitForFinished(30000) && ffmpeg.exitCode() == 0);
+	const std::vector<snurra_chapter> read = snurra_read_chapters(mix);
+	QCOMPARE(int(read.size()), 3);
+	QVERIFY(qAbs(read[1].start_us - 3000000) < 30000);
+	QCOMPARE(read[2].title, QStringLiteral("Three - Third"));
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = mix;
+	state.controls = true;
+	state.duration_us = 9000000;
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QCOMPARE(tile->chapter_count(), 3);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->deck()->length() > 0, 3000);
+	tile->hold_at(snurra_us_to_frames(4000000, tile->deck()->rate()));
+	QTRY_COMPARE_WITH_TIMEOUT(tile->chapter_title(), QStringLiteral("Two - Second"), 2000);
+	QLabel *title = tile->findChild<QLabel *>(QStringLiteral("snurra-handle"));
+	QVERIFY(title && title->text().endsWith(QStringLiteral(" -- Two - Second")));
+	QTest::keyClick(&node, Qt::Key_At);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->state().position_us - read[2].start_us) < 30000, 2000);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->chapter_title(), QStringLiteral("Three - Third"), 2000);
+	QTest::keyClick(&node, Qt::Key_Exclam);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->state().position_us - read[1].start_us) < 30000, 2000);
+	QTest::keyClick(&node, Qt::Key_Exclam);
+	QTest::keyClick(&node, Qt::Key_Exclam);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us < 30000, 2000);
 }

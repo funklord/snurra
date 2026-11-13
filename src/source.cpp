@@ -704,6 +704,31 @@ snurra_tags snurra_read_tags(const QString &path) {
 	return tags;
 }
 
+std::vector<snurra_chapter> snurra_read_chapters(const QString &path) {
+	std::vector<snurra_chapter> chapters;
+	AVFormatContext *format = nullptr;
+	if (avformat_open_input(&format, path.toUtf8().constData(), nullptr, nullptr) < 0) return chapters;
+	/* The sound's zero, which a deck counts from. */
+	int64_t origin_us = 0;
+	for (unsigned i = 0; i < format->nb_streams; ++i) {
+		const AVStream *stream = format->streams[i];
+		if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && stream->start_time != AV_NOPTS_VALUE) {
+			origin_us = av_rescale_q(stream->start_time, stream->time_base, AVRational{ 1, 1000000 });
+			break;
+		}
+	}
+	for (unsigned i = 0; i < format->nb_chapters; ++i) {
+		const AVChapter *chapter = format->chapters[i];
+		snurra_chapter one;
+		one.start_us = std::max<int64_t>(0, av_rescale_q(chapter->start, chapter->time_base, AVRational{ 1, 1000000 }) - origin_us);
+		if (const AVDictionaryEntry *title = av_dict_get(chapter->metadata, "title", nullptr, 0)) one.title = QString::fromUtf8(title->value);
+		chapters.push_back(one);
+	}
+	avformat_close_input(&format);
+	std::sort(chapters.begin(), chapters.end(), [](const snurra_chapter &a, const snurra_chapter &b) { return a.start_us < b.start_us; });
+	return chapters;
+}
+
 bool snurra_drop_offers(const QMimeData *mime) {
 	if (!mime) return false;
 	if (mime->hasFormat(QLatin1String(SNURRA_FILES_MIME))) return true;

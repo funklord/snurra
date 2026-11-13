@@ -9,6 +9,7 @@ class QMimeData;
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 /*
  * Bytes that may still be arriving (project.md sec 1, the library's
@@ -169,6 +170,18 @@ struct snurra_tags {
 	double bpm = 0;   /* not a tag: the library's, from beats.h's cache */
 };
 snurra_tags snurra_read_tags(const QString &path);
+
+/*
+ * A file's chapters -- a mix's tracklist, as hydra's saved mixes carry it
+ * in Matroska and MP4 -- each from its start, in microseconds from the
+ * sound's zero (the deck's), with its title. In order; none for a file
+ * without.
+ */
+struct snurra_chapter {
+	qint64 start_us = 0;
+	QString title;
+};
+std::vector<snurra_chapter> snurra_read_chapters(const QString &path);
 
 /* Whether a drag might bring any, cheaply -- a folder not looked into --
  * for a drag still moving. */
