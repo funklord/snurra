@@ -40,6 +40,16 @@ struct snurra_beat_grid {
  */
 snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop = {});
 
+/*
+ * Beat grids worked out before, kept in the user's cache --
+ * $SNURRA_CACHE, else the desktop's (~/.cache/snurra) -- in beats.ini: by
+ * the file's path and sound track, and good only while its size and time
+ * are the same. "No beat" is kept too. A grid is given at `rate`, from
+ * whatever rate it was found at. False where none is kept.
+ */
+bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid);
+void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid);
+
 /* The same on a thread of its own, over a source of its own, as
  * snurra_peaks reads the waveform; `done` is called on that thread. */
 class snurra_beats {

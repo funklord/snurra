@@ -1,5 +1,11 @@
 #include "snurra/beats.h"
 
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFileInfo>
+#include <QSettings>
+#include <QStandardPaths>
+
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -331,14 +337,73 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 	return grid;
 }
 
+namespace {
+
+QString beats_file() {
+	QString dir = qEnvironmentVariable("SNURRA_CACHE");
+	if (dir.isEmpty()) dir = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QStringLiteral("/snurra");
+	QDir().mkpath(dir);
+	return dir + QStringLiteral("/beats.ini");
+}
+
+/* The key: a hash of the path and the track, so any path is a plain key. */
+QString beats_key(const QString &path, int audio_track) {
+	const QByteArray what = (QFileInfo(path).absoluteFilePath() + QLatin1Char('|') + QString::number(audio_track)).toUtf8();
+	return QString::fromLatin1(QCryptographicHash::hash(what, QCryptographicHash::Sha1).toHex());
+}
+
+/* The file as it is now: its size and time, which a kept grid must match. */
+QString beats_stamp(const QString &path) {
+	const QFileInfo info(path);
+	return QStringLiteral("%1 %2").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch());
+}
+
+}   // namespace
+
+bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid) {
+	if (!QFileInfo(path).isFile()) return false;
+	QSettings kept(beats_file(), QSettings::IniFormat);
+	const QStringList value = kept.value(beats_key(path, audio_track)).toString().split(QLatin1Char(' '));
+	/* size time period first confidence rate */
+	if (value.size() != 6 || value.at(0) + QLatin1Char(' ') + value.at(1) != beats_stamp(path)) return false;
+	const int found_at = value.at(5).toInt();
+	if (found_at <= 0) return false;
+	const double scale = double(rate) / found_at;
+	grid.period = value.at(2).toDouble() * scale;
+	grid.first = value.at(3).toDouble() * scale;
+	grid.confidence = value.at(4).toDouble();
+	grid.rate = rate;
+	return true;
+}
+
+void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid) {
+	if (!QFileInfo(path).isFile() || grid.rate <= 0) return;
+	QSettings kept(beats_file(), QSettings::IniFormat);
+	kept.setValue(beats_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5")
+	                                                     .arg(beats_stamp(path))
+	                                                     .arg(grid.period, 0, 'g', 17)
+	                                                     .arg(grid.first, 0, 'g', 17)
+	                                                     .arg(grid.confidence, 0, 'g', 6)
+	                                                     .arg(grid.rate));
+}
+
 snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done,
                            int audio_track) {
 	m_thread = std::thread([this, source, rate, done, audio_track] {
+		/* Kept from before: at once, where a set took 27 s to find. */
+		snurra_beat_grid kept;
+		if (snurra_cached_beats(source, audio_track, rate, kept)) {
+			if (!m_stop.load()) done(kept);
+			return;
+		}
 		std::unique_ptr<snurra_source> reader = snurra_open_source(source, rate, 0);
 		if (!reader || reader->length() <= 0) return;
 		if (audio_track >= 0 && reader->choose_audio_track(audio_track)) reader->seek(0);
-		const snurra_beat_grid grid = snurra_find_beats(*reader, rate, [this] { return m_stop.load(std::memory_order_relaxed); });
-		if (!m_stop.load()) done(grid);
+		snurra_beat_grid grid = snurra_find_beats(*reader, rate, [this] { return m_stop.load(std::memory_order_relaxed); });
+		if (m_stop.load()) return;
+		grid.rate = rate;
+		snurra_cache_beats(source, audio_track, grid);
+		done(grid);
 	});
 }
 

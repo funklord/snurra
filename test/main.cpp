@@ -1,5 +1,6 @@
 /* Every suite in one binary, so `make test` builds and runs one thing. */
 #include <QApplication>
+#include <QTemporaryDir>
 
 #include <sys/resource.h>
 
@@ -31,6 +32,11 @@ int main(int argc, char **argv) {
 	setrlimit(RLIMIT_FSIZE, &cap);
 	/* Widgets for the embedding tests, on no screen at all. */
 	if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
+	/* Beat grids are kept in the user's cache (beats.h); a run keeps its
+	 * own, removed when it ends, and never touches the person's. Here, so
+	 * the processes the tests start inherit it. */
+	QTemporaryDir cache;
+	qputenv("SNURRA_CACHE", cache.path().toLocal8Bit());
 	QApplication app(argc, argv);
 	const int handover = run_handover_tests(argc, argv);
 	const int codec = run_codec_tests(argc, argv);

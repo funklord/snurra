@@ -261,7 +261,15 @@ does the same with a tile's playback:
   read on the listing's thread after the list is out, so a large folder
   lists at once and its names come in after; search covers name, artist
   and folder. An untagged file keeps its own name, ID and all; nothing
-  is renamed (`the_library_shows_a_files_own_title_and_artist`).
+  is renamed (`the_library_shows_a_files_own_title_and_artist`). **Beat
+  grids are kept** (`beats.ini` in the user's cache, ~/.cache/snurra, or
+  $SNURRA_CACHE -- the suite sets its own, so a run never touches the
+  person's): by path and sound track, good while the file's size and time
+  are the same, "no beat" kept too, given at any rate. A deck loaded a
+  second time has its grid at once (a test kick: 196 ms found, 1 ms
+  kept; the 42 minute set took 27 s), and the library's BPM column shows
+  what decks have found -- nothing is analysed for the list
+  (`a_beat_found_once_is_kept_and_shown`).
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the

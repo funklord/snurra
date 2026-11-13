@@ -166,6 +166,7 @@ bool snurra_playable_by_name(const QString &path);
 struct snurra_tags {
 	QString title;
 	QString artist;
+	double bpm = 0;   /* not a tag: the library's, from beats.h's cache */
 };
 snurra_tags snurra_read_tags(const QString &path);
 

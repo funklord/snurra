@@ -8,6 +8,8 @@
  */
 #include <QDial>
 #include <QMimeData>
+#include <QElapsedTimer>
+#include <QAbstractItemModel>
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QSlider>
@@ -62,6 +64,7 @@ private slots:
 	void a_jump_while_playing_lands_exactly_its_step_on();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
+	void a_beat_found_once_is_kept_and_shown();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -1044,6 +1047,61 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QCOMPARE(back.eq_db[0], -24.0f);
 	QTest::mouseDClick(low, Qt::LeftButton);
 	QCOMPARE(deck->state().eq_db[0], 0.0f);
+}
+
+/*
+ * Beat grids kept (beats.h): a 120 BPM kick analysed once is kept in the
+ * cache -- this run's own, $SNURRA_CACHE -- given again at once and at
+ * another rate, shown as its BPM in the library, and found again only
+ * when the file changes.
+ */
+void embed_test::a_beat_found_once_is_kept_and_shown() {
+	QTemporaryDir dir;
+	const QString path = kick_file(dir, QStringLiteral("kick.wav"), 120, 0.1);
+	snurra_beat_grid kept;
+	QVERIFY2(!snurra_cached_beats(path, -1, 48000, kept), "a grid kept before any was found");
+	auto analyse = [&path](snurra_beat_grid &grid) {
+		std::atomic<bool> done{ false };
+		QElapsedTimer took;
+		took.start();
+		snurra_beats beats(path, 48000, [&](const snurra_beat_grid &found) {
+			grid = found;
+			done = true;
+		});
+		while (!done && took.elapsed() < 20000) QTest::qWait(1);
+		return took.elapsed();
+	};
+	snurra_beat_grid first;
+	const qint64 first_ms = analyse(first);
+	QVERIFY(first.valid());
+	QVERIFY(snurra_cached_beats(path, -1, 48000, kept));
+	QCOMPARE(kept.period, first.period);
+	QCOMPARE(kept.first, first.first);
+	/* Kept, it is what is given, not found again: a grid kept on purpose
+	 * unlike the file's own comes back as it was kept. */
+	snurra_beat_grid planted = first;
+	planted.period = first.period * 1.5;
+	snurra_cache_beats(path, -1, planted);
+	snurra_beat_grid again;
+	const qint64 again_ms = analyse(again);
+	qInfo("found in %lld ms, then kept in %lld ms", first_ms, again_ms);
+	QVERIFY2(again.period == planted.period, "the kept grid was not used");
+	snurra_cache_beats(path, -1, first);
+	snurra_beat_grid slower;
+	QVERIFY(snurra_cached_beats(path, -1, 44100, slower));
+	QVERIFY(qAbs(slower.bpm() - first.bpm()) < 1e-6);
+
+	snurra_library library(dir.path());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QAbstractItemModel *model = library.findChild<QTreeView *>()->model();
+	QTRY_COMPARE_WITH_TIMEOUT(model->index(0, 2).data().toString(), QString::number(first.bpm(), 'f', 1), 5000);
+
+	/* Changed, the file is found again. */
+	QFile file(path);
+	QVERIFY(file.open(QIODevice::Append));
+	file.write(QByteArray(4, '\0'));
+	file.close();
+	QVERIFY2(!snurra_cached_beats(path, -1, 48000, kept), "a changed file's old grid was given");
 }
 
 /*

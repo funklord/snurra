@@ -25,6 +25,7 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
+#include "snurra/beats.h"
 #include "snurra/source.h"
 #include "snurra/theme.h"
 
@@ -63,7 +64,7 @@ public:
 protected:
 	bool filterAcceptsRow(int row, const QModelIndex &parent) const override {
 		if (m_words.isEmpty()) return true;
-		const QString text = sourceModel()->index(row, 2, parent).data().toString() + QLatin1Char('/')
+		const QString text = sourceModel()->index(row, 3, parent).data().toString() + QLatin1Char('/')
 		                     + sourceModel()->index(row, 0, parent).data().toString() + QLatin1Char(' ')
 		                     + sourceModel()->index(row, 1, parent).data().toString();
 		for (const QString &word : m_words)
@@ -127,8 +128,8 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_search->setPlaceholderText(tr("Search"));
 	m_search->setClearButtonEnabled(true);
 	QPushButton *choose = new QPushButton(tr("Folder..."), this);
-	m_model = new QStandardItemModel(0, 3, this);
-	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Artist"), tr("Folder") });
+	m_model = new QStandardItemModel(0, 4, this);
+	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Artist"), tr("BPM"), tr("Folder") });
 	m_filter = new library_filter(this);
 	m_filter->setSourceModel(m_model);
 	m_view = new library_view(this, this);
@@ -144,9 +145,9 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	 * a dozen letters beside an empty folder column (seen 2026-11-13). */
 	m_view->header()->setStretchLastSection(false);
 	m_view->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-	for (int column : { 1, 2 }) {
+	for (int column : { 1, 2, 3 }) {
 		m_view->header()->setSectionResizeMode(column, QHeaderView::Interactive);
-		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * 12);
+		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * (column == 2 ? 4 : 12));
 	}
 	m_status = new QLabel(this);
 	/* Wrapped: a long folder's line otherwise set the window's least width,
@@ -260,8 +261,12 @@ void snurra_library::scan() {
 		std::vector<std::pair<QString, snurra_tags>> told;
 		for (const QString &path : all) {
 			if (m_stop.load(std::memory_order_relaxed)) return;
-			const snurra_tags tags = snurra_read_tags(path);
-			if (tags.title.isEmpty() && tags.artist.isEmpty()) continue;
+			snurra_tags tags = snurra_read_tags(path);
+			/* The tempo where a deck has found it before (beats.h's cache):
+			 * nothing is analysed for the list. */
+			snurra_beat_grid grid;
+			if (snurra_cached_beats(path, -1, 48000, grid) && grid.valid()) tags.bpm = grid.bpm();
+			if (tags.title.isEmpty() && tags.artist.isEmpty() && tags.bpm <= 0) continue;
 			told.emplace_back(path, tags);
 			if (told.size() >= 200) {
 				QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
@@ -281,6 +286,7 @@ void snurra_library::tagged(const std::vector<std::pair<QString, snurra_tags>> &
 		if (!name) continue;
 		if (!tags.title.isEmpty()) name->setText(tags.title);
 		if (QStandardItem *artist = m_model->item(name->row(), 1); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
+		if (QStandardItem *bpm = m_model->item(name->row(), 2); bpm && tags.bpm > 0) bpm->setText(QString::number(tags.bpm, 'f', 1));
 	}
 }
 
@@ -301,7 +307,7 @@ void snurra_library::found(const QStringList &paths, bool last) {
 		QString where = root.relativeFilePath(info.absolutePath());
 		if (where == QLatin1String(".")) where.clear();
 		m_items.insert(path, name);
-		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(where) });
+		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(), new QStandardItem(where) });
 	}
 	m_filter->sort(0);
 	m_filter->setDynamicSortFilter(true);
