@@ -22,8 +22,9 @@ BIN      = $(BUILD_DIR)/snurra
 TEST_BIN = $(TEST_BUILD_DIR)/snurra-tests
 
 # A ceiling inside the target: the tests start processes, and one that
-# hung would otherwise wait for ever.
-TEST_TIMEOUT ?= 120
+# hung would otherwise wait for ever. The suite took 123 s on 2026-11-13
+# (24 cores, load 5), so about twice that.
+TEST_TIMEOUT ?= 300
 
 .DEFAULT_GOAL := all
 
