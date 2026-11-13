@@ -548,6 +548,12 @@ void embed_test::loop_plays_again_from_the_start() {
 	QTRY_VERIFY_WITH_TIMEOUT(!a->playing(), 2000);
 	QTest::qWait(600);
 	QVERIFY2(!a->playing(), "played a third time");
+	/* Played at its end, it plays from the start. */
+	node.set_loop(1);
+	a->request_playing(true);
+	QTest::qWait(400);
+	QVERIFY2(a->playing() && a->state().position_us < 500000, "a play at the end did not start again");
+	QTRY_VERIFY_WITH_TIMEOUT(!a->playing(), 2000);
 
 	node.set_loop(0);
 	QTest::mouseClick(waveform_of(a), Qt::LeftButton, {}, QPoint(0, 5));

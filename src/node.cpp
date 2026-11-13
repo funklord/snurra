@@ -567,7 +567,16 @@ void snurra_node::play_group(snurra_tile *from, bool playing) {
 			if (tile->playing()) tile->set_playing(false);
 		return;
 	}
-	start_group_at(group_time(from));
+	/* Played at its end -- every lane past its last tile -- it plays
+	 * again from the start, as Winamp's play after the end does; else
+	 * nothing at all would sound. */
+	int64_t time = group_time(from);
+	bool any = false;
+	for (int row : rows()) {
+		int64_t frame = 0;
+		any = any || lane_at(row, time, frame) != nullptr;
+	}
+	start_group_at(any ? time : 0);
 }
 
 /*

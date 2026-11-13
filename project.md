@@ -727,7 +727,10 @@ controls; each tile very compact but resizeable).
   playing tile closed, is not an end (`loop_plays_again_from_the_start`).
   It found a deck's end still reported after a seek asked and not yet
   rendered, so a play asked at the end was stopped by the tile's next
-  tick; `ended()` now waits for the seek, as `last_rendered` does.
+  tick; `ended()` now waits for the seek, as `last_rendered` does. Played
+  at its end -- every lane past its last tile -- a group plays again from
+  the start, as Winamp's play after the end does, where it played
+  nothing.
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;
