@@ -43,7 +43,24 @@ $(BUILD_DIR)/Makefile: snurra.pro snurra.pri
 	$(MAKE) -C $(BUILD_DIR) clean
 	rm -f $(BIN)
 
-$(BIN): $(BUILD_DIR)/Makefile FORCE
+# qmake writes each object's headers into the Makefile when it runs, and
+# only then: an #include added later is not a dependency, and a header
+# changed afterwards rebuilds the library's objects but not that one. So
+# embed.cpp, which came to include library.h with the DJ player, kept
+# an object of the old snurra_library while library.h grew members -- a
+# widget read at the wrong offsets, a crash in a layout (2026-11-13). The
+# include lines of every source and header are the stamp: written only
+# when they change, and qmake run again then, without a clean, the flags
+# being the same.
+INCLUDE_SOURCES = $(sort $(wildcard src/*.cpp include/snurra/*.h test/*.cpp test/*.h))
+%/includes.list: FORCE
+	@mkdir -p $(@D); grep -H '^#include "' $(INCLUDE_SOURCES) > $@.new || true
+	@if cmp -s $@.new $@; then rm -f $@.new; else mv $@.new $@; fi
+$(BUILD_DIR)/qmake.stamp: $(BUILD_DIR)/includes.list $(BUILD_DIR)/Makefile
+	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
+	touch $@
+
+$(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
 	$(MAKE) -C $(BUILD_DIR)
 
 $(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri
@@ -53,7 +70,11 @@ $(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri
 	$(MAKE) -C $(TEST_BUILD_DIR) clean
 	rm -f $(TEST_BIN)
 
-tests-build: $(TEST_BUILD_DIR)/Makefile FORCE
+$(TEST_BUILD_DIR)/qmake.stamp: $(TEST_BUILD_DIR)/includes.list $(TEST_BUILD_DIR)/Makefile
+	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	touch $@
+
+tests-build: $(TEST_BUILD_DIR)/Makefile $(TEST_BUILD_DIR)/qmake.stamp FORCE
 	$(MAKE) -C $(TEST_BUILD_DIR)
 
 # A run over no binary is a failure, not a pass.
@@ -142,7 +163,8 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 # changes: then the build's objects and staged libraries are cleared, as
 # a kit updated in place carries dates older than what was built from the
 # last one.
-$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) | android-check
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
+                              $(ANDROID_BUILD_DIR)/includes.list | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
 	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \
 	        SNURRA_FFMPEG_INCLUDE=$(abspath $(ANDROID_BUILD_DIR)/ffmpeg-include) \
