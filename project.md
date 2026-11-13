@@ -928,9 +928,12 @@ controls; each tile very compact but resizeable).
   first track), `j` takes the next track and after the last none, and
   a two-second notice says which. Drawn white on a black outline,
   1/15 of the picture's height, wrapped to its width, near its bottom.
-  Bitmap subtitles are decoded and drawn but no test makes one: FFmpeg
-  cannot encode text to a bitmap, so a PGS file would have to be
-  carried as a fixture. Measured (`subtitles_test`): the reader's
+  Bitmap subtitles are tested with a PGS stream the test writes by
+  hand, FFmpeg having no way to encode text into one: shown from 1 s
+  where it was placed, white, gone at the empty set at 2 s. (ffmpeg
+  starts each input at zero, so the stream opens with an empty set at
+  0, or the box moves there.) DVD subtitles share the path untested.
+  Measured (`subtitles_test`): the reader's
   cases, ASS text, cue lookup, open-ended and re-read cues, the files
   found beside a video; SubRip in Matroska, ASS in Matroska and
   mov_text in MP4 read as the picture passes, italic kept; in a window,

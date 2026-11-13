@@ -60,6 +60,7 @@ private slots:
 	void a_cue_read_again_is_not_doubled();
 	void the_srt_beside_a_video_is_found();
 	void an_embedded_stream_is_read_as_the_picture_passes();
+	void a_blu_ray_picture_subtitle_is_shown_where_it_was_placed();
 	void a_tile_shows_the_words_heard_and_v_and_j_change_them();
 
 private:
@@ -260,6 +261,124 @@ void subtitles_test::an_embedded_stream_is_read_as_the_picture_passes() {
 		QCOMPARE(words_at(*tracks[0], 1700000), QString());
 		QCOMPARE(words_at(*tracks[0], 2900000), QString());
 	}
+}
+
+namespace {
+
+/*
+ * A Blu-ray subtitle stream (PGS, a .sup), written by hand since FFmpeg
+ * cannot encode text into pictures: on a 64x48 frame, a white box 48x10
+ * at (8, 30) from 1 s, cleared at 2 s. Each segment: "PG", its time at
+ * 90 kHz twice, its kind, its length, then what it says.
+ */
+QByteArray pgs_stream() {
+	QByteArray out;
+	auto u8 = [](QByteArray &to, int v) { to.append(char(v & 0xff)); };
+	auto u16 = [&u8](QByteArray &to, int v) {
+		u8(to, v >> 8);
+		u8(to, v);
+	};
+	auto segment = [&](uint32_t pts, int kind, const QByteArray &body) {
+		out.append("PG");
+		for (int shift = 24; shift >= 0; shift -= 8) u8(out, int(pts >> shift));
+		for (int i = 0; i < 4; ++i) u8(out, 0);
+		u8(out, kind);
+		u16(out, int(body.size()));
+		out.append(body);
+	};
+	auto composition = [&](uint32_t pts, int number, bool shown) {
+		QByteArray pcs;
+		u16(pcs, 64);
+		u16(pcs, 48);
+		u8(pcs, 0x10);                  /* frame rate */
+		u16(pcs, number);
+		u8(pcs, shown ? 0x80 : 0x00);   /* an epoch's start, or normal */
+		u8(pcs, 0);                     /* no palette-only update */
+		u8(pcs, 0);                     /* palette 0 */
+		u8(pcs, shown ? 1 : 0);         /* objects shown */
+		if (shown) {
+			u16(pcs, 0);   /* object 0 */
+			u8(pcs, 0);    /* window 0 */
+			u8(pcs, 0);    /* not cropped */
+			u16(pcs, 8);
+			u16(pcs, 30);
+		}
+		segment(pts, 0x16, pcs);
+		QByteArray wds;
+		u8(wds, 1);
+		u8(wds, 0);
+		u16(wds, 8);
+		u16(wds, 30);
+		u16(wds, 48);
+		u16(wds, 10);
+		segment(pts, 0x17, wds);
+	};
+	constexpr uint32_t SHOW = 90000;
+	constexpr uint32_t CLEAR = 180000;
+	/* Nothing at 0: ffmpeg starts each input at zero, and would move the
+	 * box there. */
+	composition(0, 0, false);
+	segment(0, 0x80, QByteArray());
+	composition(SHOW, 1, true);
+	QByteArray pds;
+	u8(pds, 0);   /* palette 0, version 0 */
+	u8(pds, 0);
+	for (int v : { 1, 235, 128, 128, 255 }) u8(pds, v);   /* entry 1: white, opaque */
+	segment(SHOW, 0x14, pds);
+	QByteArray rle;
+	for (int y = 0; y < 10; ++y) {
+		/* 48 pixels of colour 1, then the line's end. */
+		for (int v : { 0x00, 0x80 | 48, 0x01, 0x00, 0x00 }) u8(rle, v);
+	}
+	QByteArray ods;
+	u16(ods, 0);    /* object 0 */
+	u8(ods, 0);     /* version */
+	u8(ods, 0xc0);  /* first and last of it */
+	const int length = int(rle.size()) + 4;
+	u8(ods, length >> 16);
+	u16(ods, length);
+	u16(ods, 48);
+	u16(ods, 10);
+	ods.append(rle);
+	segment(SHOW, 0x15, ods);
+	segment(SHOW, 0x80, QByteArray());
+	composition(CLEAR, 2, false);
+	segment(CLEAR, 0x80, QByteArray());
+	return out;
+}
+
+}
+
+void subtitles_test::a_blu_ray_picture_subtitle_is_shown_where_it_was_placed() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QFile sup(m_dir.filePath(QStringLiteral("box.sup")));
+	QVERIFY(sup.open(QIODevice::WriteOnly));
+	sup.write(pgs_stream());
+	sup.close();
+	QVERIFY(make_video(QStringLiteral("pgs.mkv"), { QStringLiteral("-i"), sup.fileName(), QStringLiteral("-map"), QStringLiteral("0:v"),
+	                                                QStringLiteral("-map"), QStringLiteral("1:a"), QStringLiteral("-map"),
+	                                                QStringLiteral("2:s"), QStringLiteral("-c:s"), QStringLiteral("copy") }));
+	snurra_video video(m_dir.filePath(QStringLiteral("pgs.mkv")));
+	QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+	const auto tracks = video.subtitle_tracks();
+	QCOMPARE(tracks.size(), size_t(1));
+	for (int64_t t = 0; t <= 3 * SECOND; t += 40000) {
+		video.frame_at(t);
+		QTest::qWait(2);
+	}
+	QTRY_VERIFY_WITH_TIMEOUT(!tracks[0]->at(1500000).empty(), 3000);
+	QVERIFY(tracks[0]->at(900000).empty());
+	QVERIFY(tracks[0]->at(2100000).empty());
+	const snurra_cue cue = tracks[0]->at(1500000).front();
+	QVERIFY(cue.lines.empty());
+	QCOMPARE(cue.image.size(), QSize(48, 10));
+	const QRgb middle = cue.image.pixel(24, 5);
+	QVERIFY2(qAlpha(middle) == 255 && qRed(middle) > 240 && qGreen(middle) > 240 && qBlue(middle) > 240,
+	         qPrintable(QString::number(middle, 16)));
+	QCOMPARE(cue.place.x(), 8.0 / 64);
+	QCOMPARE(cue.place.y(), 30.0 / 48);
+	QCOMPARE(cue.place.width(), 48.0 / 64);
+	QCOMPARE(cue.place.height(), 10.0 / 48);
 }
 
 void subtitles_test::a_tile_shows_the_words_heard_and_v_and_j_change_them() {
