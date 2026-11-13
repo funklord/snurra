@@ -516,6 +516,15 @@ void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.lane_start_us, b->lane_start_us());
+
+	/* The lane's first closed: the next keeps the lane's begin. */
+	snurra_tile_state after = placed(QStringLiteral("c"), 1, 1);
+	snurra_tile *c = node.add_tile(after);
+	const qint64 begin = b->lane_start_us();
+	QVERIFY(begin > 0);
+	emit b->close_requested(b);
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 2, 2000);
+	QCOMPARE(c->lane_start_us(), begin);
 }
 
 /*

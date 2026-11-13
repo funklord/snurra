@@ -273,9 +273,11 @@ does the same with a tile's playback:
   names (a start to come, as a train's next tile's); paused, it holds at
   its start. Released while the group plays, the group is started
   again where it was, so the move is heard at once -- a gap of the
-  output's latency, as a seek. A tile put in front of a lane's first
-  takes over as first with no begin of its own: the begin stays with
-  the tile that had it, not yet moved to the new first.
+  output's latency, as a seek. A lane's first tile closed or pulled
+  out leaves its begin to the next, so the lane keeps it and its train
+  closes up behind, as one beginning at zero does. Not yet: a tile put
+  in front of a lane's first (no gesture does that today) would take
+  over with no begin of its own.
 - **Beat-snapping:** a train's overlap snaps to the two grids (step 6),
   and a lane dragged later snaps so its first beat, at its tempo and
   offset, lands on the nearest beat of the tile another lane plays at

@@ -354,6 +354,10 @@ void snurra_node::remove_tile(snurra_tile *tile) {
 /* Out of the window, its deck left to whoever retires it. */
 void snurra_node::drop_tile(snurra_tile *tile) {
 	m_following.remove(tile);
+	/* A lane's first going: the lane keeps its begin, and its train closes
+	 * up behind it as from the timeline's start -- the next tile takes it. */
+	const QList<snurra_tile *> tiles = lane(tile->row());
+	if (tiles.size() > 1 && tiles.first() == tile) tiles.at(1)->set_lane_start_us(tile->lane_start_us());
 	if (!m_tiles.removeOne(tile)) return;
 	m_grid->removeWidget(tile);
 	m_grid->removeWidget(tile->drawer_above());
