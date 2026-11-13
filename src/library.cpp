@@ -26,6 +26,7 @@
 #include <QVBoxLayout>
 
 #include "snurra/source.h"
+#include "snurra/theme.h"
 
 namespace {
 
@@ -145,7 +146,10 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_view->header()->setSectionResizeMode(1, QHeaderView::Interactive);
 	m_view->header()->resizeSection(1, fontMetrics().horizontalAdvance(QLatin1Char('M')) * 14);
 	m_status = new QLabel(this);
-	m_status->setForegroundRole(QPalette::PlaceholderText);
+	/* Wrapped: a long folder's line otherwise set the window's least width,
+	 * wider than a phone (seen 2026-11-13). */
+	m_status->setWordWrap(true);
+	snurra_mute(m_status);
 
 	QHBoxLayout *top = new QHBoxLayout;
 	top->addWidget(m_search, 1);
@@ -176,7 +180,11 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 		/* A new snurra opens where the pointer is (main.cpp), so there. */
 		QProcess::startDetached(QCoreApplication::applicationFilePath(), paths);
 	};
+#ifndef Q_OS_ANDROID
+	/* Typing finds; on a phone the focus would raise the keyboard over
+	 * half the screen before anything is asked. */
 	m_search->setFocus();
+#endif
 	set_folder(folder.isEmpty() ? default_folder() : folder);
 }
 

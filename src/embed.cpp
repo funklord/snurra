@@ -19,6 +19,7 @@
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/library.h"
+#include "snurra/theme.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
 
@@ -150,7 +151,7 @@ public:
 		empty = new QLabel(QObject::tr("Deck %1 -- double-click a tune below, or drop one here").arg(name), this);
 		empty->setAlignment(Qt::AlignCenter);
 		empty->setWordWrap(true);
-		empty->setForegroundRole(QPalette::PlaceholderText);
+		snurra_mute(empty);
 		column->addWidget(empty);
 	}
 	std::function<void(const QString &path)> on_drop;

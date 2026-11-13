@@ -33,6 +33,7 @@
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
 #include "snurra/subtitles.h"
+#include "snurra/theme.h"
 #include "snurra/video.h"
 
 /*
@@ -827,7 +828,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	const char *band_objects[3] = { "snurra-eq-low", "snurra-eq-mid", "snurra-eq-high" };
 	for (int band = 0; band < 3; ++band) {
 		QLabel *name = new QLabel(band_names[band], m_controls);
-		name->setForegroundRole(QPalette::PlaceholderText);
+		snurra_mute(name);
 		m_eq[band] = new QDial(m_controls);
 		m_eq[band]->setObjectName(QLatin1String(band_objects[band]));
 		m_eq[band]->setAccessibleName(tr("EQ %1").arg(band_names[band]));

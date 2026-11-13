@@ -6,6 +6,7 @@
 #include <QString>
 
 class QApplication;
+class QWidget;
 
 /*
  * Whether the desktop is dark (project.md sec 3b), so the player can be.
@@ -36,6 +37,12 @@ snurra_scheme snurra_desktop_scheme();
 
 /* snurra's own dark scheme. */
 QPalette snurra_dark_palette();
+
+/* A label said quieter: its text two thirds of the way from its ground,
+ * in whatever palette it has. Not QPalette::PlaceholderText, which
+ * Android's default palette leaves unseen (2026-11-13: the EQ's names,
+ * the library's line and an empty deck's word were all missing). */
+void snurra_mute(QWidget *label);
 
 /* The dark scheme put on `app` where the desktop is dark; nothing else
  * otherwise -- a wrong dark is unreadable, a wrong light only plain. */
