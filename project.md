@@ -819,7 +819,10 @@ controls; each tile very compact but resizeable).
   as a file or given with `-playlist`, is the files it names in its
   place in the train; dropped, the same. Paths are taken from the
   playlist's folder; a playlist inside one is left out, so none loops;
-  at most 1000 entries (assumed). Tested by reading both kinds, a launch
+  at most 1000 entries (assumed). The same file straight after
+  itself is one entry: hydra writes a saved mix's .m3u as the mix once a
+  track, each with VLC's start-time, which had played as the whole mix
+  once a track; its tracks come from its chapters or its .cue. Tested by reading both kinds, a launch
   of both and a drop (`a_playlist_is_a_train_of_what_it_names`). `-loop N`
   plays the group N times in all, from the timeline's start each time it
   ends of itself -- `-loop 0` for ever, as mplayer's; a pause, or the

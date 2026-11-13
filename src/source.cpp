@@ -672,6 +672,12 @@ QStringList snurra_playlist(const QString &path, int most) {
 		if (name.startsWith(QLatin1String("file://"), Qt::CaseInsensitive)) name = QUrl(name).toLocalFile();
 		else if (!snurra_is_url(name)) name = QDir::cleanPath(beside.absoluteFilePath(name));
 		if (!snurra_is_url(name) && snurra_is_playlist(name)) continue;
+		/* The same file again straight after itself is one entry: hydra
+		 * writes a saved mix's tracklist as the mix once a track, each
+		 * with VLC's start-time (inbox 20261113T1442Z), which played as
+		 * the whole mix once a track. Its tracks are its chapters, or the
+		 * cue sheet hydra writes beside it. */
+		if (!entries.isEmpty() && entries.last() == name) continue;
 		entries << name;
 	}
 	return entries;

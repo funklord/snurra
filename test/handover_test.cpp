@@ -1326,6 +1326,14 @@ void handover_test::a_playlist_is_a_train_of_what_it_names() {
 	mime.setUrls({ QUrl::fromLocalFile(pls) });
 	QCOMPARE(snurra_dropped(&mime), radio);
 
+	/* Hydra's mix: the one file once a track, each from its start-time --
+	 * one entry, not the mix once a track. */
+	const QString hydra = dir.filePath(QStringLiteral("lists/mix.m3u8"));
+	QVERIFY(write(hydra, "#EXTM3U\n#PLAYLIST:A mix\n#EXTINF:120,A - One\n#EXTVLCOPT:start-time=0.000\n"
+	                     "#EXTVLCOPT:stop-time=120.000\nmix.webm\n#EXTINF:95,B - Two\n#EXTVLCOPT:start-time=120.000\n"
+	                     "mix.webm\n"));
+	QCOMPARE(snurra_playlist(hydra), QStringList{ dir.filePath(QStringLiteral("lists/mix.webm")) });
+
 	QProcess *a = start({ QStringLiteral("--paused"), QStringLiteral("-playlist"), pls, m3u });
 	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
 	QList<snurra_tile_state> states;
