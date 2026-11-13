@@ -945,7 +945,9 @@ controls; each tile very compact but resizeable).
   film with twenty languages does not open on the first, as mpv
   chooses. mplayer's `v` shows or hides them (with none chosen, the
   first track), `j` takes the next track and after the last none, and
-  a two-second notice says which. Drawn white on a black outline,
+  a two-second notice says which; `z` and `x` show them 0.1 s earlier
+  or later, for a file beside the picture that is out of step (per
+  tile, not kept). Drawn white on a black outline,
   1/15 of the picture's height, wrapped to its width, near its bottom.
   Bitmap subtitles are tested with a PGS stream the test writes by
   hand, FFmpeg having no way to encode text into one: shown from 1 s

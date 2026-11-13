@@ -809,6 +809,15 @@ void snurra_tile::toggle_subtitles() {
 	say_subtitles();
 }
 
+void snurra_tile::delay_subtitles(qint64 us) {
+	if (!m_view) return;
+	m_subtitle_delay += us;
+	const QString notice = tr("Subtitle delay: %1 s").arg(m_subtitle_delay / 1e6, 0, 'f', 1);
+	if (m_view) m_view->show_notice(notice);
+	if (m_full) static_cast<snurra_video_view *>(m_full.data())->show_notice(notice);
+	show_video_frame();
+}
+
 /* mplayer's j: the next track, and after the last, none. */
 void snurra_tile::next_subtitles() {
 	if (!m_view) return;
@@ -857,7 +866,7 @@ void snurra_tile::show_video_frame() {
 	const snurra_video_frame frame = m_video->frame_at(heard);
 	const QString name = subtitles_name();
 	std::vector<snurra_cue> cues;
-	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(heard);
+	if (!name.isEmpty()) cues = m_subtitle_tracks[size_t(m_subtitle)]->at(heard - m_subtitle_delay);
 	if (m_view) {
 		m_view->show_frame(frame);
 		m_view->show_cues(cues);

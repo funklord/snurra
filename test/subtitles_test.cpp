@@ -466,6 +466,19 @@ void subtitles_test::a_tile_shows_the_words_heard_and_v_and_j_change_them() {
 	QTRY_COMPARE_WITH_TIMEOUT(view->property("subtitle").toString(), QString(), 1000);
 	QTest::keyClick(&node, Qt::Key_J);
 	QCOMPARE(tile->subtitles_name(), QStringLiteral("film.srt"));
+
+	/* x: later by a tenth each. At the start, the line from 0 s now waits
+	 * half a second; z takes it back. */
+	tile->request_playing(false);
+	tile->seek_by(-60 * SECOND);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->deck()->position_at(snurra_clock_us()) < 1000, 3000);
+	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_X);
+	QCOMPARE(tile->subtitle_delay(), 500000);
+	QCOMPARE(view->property("notice").toString(), QStringLiteral("Subtitle delay: 0.5 s"));
+	QTRY_COMPARE_WITH_TIMEOUT(view->property("subtitle").toString(), QString(), 1000);
+	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_Z);
+	QCOMPARE(tile->subtitle_delay(), 0);
+	QTRY_COMPARE_WITH_TIMEOUT(view->property("subtitle").toString(), QStringLiteral("from beside"), 1000);
 }
 
 int run_subtitles_tests(int argc, char **argv) {
