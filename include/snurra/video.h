@@ -5,6 +5,7 @@
 #include <QSize>
 #include <QString>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -62,6 +63,11 @@ public:
 	 * caller, straight away. */
 	void set_on_open(std::function<void(bool has_video)> on_open);
 
+	/* How wide the picture is shown, in device pixels: frames are made
+	 * no wider (nor wider than the film), so a picture in a small drawer
+	 * costs little and one full screen is sharp. 1280 until told. */
+	void set_shown_width(int width) { m_widest.store(std::max(64, width), std::memory_order_relaxed); }
+
 	snurra_video_frame frame_at(int64_t us);
 	/* When the frame after the one shown for `us` begins, from those
 	 * decoded ahead; one frame's length on, by the stream's rate, where
@@ -96,6 +102,7 @@ private:
 	std::atomic<bool> m_has_video{ false };
 	std::atomic<bool> m_opened{ false };
 	std::atomic<int64_t> m_length_us{ 0 };
+	std::atomic<int> m_widest{ 1280 };
 	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitles;
 	int m_subtitle_default = -1;
 };

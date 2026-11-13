@@ -1185,7 +1185,12 @@ controls; each tile very compact but resizeable).
   to 18 frames a second, and now its 30, at a load average of 29
   (measured offscreen; the holder's "worse in the small window" was not
   seen there, and the picture is now opaque, so the drawer and window
-  behind it are not painted again for each frame). Colour is tested
+  behind it are not painted again for each frame). A picture is
+  made as wide as it is shown, in device pixels -- the drawer's width,
+  or the screen's full screen, never wider than the film -- where it was
+  1280 wide always: small, it costs little, and full screen on a screen
+  wider than 1280 it is sharp, not 720p stretched
+  (`a_picture_is_made_as_wide_as_it_is_shown`). Colour is tested
   against ffmpeg's own RGB, BT.601 and BT.709, limited and full range,
   to 4 steps (`colours_are_ffmpegs_own`). It converts: 8-bit planar 4:2:0, 4:2:2 and 4:4:4 and
   NV12/NV21, and since 2026-11-12 their 10-bit kin (planar 10-bit,

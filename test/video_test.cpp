@@ -70,6 +70,7 @@ private slots:
 	void colours_are_ffmpegs_own_data();
 	void colours_are_ffmpegs_own();
 	void a_full_screen_button_shows_while_the_pointer_moves();
+	void a_picture_is_made_as_wide_as_it_is_shown();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1018,4 +1019,60 @@ void video_test::a_full_screen_button_shows_while_the_pointer_moves() {
 	QCOMPARE(leave->accessibleName(), QStringLiteral("Leave full screen"));
 	leave->click();
 	QTRY_VERIFY_WITH_TIMEOUT(!tile->full_screen(), 3000);
+}
+
+/*
+ * A picture is made as wide as it is shown (2026-11-13): a 640 wide film
+ * asked for 200 is made 200 wide, its shape kept, and asked for 4000 is
+ * made at its own 640, never up. In a tile, the drawer's width; full
+ * screen, the screen's.
+ */
+void video_test::a_picture_is_made_as_wide_as_it_is_shown() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString path = m_dir.filePath(QStringLiteral("wide640.mp4"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("testsrc2=s=640x480:r=25:d=4"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+	                         QStringLiteral("-i"), QStringLiteral("sine=d=4"), QStringLiteral("-c:v"), QStringLiteral("libx264"),
+	                         QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), path });
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+	{
+		snurra_video video(path);
+		video.set_shown_width(200);
+		QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+		snurra_video_frame frame;
+		QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(0)).valid(), 5000);
+		QCOMPARE(frame.image.size(), QSize(200, 150));
+	}
+	{
+		snurra_video video(path);
+		video.set_shown_width(4000);
+		QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+		snurra_video_frame frame;
+		QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(0)).valid(), 5000);
+		QCOMPARE(frame.image.size(), QSize(640, 480));
+	}
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = path;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QWidget *small = nullptr;
+	for (QWidget *w : node.findChildren<QWidget *>())
+		if (w->accessibleName() == QLatin1String("Video")) small = w;
+	QVERIFY(small && small->width() < 640);
+	const int drawer = int(std::lround(small->width() * small->devicePixelRatioF()));
+	QTRY_COMPARE_WITH_TIMEOUT(small->property("made").toSize().width(), drawer, 3000);
+	tile->set_full_screen(true);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->full_screen(), 3000);
+	QWidget *full = nullptr;
+	for (QWidget *top : QApplication::topLevelWidgets())
+		if (top->accessibleName() == QLatin1String("Video") && top->isVisible()) full = top;
+	QVERIFY(full);
+	QTRY_COMPARE_WITH_TIMEOUT(full->property("made").toSize().width(), qMin(640, int(std::lround(full->width() * full->devicePixelRatioF()))), 3000);
+	tile->set_full_screen(false);
 }

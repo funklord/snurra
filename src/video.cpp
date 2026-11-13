@@ -23,7 +23,7 @@ namespace {
 
 constexpr size_t AHEAD = 6;                 /* frames decoded ahead of the target */
 constexpr int64_t JUMP_US = 1000000;        /* further ahead than this: seek, not decode through */
-constexpr int WIDEST = 1280;                /* a picture is scaled down to this, never up */
+constexpr int WIDEST = 1280;                /* until told how wide it is shown: set_shown_width */
 const AVRational MICROSECONDS{ 1, 1000000 };
 
 /*
@@ -36,8 +36,8 @@ const AVRational MICROSECONDS{ 1, 1000000 };
  * range (limited or full) the stream says. A 10-bit sample is read in the
  * 8-bit scale the matrix works in. Any other layout gives no picture.
  */
-/* The picture's size here: at most WIDEST wide, its shape kept. */
-QSize shown_size(const AVFrame *from) {
+/* The picture's size here: at most `widest` wide, its shape kept. */
+QSize shown_size(const AVFrame *from, int widest) {
 	int width = from->width;
 	int height = from->height;
 	/* Pixels that are not square -- a DVD's 720 wide for 4:3 or 16:9,
@@ -45,9 +45,9 @@ QSize shown_size(const AVFrame *from) {
 	const AVRational aspect = from->sample_aspect_ratio;
 	if (aspect.num > 0 && aspect.den > 0 && aspect.num != aspect.den)
 		width = int(std::lround(double(width) * aspect.num / aspect.den));
-	if (width > WIDEST) {
-		height = int(int64_t(height) * WIDEST / width);
-		width = WIDEST;
+	if (width > widest) {
+		height = int(int64_t(height) * widest / width);
+		width = widest;
 	}
 	return QSize(width, height);
 }
@@ -57,7 +57,7 @@ QSize shown_size(const AVFrame *from) {
  * recordings, PNG, QuickTime Animation), a palette (GIF) and grey. Null for
  * any other layout, which the YUV path below then takes.
  */
-QImage packed_to_rgb(const AVFrame *from) {
+QImage packed_to_rgb(const AVFrame *from, int widest) {
 	const AVPixelFormat format = AVPixelFormat(from->format);
 	int size = 0;          /* bytes a pixel */
 	int r = 0, g = 0, b = 0;
@@ -74,7 +74,7 @@ QImage packed_to_rgb(const AVFrame *from) {
 	case AV_PIX_FMT_GRAY8: size = 1; grey = true; break;
 	default: return QImage();
 	}
-	const QSize shown = shown_size(from);
+	const QSize shown = shown_size(from, widest);
 	if (shown.isEmpty()) return QImage();
 	QImage image(shown, QImage::Format_RGB32);
 	/* Which source byte each column shown starts at, once for the frame. */
@@ -100,8 +100,8 @@ QImage packed_to_rgb(const AVFrame *from) {
 	return image;
 }
 
-QImage to_rgb(const AVFrame *from) {
-	if (QImage packed = packed_to_rgb(from); !packed.isNull()) return packed;
+QImage to_rgb(const AVFrame *from, int widest) {
+	if (QImage packed = packed_to_rgb(from, widest); !packed.isNull()) return packed;
 	const AVPixelFormat format = AVPixelFormat(from->format);
 	int x_shift = 0;
 	int y_shift = 0;
@@ -140,7 +140,7 @@ QImage to_rgb(const AVFrame *from) {
 	const double y_zero = full ? 0 : 16;
 	const double c_scale = full ? 1.0 / 255 : 1.0 / 224;
 
-	const QSize shown = shown_size(from);
+	const QSize shown = shown_size(from, widest);
 	const int width = shown.width();
 	const int height = shown.height();
 	if (width <= 0 || height <= 0) return QImage();
@@ -538,7 +538,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	};
 
 	auto push = [&](const AVFrame *from, int64_t pts_us) {
-		snurra_video_frame next{ to_rgb(from), pts_us };
+		snurra_video_frame next{ to_rgb(from, m_widest.load(std::memory_order_relaxed)), pts_us };
 		if (rotation != 0 && !next.image.isNull()) next.image = next.image.transformed(QTransform().rotate(rotation));
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_frames.push_back(std::move(next));

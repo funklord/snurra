@@ -387,6 +387,7 @@ public:
 		if (!frame.valid() || frame.pts_us == property("pts").toLongLong()) return;
 		m_image = frame.image;
 		setProperty("pts", qint64(frame.pts_us));
+		setProperty("made", frame.image.size());   /* as made, before it is fitted */
 		update();
 	}
 	/* The subtitles showing now; `subtitle` is their words, a line each,
@@ -1159,6 +1160,12 @@ void snurra_tile::show_video_frame() {
 		keep_screen_awake();
 		m_awake.start();
 	}
+	/* Made as wide as it is shown, the widest of the drawer and the full
+	 * screen, in device pixels. */
+	int shown = 0;
+	if (m_view && video_open()) shown = int(std::lround(m_view->width() * m_view->devicePixelRatioF()));
+	if (m_full) shown = std::max(shown, int(std::lround(m_full->width() * m_full->devicePixelRatioF())));
+	if (shown > 0) m_video->set_shown_width(shown);
 	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
 	const qint64 picture = heard + m_sound_delay;
 	const snurra_video_frame frame = m_video->frame_at(picture);
