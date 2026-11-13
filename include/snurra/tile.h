@@ -137,7 +137,8 @@ public:
 
 	/* The upward drawer, the video, for a track that has a picture:
 	 * opened and closed by its button on the title, or here; and the
-	 * picture full screen. */
+	 * picture full screen -- asked for before the picture is found
+	 * (mplayer's -fs), shown so once it is. */
 	void set_video_open(bool open);
 	bool video_open() const;
 	void set_full_screen(bool full);
@@ -222,6 +223,7 @@ private:
 	QToolButton *m_video_toggle = nullptr;
 	QTimer *m_frames = nullptr;
 	QPointer<QWidget> m_full;   /* the picture full screen, while it is */
+	bool m_full_wanted = false;   /* asked for before the picture was found */
 	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitle_tracks;
 	int m_subtitle = -1;            /* the track chosen, or none */
 	bool m_subtitles_shown = true;

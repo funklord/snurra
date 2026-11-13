@@ -40,6 +40,7 @@ private slots:
 	void a_tile_dragged_onto_another_window_joins_it();
 	void a_tile_opens_at_the_pointer_clamped_to_the_screen();
 	void mplayers_keys_drive_the_tile();
+	void mplayers_options_say_where_and_how_it_plays();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
 	void a_stack_plays_its_lanes_at_once_from_one_time();
 	void a_stack_finds_its_time_in_a_lane_that_is_a_train();
@@ -52,6 +53,7 @@ private:
 	QString capture_dir() const { return m_dir->filePath(QStringLiteral("capture")); }
 	void check_crossover(qint64 giver, qint64 taker, const snurra_wire::message &status);
 	QString socket_of(QProcess *process) const;
+	QProcess *start_process_for_options(const QString &time);
 	QStringList sockets() const;
 	bool wait_for_socket(const QString &path, int ms = 10000);
 	snurra_wire::message ask(const QString &path, const snurra_wire::message &m, int ms = 3000);
@@ -1257,6 +1259,38 @@ void handover_test::mplayers_keys_drive_the_tile() {
 	 * is what a prompt quit is by the time it is asked. */
 	key(QStringLiteral("q"));
 	QVERIFY2(a->state() == QProcess::NotRunning || a->waitForFinished(5000), "q did not quit");
+}
+
+void handover_test::mplayers_options_say_where_and_how_it_plays() {
+	/* As the hands type them, one dash and a word: -ss in each of its
+	 * forms, the level and the speed; and a time that is none is refused
+	 * rather than read as 0. */
+	const struct {
+		QString time;
+		qint64 us;
+	} starts[] = { { QStringLiteral("75"), 75000000 },
+		       { QStringLiteral("1:02.5"), 62500000 },
+		       { QStringLiteral("1:00:03"), 3603000000 } };
+	for (const auto &start : starts) {
+		QProcess *a = start_process_for_options(start.time);
+		QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+		snurra_tile_state now;
+		QTRY_VERIFY_WITH_TIMEOUT((now = ask(socket_of(a), status_request()).states.value(0)).duration_us > 0, 5000);
+		QCOMPARE(now.position_us, start.us);
+		QVERIFY(!now.playing);
+		QCOMPARE(now.level, 50);
+		QVERIFY(qAbs(now.tempo - 1.5f) < 1e-4f);
+		a->terminate();
+		QVERIFY(a->waitForFinished(5000));
+	}
+	QProcess *bad = start({ QStringLiteral("-ss"), QStringLiteral("soon"), QStringLiteral("a.flac") });
+	QVERIFY(bad->waitForFinished(5000));
+	QCOMPARE(bad->exitCode(), 2);
+}
+
+QProcess *handover_test::start_process_for_options(const QString &time) {
+	return start({ QStringLiteral("-ss"), time, QStringLiteral("-volume"), QStringLiteral("50"), QStringLiteral("-speed"),
+	               QStringLiteral("1.5"), QStringLiteral("--paused"), QStringLiteral("a.flac") });
 }
 
 int run_handover_tests(int argc, char **argv) {

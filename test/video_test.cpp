@@ -47,6 +47,7 @@ private slots:
 	void every_codec_shows_the_frame_of_its_time();
 	void a_track_without_a_picture_has_no_video();
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
+	void full_screen_asked_before_the_picture_comes_with_it();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -320,6 +321,26 @@ void video_test::the_video_drawer_opens_upward_and_shows_what_is_heard() {
 		                         return true;
 	                         }()),
 	                         2000);
+}
+
+/* mplayer's -fs: asked for as the tile opens, before its picture has been
+ * found, and shown full screen once it is. */
+void video_test::full_screen_asked_before_the_picture_comes_with_it() {
+	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
+	const QString name = QStringLiteral("full.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(name);
+	state.controls = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	tile->set_full_screen(true);
+	QVERIFY(!tile->video_open());
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->full_screen(), 5000);
+	tile->set_full_screen(false);
+	QVERIFY(!tile->full_screen());
 }
 
 /* From a host's bytes (embed.h, BeerSSH's files over SSH): every frame the

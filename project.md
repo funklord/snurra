@@ -661,6 +661,19 @@ controls; each tile very compact but resizeable).
   XTEST in Xvfb (`mplayers_keys_drive_the_tile`): paused, each seek
   moves by exactly what its key says; a handler that ignores the keys
   fails it at the first.
+- **mplayer's command line, 2026-11-13** (sec 1): one dash and a word,
+  as the hands type them -- `-ss` (seconds, m:ss or h:mm:ss, a fraction
+  on the last), `-fs`, `-sub a.srt,b.srt` (offered before the files
+  beside the film), `-volume` (the level, per cent) and `-speed` (the
+  tempo); `--ss` and the long forms work too. The start, the full
+  screen and the subtitles are the first file's, a launch of several
+  being a train started at its head; the level and the speed every
+  file's. A start that is no time is refused (exit 2) rather than read
+  as 0. Full screen asked for before the picture is found -- `-fs`, or
+  f pressed while it opens -- is shown once it is. Tested: the three
+  forms of `-ss` land exactly, paused, with the level and tempo
+  (`mplayers_options_say_where_and_how_it_plays`), and an early full
+  screen arrives with the picture; each fails with its line taken out.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
@@ -1120,8 +1133,11 @@ speaker yet -- every test runs offscreen; trying the drag, the snap, the
 marker and a merge by ear is the first thing to do.
 
 Published 2026-11-12 at `github.com/funklord/snurra` (public), pushed
-over SSH as the other trees are. Open, the holder's: audio or video
-first; the analysis licences (sec 3e).
+over SSH as the other trees are. Settled since: audio first, then video
+as a drawer (sec 3); beat analysis by Mixxx's method for now, licensing
+once the program works (the holder, 2026-11-12). Open, the holder's: a
+lane starting later than the timeline's start (sec 3b); an FFmpeg of
+snurra's own for Android (sec 3).
 
 Next: BeerSSH and fuzzypickles can now vendor snurra and hand it their
 bytes -- their sessions' to take up, signalled in their trees (inbox

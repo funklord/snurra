@@ -18,6 +18,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/node.h"
+#include "snurra/tile.h"
 #include "snurra/wire.h"
 
 namespace {
@@ -51,6 +52,24 @@ void quit_on_signals(QCoreApplication &app) {
 	sigaction(SIGINT, &action, nullptr);
 }
 
+/*
+ * A time as mplayer's -ss takes one: seconds, or minutes:seconds, or
+ * hours:minutes:seconds, the last part with a fraction if it likes. -1 for
+ * what is none of these.
+ */
+qint64 parse_time_us(const QString &text) {
+	const QStringList parts = text.trimmed().split(QLatin1Char(':'));
+	if (parts.size() > 3) return -1;
+	double seconds = 0;
+	for (int i = 0; i < parts.size(); ++i) {
+		bool ok = false;
+		const double part = i + 1 < parts.size() ? double(parts.at(i).toUInt(&ok)) : parts.at(i).toDouble(&ok);
+		if (!ok || part < 0) return -1;
+		seconds = seconds * 60 + part;
+	}
+	return qint64(seconds * 1e6 + 0.5);
+}
+
 }
 
 /*
@@ -65,6 +84,9 @@ int main(int argc, char *argv[]) {
 	quit_on_signals(app);
 
 	QCommandLineParser parser;
+	/* mplayer's options are one dash and a word (-ss, -fs), and are what
+	 * the hands type; --ss works as well. */
+	parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
 	parser.addHelpOption();
 	parser.addPositionalArgument(QStringLiteral("file"), QStringLiteral("What to play."));
 	const QCommandLineOption adopt(QStringLiteral("adopt"), QStringLiteral("Take a tile from this socket."),
@@ -81,7 +103,17 @@ int main(int argc, char *argv[]) {
 	                                QStringLiteral("The look: drawers (the normal one, where the window system can), or square."),
 	                                QStringLiteral("look"));
 	const QCommandLineOption version(QStringLiteral("version"), QStringLiteral("Say which snurra this is, and whose."));
-	parser.addOptions({ adopt, token, index, at, paused, output, layout, version });
+	/* mplayer's, by the names its users type: where to start, the picture
+	 * full screen, a subtitle file, the level in per cent, the speed. */
+	const QCommandLineOption start_at(QStringList{ QStringLiteral("ss"), QStringLiteral("start") },
+	                                  QStringLiteral("Start there: seconds, m:ss or h:mm:ss."), QStringLiteral("time"));
+	const QCommandLineOption full_screen(QStringList{ QStringLiteral("fs"), QStringLiteral("full-screen") },
+	                                     QStringLiteral("Show the picture full screen."));
+	const QCommandLineOption subtitles(QStringLiteral("sub"), QStringLiteral("Subtitle files, comma-separated, before those beside the file."),
+	                                   QStringLiteral("file"));
+	const QCommandLineOption volume(QStringLiteral("volume"), QStringLiteral("The level, 0 to 100."), QStringLiteral("per-cent"));
+	const QCommandLineOption speed(QStringLiteral("speed"), QStringLiteral("The speed, 0.25 to 4."), QStringLiteral("factor"));
+	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -111,20 +143,37 @@ int main(int argc, char *argv[]) {
 	 * controls are pulled out. Within one launch the first file is first.
 	 */
 	const QStringList files = parser.positionalArguments();
+	qint64 start_us = 0;
+	if (parser.isSet(start_at) && (start_us = parse_time_us(parser.value(start_at))) < 0) {
+		std::fprintf(stderr, "snurra: -ss takes seconds, m:ss or h:mm:ss, not \"%s\"\n", qPrintable(parser.value(start_at)));
+		return 2;
+	}
 	bool first = !snurra_wire::any_peer_alive(node.socket_path());
 	int column = 0;
 	for (const QString &file : files.isEmpty() ? QStringList{ QStringLiteral("untitled") } : files) {
 		snurra_tile_state state;
 		state.source = QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
 		/* Three minutes for what has no length of its own: silence, for
-		 * a name nothing can play, still behaves as a tile. */
-		state.duration_us = 180000000;
+		 * a name nothing can play, still behaves as a tile. Past where a
+		 * start is asked for, which this length would otherwise clamp. */
+		state.duration_us = 180000000 + (column == 0 ? start_us : 0);
+		/* The start, the full screen and the subtitles are the first
+		 * file's: a launch of several is a train, started at its head. */
+		if (column == 0) state.position_us = start_us;
+		/* Given to the deck as it opens, so the first block is heard at
+		 * them; the tile clamps both. */
+		if (parser.isSet(volume)) state.level = qBound(0, parser.value(volume).toInt(), 100);
+		if (parser.isSet(speed)) state.tempo = parser.value(speed).toFloat();
 		state.sampled_at_us = snurra_clock_us();
 		state.controls = first;
 		state.playing = first && !parser.isSet(paused);
 		first = false;
 		state.column = column++;
-		node.add_tile(state);
+		snurra_tile *tile = node.add_tile(state);
+		if (state.column == 0) {
+			if (parser.isSet(subtitles)) tile->set_subtitle_files(parser.value(subtitles).split(QLatin1Char(','), Qt::SkipEmptyParts));
+			if (parser.isSet(full_screen)) tile->set_full_screen(true);
+		}
 	}
 	node.adjustSize();
 	/* At the pointer -- where the file was clicked, on X11 -- and clamped

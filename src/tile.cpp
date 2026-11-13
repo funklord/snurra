@@ -754,6 +754,7 @@ void snurra_tile::build_video_drawer(bool open) {
 	connect(m_frames, &QTimer::timeout, this, &snurra_tile::show_video_frame);
 	find_subtitles();
 	set_video_open(open);
+	if (m_full_wanted) set_full_screen(true);
 }
 
 /*
@@ -895,6 +896,7 @@ void snurra_tile::show_video_frame() {
 }
 
 void snurra_tile::set_full_screen(bool full) {
+	m_full_wanted = full;
 	if (full == bool(m_full) || !m_view) return;
 	if (!full) {
 		m_full->deleteLater();
