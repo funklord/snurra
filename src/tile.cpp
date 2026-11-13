@@ -766,20 +766,26 @@ void snurra_tile::build_video_drawer(bool open) {
 void snurra_tile::find_subtitles() {
 	m_subtitle_tracks.clear();
 	m_subtitle = -1;
-	const QFileInfo source(m_state.source);
-	if (source.isFile()) {
-		for (const QString &path : snurra_srt_beside(m_state.source)) {
-			QFile file(path);
-			if (!file.open(QIODevice::ReadOnly) || file.size() > 16 * 1024 * 1024) continue;
-			auto track = std::make_shared<snurra_subtitles>(QFileInfo(path).fileName());
-			for (snurra_cue &cue : snurra_read_srt(file.readAll())) track->add(std::move(cue));
-			if (track->size() > 0) m_subtitle_tracks.push_back(track);
-		}
+	QStringList files = m_subtitle_files;
+	if (QFileInfo(m_state.source).isFile())
+		for (const QString &path : snurra_srt_beside(m_state.source))
+			if (!files.contains(path)) files << path;
+	for (const QString &path : files) {
+		QFile file(path);
+		if (!file.open(QIODevice::ReadOnly) || file.size() > 16 * 1024 * 1024) continue;
+		auto track = std::make_shared<snurra_subtitles>(QFileInfo(path).fileName());
+		for (snurra_cue &cue : snurra_read_srt(file.readAll())) track->add(std::move(cue));
+		if (track->size() > 0) m_subtitle_tracks.push_back(track);
 	}
 	const size_t beside = m_subtitle_tracks.size();
 	for (const auto &track : m_video->subtitle_tracks()) m_subtitle_tracks.push_back(track);
 	if (beside > 0) m_subtitle = 0;
 	else if (m_video->subtitle_default() >= 0) m_subtitle = m_video->subtitle_default();
+}
+
+void snurra_tile::set_subtitle_files(const QStringList &paths) {
+	m_subtitle_files = paths;
+	if (m_view) find_subtitles();
 }
 
 QString snurra_tile::subtitles_name() const {

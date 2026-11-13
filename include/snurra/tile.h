@@ -149,6 +149,10 @@ public:
 	 * track and, after the last, none. The name of the one showing, or an
 	 * empty string. */
 	void toggle_subtitles();
+	/* Subtitle files offered before those beside the source: a host's,
+	 * fetched from beside a remote file (embed.h). Set before the picture
+	 * opens, or the tracks are found again. */
+	void set_subtitle_files(const QStringList &paths);
 	void next_subtitles();
 	/* mplayer's z and x: the subtitles shown later (positive) or earlier
 	 * by `us` more, for a file beside the picture that is out of step. */
@@ -221,7 +225,8 @@ private:
 	std::vector<std::shared_ptr<snurra_subtitles>> m_subtitle_tracks;
 	int m_subtitle = -1;            /* the track chosen, or none */
 	bool m_subtitles_shown = true;
-	qint64 m_subtitle_delay = 0;    /* microseconds the subtitles come later */
+	qint64 m_subtitle_delay = 0;
+	QStringList m_subtitle_files;   /* a host's, offered first */    /* microseconds the subtitles come later */
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

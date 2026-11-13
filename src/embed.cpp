@@ -81,6 +81,7 @@ bool snurra_player::open(const snurra_media &media) {
 	/* The host's bytes serve the waveform too: embed.h has hosts allow
 	 * reads from more than one thread. */
 	snurra_tile *tile = snurra_tile::embedded(*d->engine, state, media.bytes, this, media.bytes);
+	tile->set_subtitle_files(media.subtitles);
 	d->tiles.append(tile);
 	d->row->addWidget(tile);
 	tile->show();

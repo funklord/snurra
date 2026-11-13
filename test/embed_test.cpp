@@ -460,7 +460,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 1);
+	QCOMPARE(SNURRA_EMBED_VERSION, 2);   /* 2: snurra_media::subtitles */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

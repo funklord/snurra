@@ -31,19 +31,25 @@
  */
 
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 
 #include <memory>
 
 #include "snurra/source.h"
 
-#define SNURRA_EMBED_VERSION 1
+/* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. */
+#define SNURRA_EMBED_VERSION 2
 
 /* One thing to play. */
 struct snurra_media {
 	QString name;                          /* shown as the title; its extension hints at its kind */
 	QString path;                          /* a local file, when there is one */
 	std::shared_ptr<snurra_bytes> bytes;   /* the bytes, still arriving or not; used over `path` when set */
+	/* (2) Subtitle files the host has fetched -- a .srt beside a remote
+	 * file, copied over -- as local paths, offered first, as a .srt beside
+	 * a local file is. Empty: none but what the file carries. */
+	QStringList subtitles;
 	/* Later fields are added here, at the end, with defaults that keep today's meaning. */
 };
 

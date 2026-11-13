@@ -700,7 +700,12 @@ controls; each tile very compact but resizeable).
   path, shared bytes) and a pimpl'd `snurra_player` widget: `can_play`,
   `open`, `count`, `close_all`, signals `emptied` and `failed` -- with
   `SNURRA_EMBED_VERSION` raised per additive release, nothing ever
-  removed or renamed. Its promises: the engine is inside (the process's
+  removed or renamed. Version 2 (2026-11-13, BeerSSH's proposal, inbox
+  20261113T0139Z): `snurra_media::subtitles`, local paths of subtitle
+  files the host fetched from beside a remote file, offered first as a
+  `.srt` beside a local file is -- BeerSSH plays remote files as bytes,
+  so a film's `.srt` on the host was never seen; empty changes nothing,
+  and a brace-initialised `snurra_media` of three still compiles. Its promises: the engine is inside (the process's
   one); bytes stall, never fail; a host's bytes may be read from any
   snurra thread at once (so the facade passes them as the peak bytes
   too); deleting the player at any moment retires its decks and keeps

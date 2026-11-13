@@ -15,10 +15,12 @@
 
 #include "snurra/clock.h"
 #include "snurra/deck.h"
+#include "snurra/embed.h"
 #include "snurra/node.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
+#include "test_bytes.h"
 
 namespace {
 
@@ -63,6 +65,7 @@ private slots:
 	void a_blu_ray_picture_subtitle_is_shown_where_it_was_placed();
 	void a_seek_into_a_line_shows_that_line();
 	void a_tile_shows_the_words_heard_and_v_and_j_change_them();
+	void a_hosts_subtitle_file_comes_first_for_its_bytes();
 
 private:
 	bool make_video(const QString &name, const QStringList &more);
@@ -479,6 +482,45 @@ void subtitles_test::a_tile_shows_the_words_heard_and_v_and_j_change_them() {
 	for (int i = 0; i < 5; ++i) QTest::keyClick(&node, Qt::Key_Z);
 	QCOMPARE(tile->subtitle_delay(), 0);
 	QTRY_COMPARE_WITH_TIMEOUT(view->property("subtitle").toString(), QStringLiteral("from beside"), 1000);
+}
+
+/* embed.h 2: a host playing bytes hands over the .srt it fetched from
+ * beside the remote file; it is offered first, before what the file
+ * carries, and shown. */
+void subtitles_test::a_hosts_subtitle_file_comes_first_for_its_bytes() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QFile inside(m_dir.filePath(QStringLiteral("carried.srt")));
+	QVERIFY(inside.open(QIODevice::WriteOnly));
+	inside.write("1\n00:00:00,000 --> 00:00:03,000\ncarried\n");
+	inside.close();
+	QVERIFY(make_video(QStringLiteral("remote.mkv"),
+	                   { QStringLiteral("-i"), inside.fileName(), QStringLiteral("-map"), QStringLiteral("0:v"),
+	                     QStringLiteral("-map"), QStringLiteral("1:a"), QStringLiteral("-map"), QStringLiteral("2:s"),
+	                     QStringLiteral("-c:s"), QStringLiteral("srt") }));
+	QTemporaryDir fetched;
+	QVERIFY(fetched.isValid());
+	QFile srt(fetched.filePath(QStringLiteral("remote.en.srt")));
+	QVERIFY(srt.open(QIODevice::WriteOnly));
+	srt.write("1\n00:00:00,000 --> 00:00:03,000\nfetched\n");
+	srt.close();
+	QFile film(m_dir.filePath(QStringLiteral("remote.mkv")));
+	QVERIFY(film.open(QIODevice::ReadOnly));
+	auto bytes = std::make_shared<memory_bytes>(film.readAll());
+	bytes->arrive(0, bytes->size());
+
+	snurra_player player;
+	player.resize(400, 300);
+	player.show();
+	snurra_media media;
+	media.name = QStringLiteral("remote.mkv");
+	media.bytes = bytes;
+	media.subtitles = { srt.fileName() };
+	QVERIFY(player.open(media));
+	snurra_tile *tile = player.findChild<snurra_tile *>();
+	QVERIFY(tile);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->subtitles_name(), QStringLiteral("remote.en.srt"), 5000);
+	tile->next_subtitles();
+	QCOMPARE(tile->subtitles_name(), QStringLiteral("track 1"));
 }
 
 int run_subtitles_tests(int argc, char **argv) {
