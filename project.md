@@ -92,6 +92,43 @@ and everything above it knows nothing of SFTP or fuzznet.
   "make it work first" -- audio, then video, as a drawer that opens
   upward from the tile (sec 3b).
 
+- **A distributed music library: snurra on fuzznet, fuzzypickles on
+  snurra, or both? (the holder, 2026-11-13).** Measured from the three
+  trees rather than reasoned:
+  - **fuzzypickles already plays through snurra.** Its Library tab
+    (its sec 24, step 3g) is the estate's catalogue on fuzznet, and
+    since 2026-11-12 it plays through a snurra deck over its own
+    `snurra_bytes`, `fzp_library_bytes` (its steps 1, 2a, 2b), seeking
+    in a file still arriving. What it has not taken up: the waveform,
+    the library's BPM and key, more decks -- its session's to take.
+  - **The distributed library exists, and is fuzznet's.** The holder
+    decided 2026-09-05 (fuzzypickles sec 24) that the file store, the
+    catalogue -- global per estate, holders as metadata of a file --
+    and the streaming belong in fuzznet. So "snurra uses fuzznet" does
+    not mean building a library; it means showing the estate's one.
+  - **What that would cost snurra, measured:** not fuzznet's core. A
+    node's local socket admits any process of its user (fuzznet sec 2:
+    owner-only, same user), and the verbs are there -- `list catalog`,
+    `get catalog ROOT`, `get file ROOT OFFSET LENGTH`. So the catalogue
+    could be one more source of the library beside a folder, and a
+    file's bytes one more `snurra_bytes`, as BeerSSH's are: a client of
+    the user's own node, some hundreds of lines, no crypto, no estate
+    identity in a player meant to be tiny. Linking fuzznet's core
+    instead would put a second estate stack in the player and is not
+    recommended.
+  - **What it gives the user:** the holder's music on the NAS
+    (dl180g6-03) in snurra's library and DJ player, on the phone too,
+    without NFS -- what the phone app lacks today (it sees only the
+    phone's own music).
+  - **Recommended: both, at two layers.** fuzzypickles goes on using
+    snurra as its player (and may take up its widgets); snurra gains
+    the estate's catalogue as a library source, as a client of the
+    user's node. **Whose: the holder's** -- it makes fuzznet's local
+    verbs an interface a third project depends on, and on the holder's
+    machines the node is fuzzypickles' `fzpd`, so fuzznet and
+    fuzzypickles would want to say whether those verbs are stable for
+    another client before snurra speaks them. Not built until then.
+
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
 The holder, 2026-11-11: copy Mixxx's structure for mixing, unless it is
