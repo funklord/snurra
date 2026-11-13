@@ -84,9 +84,12 @@ uninstall:
 TARGET  = snurra
 APP_ID  = se.vibes.snurra
 VERSION ?= $(shell cat VERSION)
+# Before the fragment: its kit record's rule names a file in it, and a rule's
+# target is expanded as the rule is read. ANDROID_ABI is the fragment's,
+# set before that rule; this is expanded when used.
+ANDROID_BUILD_DIR ?= build-android-$(ANDROID_ABI)
 include tool/android.mk
 
-ANDROID_BUILD_DIR ?= build-android-$(ANDROID_ABI)
 ANDROID_ARTIFACT = $(ANDROID_BUILD_DIR)/$(TARGET)-$(VERSION)-$(ANDROID_ABI).apk
 
 # FFmpeg on Android is the kit's: the libraries Qt ships for its own
@@ -135,7 +138,11 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 
 # The preflight runs before, but does not date the Makefile: a phony
 # prerequisite would regenerate it, and rebuild everything, every time.
-$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied | android-check
+# The kit's record (tool/android.mk) does date it, and only when the kit
+# changes: then the build's objects and staged libraries are cleared, as
+# a kit updated in place carries dates older than what was built from the
+# last one.
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
 	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \
 	        SNURRA_FFMPEG_INCLUDE=$(abspath $(ANDROID_BUILD_DIR)/ffmpeg-include) \
