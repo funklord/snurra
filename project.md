@@ -704,6 +704,13 @@ trade exactness for time; not built, and the DJ requirement argues
 against it as a default. The length of bytes not all here is the
 duration's estimate, not the last packets'.
 
+**Built for size, 2026-11-13** (sec 1: tiny, held deliberately):
+`-Os` with sections collected (`--gc-sections`). The `-Os` stood in
+`QMAKE_CXXFLAGS`, where qmake's release `-O2` follows it and wins, so
+it was never in force; in `QMAKE_CXXFLAGS_RELEASE` in its place, the
+player's code went from 716906 bytes to 522752 (27 % less), and the
+suite -- whose handover tests run the real player -- passes on it.
+
 **Sanitizers, 2026-11-12:** the whole suite under ThreadSanitizer, and
 under AddressSanitizer with UBSan, both built out of tree with qmake's
 `CONFIG+=sanitizer CONFIG+=sanitize_thread` (or `sanitize_address

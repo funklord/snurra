@@ -3,7 +3,12 @@ TEMPLATE = app
 TARGET = snurra
 QT += widgets network
 CONFIG += c++17
-QMAKE_CXXFLAGS += -Os -ffunction-sections -fdata-sections
+QMAKE_CXXFLAGS += -ffunction-sections -fdata-sections
+# Size, not speed (the aim: tiny). In the release flags, not beside them:
+# qmake puts its -O2 after QMAKE_CXXFLAGS, and the last -O wins, so -Os
+# there was never in force (2026-11-13).
+QMAKE_CXXFLAGS_RELEASE -= -O2
+QMAKE_CXXFLAGS_RELEASE += -Os
 QMAKE_LFLAGS += -Wl,--gc-sections
 include(snurra.pri)
 SOURCES += src/main.cpp
