@@ -963,7 +963,10 @@ controls; each tile very compact but resizeable).
   One layout -- decks above, browser below -- for the desktop and the
   phone until they are seen to need two. An embedded tile's jump is now
   seamless too, as a window's group's (0.0 ms off its step, 26 ms short
-  before). `snurra --dj [a b]` opens it, seen in Xvfb. Not yet: a
+  before). `snurra --dj [a b]` opens it, seen in Xvfb -- and at 412 x 915, a
+  phone's portrait, the one layout holds: each deck half the width, the
+  browser most of the screen, the tempo slider the first control
+  squeezed. Not yet: a
   channel fader or EQ per deck, cue points, the phone's layout tried.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
