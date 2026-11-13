@@ -735,7 +735,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_controls->setAttribute(Qt::WA_StyledBackground);
 	m_controls->setStyleSheet(drawer_style(m_controls->objectName()));
 	QVBoxLayout *strip = new QVBoxLayout(m_controls);
-	strip->setContentsMargins(4, 2, 4, 4);
+	strip->setContentsMargins(2, 2, 2, 4);
 	strip->setSpacing(2);
 	QHBoxLayout *transport = new QHBoxLayout;
 	m_play = new QToolButton(m_controls);
@@ -827,6 +827,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_beat_label = new QLabel(m_controls);
 	m_beat_label->setObjectName(QStringLiteral("snurra-beat"));
 	speed->addWidget(m_beat_label);
+	/* The key and the sync on a row of their own: on one row with the
+	 * tempo, a phone's deck, 186 wide, clipped the buttons' words. */
+	QHBoxLayout *keys = new QHBoxLayout;
 	m_key_lock = new QToolButton(m_controls);
 	m_key_lock->setObjectName(QStringLiteral("snurra-key-lock"));
 	m_key_lock->setAutoRaise(true);
@@ -834,7 +837,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_lock->setText(tr("key"));
 	m_key_lock->setAccessibleName(tr("Key lock"));
 	m_key_lock->setToolTip(tr("Key lock: the pitch stays as the tempo moves"));
-	speed->addWidget(m_key_lock);
+	keys->addWidget(m_key_lock);
 	/* The key shift, a DJ's key knob: semitones, 0 at the top, an octave
 	 * either way; a double-click puts it back. */
 	m_key_shift = new QDial(m_controls);
@@ -845,7 +848,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_shift->setNotchesVisible(true);
 	m_key_shift->setFixedSize(fontMetrics().height() * 2, fontMetrics().height() * 2);
 	m_key_shift->installEventFilter(this);
-	speed->addWidget(m_key_shift);
+	keys->addWidget(m_key_shift);
 	/* Key sync: the key moved to the leader's, as Traktor's key sync. */
 	m_key_sync = new QToolButton(m_controls);
 	m_key_sync->setObjectName(QStringLiteral("snurra-key-sync"));
@@ -854,7 +857,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_sync->setAccessibleName(tr("Key sync"));
 	m_key_sync->setToolTip(tr("Move this tile's key to another playing tile's, the smallest way"));
 	m_key_sync->setEnabled(false);
-	speed->addWidget(m_key_sync);
+	keys->addWidget(m_key_sync);
 	/* Sync: this tile's beat to another playing one's, once both have a
 	 * grid (sec 4). */
 	m_sync = new QToolButton(m_controls);
@@ -864,8 +867,10 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_sync->setAccessibleName(tr("Sync"));
 	m_sync->setToolTip(tr("Match this tile's beat to another playing tile's: its tempo, then its phase"));
 	m_sync->setEnabled(false);
-	speed->addWidget(m_sync);
+	keys->addWidget(m_sync);
+	keys->addStretch(1);
 	strip->addLayout(speed);
+	strip->addLayout(keys);
 	/* The EQ, a DJ's three bands: 0 dB at the top of the dial, as on a
 	 * mixer -- the left half down by 2 dB a step to -22 and, at its end,
 	 * the band killed, as an isolator's; the right up to +6 by 0.5. A
@@ -1031,8 +1036,10 @@ void snurra_tile::nudge(int direction) {
 
 void snurra_tile::show_jumps() {
 	const QString step = jump_step(false);
-	m_back->setText(QStringLiteral("\u2039 ") + step);
-	m_forward->setText(step + QStringLiteral(" \u203a"));
+	/* Arrow and step close-set, and the controls' sides 2 px: a phone's
+	 * deck, 178 wide, gave the jumps 42 of the 44 they ask. */
+	m_back->setText(QStringLiteral("\u2039") + step);
+	m_forward->setText(step + QStringLiteral("\u203a"));
 	m_back->setAccessibleName(tr("Back %1").arg(step));
 	m_forward->setAccessibleName(tr("Forward %1").arg(step));
 	const QString nudge = tr("; with Ctrl, a 10 ms nudge");

@@ -977,6 +977,21 @@ void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 	snurra_tile *b = shown_on(dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b")));
 	QCOMPARE(a->state().source, paths[1]);
 	QVERIFY(a && b);
+	/* With both decks in, it still fits a phone's portrait, 412 wide:
+	 * each deck half of it, every control in its row. */
+	qInfo("least width with two decks: %d", dj.minimumSizeHint().width());
+	/* And at that width every button of a deck has the room it asks for:
+	 * the key's three beside the tempo clipped their words (seen in this
+	 * test, 2026-11-13: "in key" 28 wide of 47). */
+	dj.resize(412, 915);
+	QTest::qWait(50);
+	a->set_beats(snurra_beat_grid{ 24000, 0, 10, 48000 });   /* the jumps' widest words, "4 bars" */
+	QTest::qWait(50);
+	for (QToolButton *button : deck_a->findChildren<QToolButton *>())
+		if (button->isVisibleTo(&dj) && button->objectName().startsWith(QLatin1String("snurra-")))
+			QVERIFY2(button->width() >= button->sizeHint().width(),
+			         qPrintable(QStringLiteral("%1 %2 wide of %3").arg(button->objectName()).arg(button->width()).arg(button->sizeHint().width())));
+	QVERIFY2(dj.minimumSizeHint().width() <= 412, qPrintable(QString::number(dj.minimumSizeHint().width())));
 	dj.set_crossfader(-1);
 	QCOMPARE(a->deck()->fade_to(), 1.0f);
 	QVERIFY(b->deck()->fade_to() < 1e-6f);

@@ -1055,7 +1055,15 @@ controls; each tile very compact but resizeable).
   before). `snurra --dj [a b]` opens it, seen in Xvfb -- and at 412 x 915, a
   phone's portrait, the one layout holds: each deck half the width, the
   browser most of the screen, the tempo slider the first control
-  squeezed. **On a phone it is the app** (2026-11-13): started with no
+  squeezed. **Every button has its room there** (2026-11-13), checked
+  in `the_dj_player_loads_two_decks_and_crosses_them` at 412 x 915 with
+  a beat, so the jumps carry their widest words: the key lock, key knob,
+  key sync and sync got a row of their own when the key's three, beside
+  the tempo, clipped "in key" to 28 of its 47; and the jumps had been
+  42 of their 44 since before, mended by close-setting arrow and step
+  and the controls' sides at 2 px. The player's least width (252) never
+  showed either -- a tile asks only 14 characters, so a crowded row is
+  clipped, not widened -- which is why the check is each button's own. **On a phone it is the app** (2026-11-13): started with no
   file on Android, snurra opens the DJ player full screen and asks for
   the phone's music (READ_MEDIA_AUDIO and _VIDEO, declared in
   `android/AndroidManifest.xml` -- qmake's ANDROID_PERMISSIONS was left
