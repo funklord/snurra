@@ -273,8 +273,13 @@ does the same with a tile's playback:
   waveform from seeking to editing, where a press adds a point or takes
   the one under it, a drag moves it between its neighbours, and a drag
   out of the waveform removes it -- Audacity's envelope tool again.
-  Not yet: a train's crossfade drawn as its two tiles' curves; it is
-  still the deck's equal-power fade, at the overlap above.
+  A train's crossfade stays the deck's equal-power fade (the holder,
+  2026-11-13: "keep equal-power, show the crossfade as curves"), drawn
+  on its two tiles: the quarter circle the deck plays, falling over the
+  one's last overlap and rising over the next one's first, what it takes
+  away shaded -- the same overlap the train plays, refreshed with the
+  trains' tick. Shown, not edited: the user's envelope is the curve to
+  edit, and multiplies with it.
 
 **"Tiny" kept honest by building in steps**, each usable before the
 next: (1) the tile -- one file, play/pause/seek, opened at the pointer,

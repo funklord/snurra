@@ -124,6 +124,11 @@ public:
 	 * control (in the controls, sec 3c) is on. */
 	void set_envelope(const QList<QPair<qint64, float>> &points);
 	QList<QPair<qint64, float>> envelope() const { return m_state.envelope; }
+	/* A train's crossfade, drawn on the waveform: how much of the track
+	 * fades in from its start and out to its end, as fractions of it --
+	 * set by the window, which knows the tiles before and after. */
+	void set_crossfade(double in, double out);
+	QPair<double, double> crossfade() const { return m_crossfade; }
 
 	/*
 	 * The drawers (project.md sec 3b): upward the video, downward the
@@ -243,6 +248,7 @@ private:
 	bool m_clock = false;           /* mplayer's o: the time over the picture */
 	QElapsedTimer m_awake;          /* since the screen saver was last put off */
 	QStringList m_subtitle_files;   /* a host's, offered first */
+	QPair<double, double> m_crossfade{ 0, 0 };   /* a train's: in and out, of the track */
 	QToolButton *m_play;
 	QSlider *m_position;
 	QSlider *m_level;

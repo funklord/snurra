@@ -444,6 +444,31 @@ void snurra_node::run_trains() {
 		deck->fade(start, fade_us, 1, 0, true);
 		m_following.insert(tile, following{ next, start });
 	}
+	show_crossfades();
+}
+
+/*
+ * A train's crossfades drawn on its tiles (project.md sec 3b): each tile's
+ * overlap with the one before as its fade in, with the one after as its
+ * fade out -- the same overlap the train plays -- as fractions of the
+ * track. On every tick of the trains, so a length found, a tempo moved or
+ * a tile come or gone shows within a tenth of a second.
+ */
+void snurra_node::show_crossfades() {
+	for (int row : rows()) {
+		const QList<snurra_tile *> tiles = lane(row);
+		for (int i = 0; i < tiles.size(); ++i) {
+			snurra_tile *tile = tiles.at(i);
+			const double length = double(timeline_length(tile));
+			if (length <= 0) {
+				tile->set_crossfade(0, 0);
+				continue;
+			}
+			const double in = i > 0 ? double(overlap(tiles.at(i - 1), tile)) / length : 0;
+			const double out = i + 1 < tiles.size() ? double(overlap(tile, tiles.at(i + 1))) / length : 0;
+			tile->set_crossfade(in, out);
+		}
+	}
 }
 
 /*

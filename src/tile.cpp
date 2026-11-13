@@ -23,6 +23,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <cmath>
+
 #include "snurra/beats.h"
 #include "snurra/deck.h"
 #include "snurra/engine.h"
@@ -101,10 +103,22 @@ public:
 	}
 	std::function<void(const QList<QPointF> &)> on_envelope;
 
+	/* A train's crossfade, as fractions of the track: the fade in from
+	 * its start, the fade out to its end; 0 for none. */
+	void set_crossfade(double in, double out) {
+		if (qAbs(in - m_fade_in) * width() < 0.5 && qAbs(out - m_fade_out) * width() < 0.5
+		    && (in > 0) == (m_fade_in > 0) && (out > 0) == (m_fade_out > 0))
+			return;   /* no repaint for no pixel */
+		m_fade_in = in;
+		m_fade_out = out;
+		update();
+	}
+
 protected:
 	void paintEvent(QPaintEvent *event) override {
 		paint_waveform();
 		paint_beats();
+		paint_crossfade();
 		paint_envelope();
 		(void)event;
 	}
@@ -148,6 +162,40 @@ protected:
 		if (!m_editing) return;
 		painter.setBrush(palette().color(QPalette::Link));
 		for (const QPointF &point : m_envelope) painter.drawRect(QRectF(to_widget(point) - QPointF(3, 3), QSizeF(6, 6)));
+	}
+
+	/*
+	 * The crossfade as the deck plays it (project.md sec 3b): a quarter
+	 * circle, sin rising over the fade in and cos falling over the fade
+	 * out -- equal power -- with what it takes away shaded above it.
+	 */
+	void paint_crossfade() {
+		if (m_fade_in <= 0 && m_fade_out <= 0) return;
+		QPainter painter(this);
+		painter.setRenderHint(QPainter::Antialiasing);
+		QColor shade = palette().color(QPalette::Window);
+		shade.setAlpha(140);
+		QPen pen(palette().color(QPalette::Link));
+		pen.setWidthF(1.5);
+		auto curve = [&](double from, double to, bool rising) {
+			constexpr int STEPS = 32;
+			QPolygonF line;
+			for (int i = 0; i <= STEPS; ++i) {
+				const double t = double(i) / STEPS;
+				const double gain = rising ? std::sin(t * M_PI_2) : std::cos(t * M_PI_2);
+				line << to_widget(QPointF(from + (to - from) * t, gain));
+			}
+			QPolygonF above = line;
+			above << QPointF(to * width(), 0) << QPointF(from * width(), 0);
+			painter.setPen(Qt::NoPen);
+			painter.setBrush(shade);
+			painter.drawPolygon(above);
+			painter.setPen(pen);
+			painter.setBrush(Qt::NoBrush);
+			painter.drawPolyline(line);
+		};
+		if (m_fade_in > 0) curve(0, qMin(1.0, m_fade_in), true);
+		if (m_fade_out > 0) curve(qMax(0.0, 1 - m_fade_out), 1, false);
 	}
 
 	void paint_waveform() {
@@ -248,6 +296,8 @@ private:
 	double m_beat_period = 0;   /* fractions of the track; 0: no grid */
 	static constexpr double GRAB = 6;   /* pixels: how near a press takes a point */
 	QList<QPointF> m_envelope;
+	double m_fade_in = 0;    /* fractions of the track; 0: none */
+	double m_fade_out = 0;
 	bool m_editing = false;
 	int m_grabbed = -1;
 	bool m_outside = false;
@@ -1187,6 +1237,11 @@ void snurra_tile::set_envelope(const QList<QPair<qint64, float>> &points) {
 		frames.emplace_back(us_to_frames(point.first, m_deck->rate()), qBound(0.0f, point.second, 1.0f));
 	m_deck->set_envelope(frames);
 	show_envelope();
+}
+
+void snurra_tile::set_crossfade(double in, double out) {
+	m_crossfade = qMakePair(in, out);
+	m_waveform->set_crossfade(in, out);
 }
 
 /* On the waveform, as fractions of the track: again whenever its length

@@ -41,6 +41,7 @@ private slots:
 	void a_lane_at_a_tempo_keeps_the_groups_time();
 	void sync_matches_a_beat_to_another();
 	void files_dropped_on_a_window_join_it();
+	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
@@ -387,6 +388,50 @@ void embed_test::files_dropped_on_a_window_join_it() {
 	QCOMPARE(places, (QList<QPair<int, int>>{ { 0, 1 }, { 0, 2 }, { 1, 0 } }));
 	/* Titled by what it plays: the first tile's name, and how many more. */
 	QCOMPARE(node.windowTitle(), QStringLiteral("first +3"));
+}
+
+/*
+ * A train's crossfade as curves (project.md sec 3b): A 10 s, B 4 s and C
+ * 10 s in a lane, D 6 s alone below. The overlap is 5 s capped at half the
+ * shorter, so 2 s each side of B: A fades out over its last fifth, B in
+ * and out over a half each, C in over its first fifth; D, with no
+ * neighbour, has none. Drawn: A's waveform is not what it is without.
+ */
+void embed_test::a_trains_crossfade_is_drawn_on_its_tiles() {
+	snurra_node node;
+	auto lasting = [](const QString &name, int row, int column, qint64 us) {
+		snurra_tile_state state = placed(name, row, column);
+		state.duration_us = us;
+		return state;
+	};
+	snurra_tile *a = node.add_tile(lasting(QStringLiteral("a"), 0, 0, 10000000));
+	snurra_tile *b = node.add_tile(lasting(QStringLiteral("b"), 0, 1, 4000000));
+	snurra_tile *c = node.add_tile(lasting(QStringLiteral("c"), 0, 2, 10000000));
+	snurra_tile *d = node.add_tile(lasting(QStringLiteral("d"), 1, 0, 6000000));
+	node.resize(800, 300);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	auto near = [](QPair<double, double> got, double in, double out) {
+		return qAbs(got.first - in) < 1e-3 && qAbs(got.second - out) < 1e-3;
+	};
+	QTRY_VERIFY_WITH_TIMEOUT(near(a->crossfade(), 0, 0.2), 2000);
+	QVERIFY2(near(b->crossfade(), 0.5, 0.5), "B does not cross both ways over half of it");
+	QVERIFY2(near(c->crossfade(), 0.2, 0), "C does not fade in over its first fifth");
+	QVERIFY2(near(d->crossfade(), 0, 0), "a lone lane has a crossfade");
+
+	QWidget *waveform = waveform_of(a);
+	QVERIFY(waveform);
+	const QImage with = waveform->grab().toImage();
+	a->set_crossfade(0, 0);
+	const QImage without = waveform->grab().toImage();
+	int differ = 0;
+	for (int y = 0; y < with.height(); ++y)
+		for (int x = 0; x < with.width(); ++x)
+			if (with.pixel(x, y) != without.pixel(x, y)) {
+				QVERIFY2(x >= with.width() * 0.8 - 2, "the fade out is drawn outside A's last fifth");
+				++differ;
+			}
+	QVERIFY2(differ > with.width() / 10, "A's fade out is not drawn");
 }
 
 /*
