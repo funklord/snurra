@@ -114,6 +114,7 @@ private slots:
 	void an_encoded_beat_is_still_found();
 	void a_trains_overlap_brings_the_next_in_on_the_beat_data();
 	void a_trains_overlap_brings_the_next_in_on_the_beat();
+	void a_set_whose_phase_moves_has_its_tempo();
 };
 
 /*
@@ -299,6 +300,37 @@ void beats_test::an_encoded_beat_is_still_found() {
 int run_beats_tests(int argc, char **argv) {
 	beats_test test;
 	return QTest::qExec(&test, argc, argv);
+}
+
+
+/*
+ * A DJ set (the holder, 2026-11-13: no beat found in a 42 minute set): ten
+ * minutes at 128 BPM whose beat moves 0.37 of a beat at each minute, as a
+ * set's phase moves at each track's join. The whole does not fold clear;
+ * its minutes do, and agree. Its grid is 128 BPM, on the first minute's
+ * beats.
+ */
+void beats_test::a_set_whose_phase_moves_has_its_tempo() {
+	std::vector<float> set;
+	std::vector<double> first_minute;
+	const double period = 60.0 * RATE / 128;
+	for (int minute = 0; minute < 10; ++minute) {
+		const double shift = std::fmod(0.37 * minute, 1.0) * period / RATE;
+		made_t part = beat(128, shift, true, 60);
+		if (minute == 0) first_minute = part.beats;
+		set.insert(set.end(), part.mono.begin(), part.mono.end());
+	}
+	memory_source source(set);
+	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
+	QVERIFY2(grid.valid(), qPrintable(QStringLiteral("no beat found (confidence %1)").arg(grid.confidence)));
+	QVERIFY2(std::abs(grid.bpm() - 128) < 0.3, qPrintable(QStringLiteral("%1 BPM").arg(grid.bpm())));
+	double worst = 0;
+	for (double at : first_minute) {
+		if (at > 30.0 * RATE) break;
+		const double k = std::round((at - grid.first) / grid.period);
+		worst = std::max(worst, std::abs(grid.first + k * grid.period - at));
+	}
+	QVERIFY2(worst < 0.02 * RATE, qPrintable(QStringLiteral("the first minute's beats are %1 ms off the grid").arg(worst * 1000 / RATE)));
 }
 
 #include "beats_test.moc"

@@ -187,10 +187,11 @@ fold_t fold_at(const std::vector<float> &strength, double period, double phase) 
 
 }
 
-snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop) {
+/* The grid one run of onsets holds, at one tempo and phase; none with its
+ * confidence where it is not clear. In hops: period and phase. */
+static snurra_beat_grid grid_of(const onsets_t &found, int rate, const std::function<bool()> &stop) {
 	snurra_beat_grid grid;
 	grid.rate = rate;
-	const onsets_t found = onsets(source, rate, stop);
 	const std::vector<float> &strength = found.all;
 	const double hops_a_second = double(rate) / HOP;
 	const int shortest = int(std::floor(hops_a_second * 60 / FASTEST));
@@ -268,6 +269,65 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 	if (grid.confidence < CLEAR || per_beat < AUDIBLE) return snurra_beat_grid{ 0, 0, grid.confidence, rate };
 	grid.period = period * HOP;
 	grid.first = std::fmod(chosen.phase * HOP + WINDOW / 2.0, grid.period);
+	return grid;
+}
+
+/*
+ * A DJ set is one tempo with its phase moving at each track's join: the
+ * whole of it folded smears to nothing (the holder's 42 minute set,
+ * 2026-11-13: confidence 3.7 where 6 is clear, while each of its minutes
+ * stood at 7.6 to 10.9, all 129 BPM). So a long track whose whole is not
+ * clear is judged a minute at a time, at up to twelve places across it,
+ * and where half of those minutes -- three at least -- agree on the tempo
+ * within 1 %, the grid is that tempo, the middle of theirs, in the phase
+ * of the first of them: Mixxx's constant grid for a set, right in tempo
+ * throughout and in phase from that minute on until the next join moves
+ * it.
+ */
+snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop) {
+	const onsets_t found = onsets(source, rate, stop);
+	const snurra_beat_grid whole = grid_of(found, rate, stop);
+	const double hops_a_second = double(rate) / HOP;
+	const size_t minute = size_t(hops_a_second * 60);
+	constexpr size_t LONG_MINUTES = 8;
+	constexpr size_t PLACES = 12;
+	if (whole.valid() || found.all.size() < minute * LONG_MINUTES) return whole;
+	const size_t step = std::max(minute, (found.all.size() - minute) / (PLACES - 1));
+	struct place_t {
+		size_t from;
+		snurra_beat_grid grid;
+	};
+	std::vector<place_t> clear;
+	size_t looked = 0;
+	for (size_t from = 0; from + minute <= found.all.size(); from += step) {
+		if (stop && stop()) return snurra_beat_grid{};
+		onsets_t part;
+		part.all.assign(found.all.begin() + long(from), found.all.begin() + long(from + minute));
+		part.body.assign(found.body.begin() + long(from), found.body.begin() + long(from + minute));
+		++looked;
+		const snurra_beat_grid grid = grid_of(part, rate, stop);
+		if (grid.valid()) clear.push_back({ from, grid });
+	}
+	if (clear.size() < 3 || clear.size() * 2 < looked) return whole;
+	std::vector<double> periods;
+	for (const place_t &place : clear) periods.push_back(place.grid.period);
+	std::sort(periods.begin(), periods.end());
+	const double middle = periods[periods.size() / 2];
+	std::vector<const place_t *> agreeing;
+	std::vector<double> confidences;
+	for (const place_t &place : clear)
+		if (std::abs(place.grid.period / middle - 1) <= 0.01) {
+			agreeing.push_back(&place);
+			confidences.push_back(place.grid.confidence);
+		}
+	if (agreeing.size() < 3 || agreeing.size() * 2 < looked) return whole;
+	std::sort(confidences.begin(), confidences.end());
+	snurra_beat_grid grid;
+	grid.rate = rate;
+	grid.period = middle;
+	grid.confidence = confidences[confidences.size() / 2];
+	const double first = double(agreeing.front()->from) * HOP + agreeing.front()->grid.first;
+	grid.first = std::fmod(first, grid.period);
 	return grid;
 }
 

@@ -370,7 +370,19 @@ third-party code, so none of the licences above is taken on.
 track's onsets at each candidate, three passes finer; between a tempo
 and its half, the half when the faster grid's lines alternate strong and
 weak in the plain magnitude below 4 kHz (kick and snare, then hats
-alone); no grid when the fold's peak is under 6 times its mean.
+alone); no grid when the fold's peak is under 6 times its mean. **A
+DJ set** (2026-11-13: the holder's 42 minute set got no grid -- the
+whole folded to 3.7, each of its minutes to 7.6 to 10.9, all 129 BPM,
+its phase moving at each join): a track of 8 minutes or more whose whole
+is not clear is judged a minute at a time at up to twelve places, and
+where half of them, three at least, agree within 1 % the grid is their
+middle tempo in the phase of the first -- Mixxx's constant grid for a
+set, right in tempo throughout and in phase from that minute until the
+next join moves it. The set now reads 129.01 BPM (confidence 10.1); a
+made ten minute set at 128 whose beat moves 0.37 at each minute reads
+128 on its first minute's beats, and gets none without the windows
+(whole fold 5.7) (`a_set_whose_phase_moves_has_its_tempo`). Not yet: a
+grid that follows the set's phase from track to track.
 Measured on made signals, a minute each: a bare kick at 120 and a kick,
 snare, hat and chord pattern at 87.5, 128, 140 and 127.3 BPM -- tempo
 within 0.003 BPM, every beat within 2.7 ms of the grid (which sits 1.6
