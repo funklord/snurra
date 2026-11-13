@@ -966,7 +966,17 @@ controls; each tile very compact but resizeable).
   before). `snurra --dj [a b]` opens it, seen in Xvfb -- and at 412 x 915, a
   phone's portrait, the one layout holds: each deck half the width, the
   browser most of the screen, the tempo slider the first control
-  squeezed. **The cue** (every tile, so a window's too): a CDJ's and
+  squeezed. **On a phone it is the app** (2026-11-13): started with no
+  file on Android, snurra opens the DJ player full screen and asks for
+  the phone's music (READ_MEDIA_AUDIO and _VIDEO, declared in
+  `android/AndroidManifest.xml` -- qmake's ANDROID_PERMISSIONS was left
+  out by this kit's deploy -- and READ_EXTERNAL_STORAGE up to Android
+  12), then browses all of shared storage, where downloaded music lies.
+  Seen on the API 36 emulator against the released kit's FFmpeg 9.0, the
+  first time snurra played against 9.0: both prompts, the two tunes put
+  in Download listed, loaded by double-tap onto A and B, A heard through
+  AAudio. Not yet on the holder's phone: the install failed with no
+  reason given and the phone left USB (a Fold3, Android 15). **The cue** (every tile, so a window's too): a CDJ's and
   Traktor's -- paused, the cue button sets it where the track stands;
   playing, it goes back there and stops; marked on the waveform by a
   triangle from the top, kept by a handover (`cue_us`). A deck's level

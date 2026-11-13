@@ -16,6 +16,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef Q_OS_ANDROID
+#include <QtCore/private/qandroidextras_p.h>
+#endif
+
 #include "snurra/clock.h"
 #include "snurra/embed.h"
 #include "snurra/library.h"
@@ -140,8 +144,13 @@ int main(int argc, char *argv[]) {
 	if (parser.isSet(output)) qputenv("SNURRA_OUTPUT", parser.value(output).toLocal8Bit());
 
 	/* The DJ player (embed.h 3), as a window of its own; with files, the
-	 * first two on its decks. */
-	if (parser.isSet(dj)) {
+	 * first two on its decks. On a phone it is the app (the holder,
+	 * 2026-11-13: one static screen, the browser under the decks). */
+	bool as_dj = parser.isSet(dj);
+#ifdef Q_OS_ANDROID
+	as_dj = as_dj || parser.positionalArguments().isEmpty();
+#endif
+	if (as_dj) {
 		snurra_dj *player = new snurra_dj;
 		player->setAttribute(Qt::WA_DeleteOnClose);
 		player->setWindowTitle(QStringLiteral("snurra -- DJ"));
@@ -151,8 +160,26 @@ int main(int argc, char *argv[]) {
 			media.path = QFileInfo(given.at(deck)).absoluteFilePath();
 			player->load(deck, media);
 		}
+#ifdef Q_OS_ANDROID
+		player->showMaximized();
+		/* The music is the phone's shared storage, readable once asked:
+		 * looked through when the answer comes, not before. */
+		/* One at a time: the kit exports the single form only. Audio and
+		 * video from Android 13, all storage before it. */
+		QtAndroidPrivate::requestPermission(QStringLiteral("android.permission.READ_MEDIA_AUDIO"))
+		        .then(player, [player](QtAndroidPrivate::PermissionResult) {
+			        QtAndroidPrivate::requestPermission(QStringLiteral("android.permission.READ_MEDIA_VIDEO"))
+			                .then(player, [player](QtAndroidPrivate::PermissionResult) {
+				                QtAndroidPrivate::requestPermission(QStringLiteral("android.permission.READ_EXTERNAL_STORAGE"))
+				                        .then(player, [player](QtAndroidPrivate::PermissionResult) {
+					                        player->set_browser_folder(QStringLiteral("/storage/emulated/0"));
+				                        });
+			                });
+		        });
+#else
 		player->resize(1000, 700);
 		player->show();
+#endif
 		return app.exec();
 	}
 
