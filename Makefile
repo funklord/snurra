@@ -31,7 +31,20 @@ TEST_TIMEOUT ?= 300
 
 all: $(BIN)
 
-$(BUILD_DIR)/Makefile: snurra.pro snurra.pri
+# fuzznet, vendored for the player's estate (app/fuzznet.pri): fetched when
+# absent, at the commit the gitlink names and no other, shallow -- its
+# history is over a gigabyte and the player needs one tree. A build that
+# cannot fetch it stops and says so, rather than building a player that
+# quietly has no estate.
+FUZZNET_PROBE = fuzznet/local/rpc.c
+$(FUZZNET_PROBE):
+	@command -v git >/dev/null 2>&1 || { echo "snurra: fuzznet/ is empty, and git is not installed to fetch it" >&2; exit 1; }
+	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: fuzznet/ is empty, and this is not a git checkout: put fuzznet at the commit snurra's gitlink names there" >&2; exit 1; }
+	@echo "snurra: fetching fuzznet, the pinned commit only"
+	git submodule update --init --depth 1 fuzznet
+	@test -f $@ || { echo "snurra: fuzznet could not be fetched" >&2; exit 1; }
+
+$(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
 	@# qmake's rules depend on sources alone, so a change to the flags,
@@ -63,7 +76,7 @@ $(BUILD_DIR)/qmake.stamp: $(BUILD_DIR)/includes.list $(BUILD_DIR)/Makefile
 $(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
 	$(MAKE) -C $(BUILD_DIR)
 
-$(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri
+$(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(TEST_BUILD_DIR)
 	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
 	@# As the player's: a test built the old way passes against nothing.
@@ -163,7 +176,8 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 # changes: then the build's objects and staged libraries are cleared, as
 # a kit updated in place carries dates older than what was built from the
 # last one.
-$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
+$(ANDROID_BUILD_DIR)/Makefile: $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
                               $(ANDROID_BUILD_DIR)/includes.list | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
 	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \

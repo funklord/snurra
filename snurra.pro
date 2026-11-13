@@ -11,6 +11,7 @@ QMAKE_CXXFLAGS_RELEASE -= -O2
 QMAKE_CXXFLAGS_RELEASE += -Os
 QMAKE_LFLAGS += -Wl,--gc-sections
 include(snurra.pri)
+include(app/fuzznet.pri)
 SOURCES += src/main.cpp
 # The version, from VERSION, the one place it lives: what --version says.
 SNURRA_VERSION_TEXT = $$cat($$PWD/VERSION)

@@ -1,0 +1,4 @@
+[submodule "fuzznet"]
+	path = fuzznet
+	url = git@github.com:funklord/fuzznet.git
+	shallow = true
