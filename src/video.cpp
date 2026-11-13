@@ -4,6 +4,7 @@
 #include "snurra/subtitles.h"
 
 #include <QFile>
+#include <QTransform>
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/display.h>
 #include <libavutil/pixdesc.h>
 }
 
@@ -36,6 +38,11 @@ const AVRational MICROSECONDS{ 1, 1000000 };
 QSize shown_size(const AVFrame *from) {
 	int width = from->width;
 	int height = from->height;
+	/* Pixels that are not square -- a DVD's 720 wide for 4:3 or 16:9,
+	 * anamorphic releases -- shown at the shape they are meant. */
+	const AVRational aspect = from->sample_aspect_ratio;
+	if (aspect.num > 0 && aspect.den > 0 && aspect.num != aspect.den)
+		width = int(std::lround(double(width) * aspect.num / aspect.den));
 	if (width > WIDEST) {
 		height = int(int64_t(height) * WIDEST / width);
 		width = WIDEST;
@@ -128,12 +135,9 @@ QImage to_rgb(const AVFrame *from) {
 	const double y_zero = full ? 0 : 16;
 	const double c_scale = full ? 1.0 / 255 : 1.0 / 224;
 
-	int width = from->width;
-	int height = from->height;
-	if (width > WIDEST) {
-		height = int(int64_t(height) * WIDEST / width);
-		width = WIDEST;
-	}
+	const QSize shown = shown_size(from);
+	const int width = shown.width();
+	const int height = shown.height();
 	if (width <= 0 || height <= 0) return QImage();
 	QImage image(width, height, QImage::Format_RGB32);
 	auto clamp = [](double v) { return int(std::lround(std::clamp(v, 0.0, 1.0) * 255)); };
@@ -272,6 +276,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 	int64_t origin_us = 0;
 	AVStream *stream = nullptr;
 	std::vector<subtitle_reader> subtitles;
+	int rotation = 0;   /* degrees clockwise the picture is turned to be shown */
 
 	auto opened = [this](bool has_video) {
 		std::function<void(bool)> on_open;
@@ -344,6 +349,16 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		if (!codec || avcodec_parameters_to_context(codec, stream->codecpar) < 0) return false;
 		codec->thread_count = 0;   /* as many as FFmpeg finds useful */
 		if (avcodec_open2(codec, decoder, nullptr) < 0) return false;
+		/* A phone's video, recorded upright, is stored sideways with a
+		 * matrix saying how to turn it; turned here as ffmpeg's own
+		 * player does, by the quarter turn nearest. */
+		if (const AVPacketSideData *matrix = av_packet_side_data_get(stream->codecpar->coded_side_data,
+		                                                              stream->codecpar->nb_coded_side_data,
+		                                                              AV_PKT_DATA_DISPLAYMATRIX);
+		    matrix && matrix->size >= 9 * sizeof(int32_t)) {
+			const double turn = -av_display_rotation_get(reinterpret_cast<const int32_t *>(matrix->data));
+			if (!std::isnan(turn)) rotation = ((int(std::lround(turn / 90)) % 4 + 4) % 4) * 90;
+		}
 		/* The picture's length: its stream's, else the file's. */
 		int64_t length = 0;
 		if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
@@ -355,7 +370,13 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 		const AVRational rate = av_guess_frame_rate(format, stream, nullptr);
 		std::lock_guard<std::mutex> lock(m_mutex);
 		if (rate.num > 0 && rate.den > 0) m_frame_us = av_rescale_q(1, av_inv_q(rate), MICROSECONDS);
-		m_size = QSize(codec->width, codec->height);
+		/* The shape shown: square pixels, turned as the file says. */
+		QSize shown(codec->width, codec->height);
+		const AVRational aspect = av_guess_sample_aspect_ratio(format, stream, nullptr);
+		if (aspect.num > 0 && aspect.den > 0 && aspect.num != aspect.den)
+			shown.setWidth(int(std::lround(double(codec->width) * aspect.num / aspect.den)));
+		if (rotation == 90 || rotation == 270) shown.transpose();
+		m_size = shown;
 		return codec->width > 0 && codec->height > 0;
 	};
 
@@ -473,6 +494,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 
 	auto push = [&](const AVFrame *from, int64_t pts_us) {
 		snurra_video_frame next{ to_rgb(from), pts_us };
+		if (rotation != 0 && !next.image.isNull()) next.image = next.image.transformed(QTransform().rotate(rotation));
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_frames.push_back(std::move(next));
 		m_newest = pts_us;

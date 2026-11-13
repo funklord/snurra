@@ -982,6 +982,12 @@ controls; each tile very compact but resizeable).
   bits, QuickTime Animation and PNG in RGB, a paletted and a grey PNG
   and a GIF (FFmpeg decodes it to BGRA, not its palette) pass the frame
   timing test below; without its case, each of the new layouts fails.
+  Pixels that are not square (a DVD's 720 wide, anamorphic releases)
+  are shown at the shape meant, from the frame's sample aspect ratio
+  (2026-11-13); a clip stored sideways with a display matrix -- phones
+  record upright video so -- is turned by the nearest quarter, the way
+  ffmpeg's own output turns it, which the test reads back as its
+  reference; the drawer takes the shape shown.
   A picture without sound plays (3c54730), as long as its picture: the
   picture's reader says the length (its stream's, else the file's) and
   the deck's stand-in silence is told it, so a 3 s GIF is 3 s and ends

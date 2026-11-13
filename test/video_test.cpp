@@ -48,6 +48,7 @@ private slots:
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
+	void a_picture_is_shown_at_its_meant_shape_and_turn();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -385,6 +386,65 @@ void video_test::a_picture_without_sound_is_not_a_failure() {
 	snurra_tile *nothing = node.add_tile(other);
 	QSignalSpy said(nothing, &snurra_tile::failed);
 	QTRY_COMPARE_WITH_TIMEOUT(said.count(), 1, 5000);
+}
+
+/*
+ * Pixels twice as wide as tall (anamorphic, as DVDs are) are shown twice
+ * as wide; a clip stored sideways with a matrix saying turn it a quarter
+ * (as phones record upright video) is shown turned -- the same way
+ * ffmpeg's own output turns it, read back as the reference.
+ */
+void video_test::a_picture_is_shown_at_its_meant_shape_and_turn() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	auto run = [this](const QStringList &args) {
+		QProcess ffmpeg;
+		ffmpeg.start(m_ffmpeg, QStringList{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y") } << args);
+		return ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0;
+	};
+	const QString left_white = QStringLiteral("nullsrc=s=64x48:r=25:d=1,geq=lum='if(lt(X\\,32)\\,235\\,16)':cb=128:cr=128");
+	QVERIFY(run({ QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), left_white, QStringLiteral("-vf"),
+	              QStringLiteral("setsar=2"), QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-pix_fmt"),
+	              QStringLiteral("yuv420p"), m_dir.filePath(QStringLiteral("wide.mkv")) }));
+	{
+		snurra_video video(m_dir.filePath(QStringLiteral("wide.mkv")));
+		QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+		QCOMPARE(video.size(), QSize(128, 48));
+		snurra_video_frame frame;
+		QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(100000)).valid(), 5000);
+		QCOMPARE(frame.image.size(), QSize(128, 48));
+		QVERIFY(qRed(frame.image.pixel(60, 24)) > 200);   /* white to the middle */
+		QVERIFY(qRed(frame.image.pixel(68, 24)) < 50);
+	}
+
+	QVERIFY(run({ QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), left_white, QStringLiteral("-c:v"),
+	              QStringLiteral("libx264"), QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"),
+	              m_dir.filePath(QStringLiteral("flat.mp4")) }));
+	QVERIFY(run({ QStringLiteral("-display_rotation:v:0"), QStringLiteral("90"), QStringLiteral("-i"),
+	              m_dir.filePath(QStringLiteral("flat.mp4")), QStringLiteral("-c"), QStringLiteral("copy"),
+	              m_dir.filePath(QStringLiteral("turned.mp4")) }));
+	/* ffmpeg turns it on decoding by default: its first frame, grey. */
+	QVERIFY(run({ QStringLiteral("-i"), m_dir.filePath(QStringLiteral("turned.mp4")), QStringLiteral("-frames:v"),
+	              QStringLiteral("1"), QStringLiteral("-f"), QStringLiteral("rawvideo"), QStringLiteral("-pix_fmt"),
+	              QStringLiteral("gray"), m_dir.filePath(QStringLiteral("turned.gray")) }));
+	QFile reference_file(m_dir.filePath(QStringLiteral("turned.gray")));
+	QVERIFY(reference_file.open(QIODevice::ReadOnly));
+	const QByteArray reference = reference_file.readAll();
+	QCOMPARE(reference.size(), 48 * 64);   /* 48 wide, 64 tall: turned */
+
+	snurra_video video(m_dir.filePath(QStringLiteral("turned.mp4")));
+	QTRY_VERIFY_WITH_TIMEOUT(video.opened(), 5000);
+	QCOMPARE(video.size(), QSize(48, 64));
+	snurra_video_frame frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = video.frame_at(0)).valid(), 5000);
+	QCOMPARE(frame.image.size(), QSize(48, 64));
+	int differ = 0;
+	for (int y = 4; y < 64; y += 8)
+		for (int x = 4; x < 48; x += 8) {
+			const bool ours = qRed(frame.image.pixel(x, y)) > 128;
+			const bool theirs = static_cast<unsigned char>(reference[y * 48 + x]) > 128;
+			if (ours != theirs) ++differ;
+		}
+	QCOMPARE(differ, 0);
 }
 
 int run_video_tests(int argc, char **argv) {
