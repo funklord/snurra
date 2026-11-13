@@ -61,8 +61,9 @@ int snurra_key_order(int key);
  * Beat grids worked out before, kept in the user's cache --
  * $SNURRA_CACHE, else the desktop's (~/.cache/snurra) -- in beats.ini: by
  * the file's path and sound track, and good only while its size and time
- * are the same. "No beat" is kept too, and the key with the grid; one
- * kept before keys were is not kept, so it is found again. A grid is
+ * are the same, and the analysis that kept it is this one's. "No beat"
+ * is kept too, and the key with the grid; one an older analysis kept is
+ * not given, so it is found again. A grid is
  * given at `rate`, from whatever rate it was found at. False where none
  * is kept.
  */

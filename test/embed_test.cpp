@@ -11,6 +11,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
 #include <QElapsedTimer>
 #include <QAbstractItemModel>
 #include <QGuiApplication>
@@ -1125,6 +1126,26 @@ void embed_test::a_beat_found_once_is_kept_and_shown() {
 	snurra_beat_grid slower;
 	QVERIFY(snurra_cached_beats(path, -1, 44100, slower));
 	QVERIFY(qAbs(slower.bpm() - first.bpm()) < 1e-6);
+	/* Kept by an older analysis -- before the dotted check, which turned
+	 * 88 into 132 -- it is not given, but found again. */
+	{
+		QSettings ini(qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/beats.ini"), QSettings::IniFormat);
+		int aged = 0;
+		for (const QString &key : ini.allKeys()) {
+			QString value = ini.value(key).toString();
+			const QStringList fields = value.split(QLatin1Char(' '));
+			if (fields.size() > 2 && fields.at(2).startsWith(QLatin1Char('a'))) {
+				QStringList older = fields;
+				older[2] = QStringLiteral("a%1").arg(fields.at(2).mid(1).toInt() - 1);
+				ini.setValue(key, older.join(QLatin1Char(' ')));
+				++aged;
+			}
+		}
+		ini.sync();
+		QVERIFY(aged > 0);
+	}
+	QVERIFY2(!snurra_cached_beats(path, -1, 48000, kept), "a grid an older analysis kept was given");
+	snurra_cache_beats(path, -1, first);
 
 	snurra_library library(dir.path());
 	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);

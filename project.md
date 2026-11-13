@@ -265,7 +265,11 @@ does the same with a tile's playback:
   grids are kept** (`beats.ini` in the user's cache, ~/.cache/snurra, or
   $SNURRA_CACHE -- the suite sets its own, so a run never touches the
   person's): by path and sound track, good while the file's size and time
-  are the same, "no beat" kept too, given at any rate. A deck loaded a
+  are the same, "no beat" kept too, given at any rate; and only while
+  the analysis that kept it is this one's -- an entry carries the
+  analysis's number, raised whenever it would answer differently, so
+  the dotted check reaches a track kept at 88 (an older number is found
+  again, which the test shows by ageing a kept entry). A deck loaded a
   second time has its grid at once (a test kick: 196 ms found, 1 ms
   kept; the 42 minute set took 27 s), and the library's BPM column shows
   what decks have found -- nothing is analysed for the list

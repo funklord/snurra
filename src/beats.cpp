@@ -530,10 +530,17 @@ QString beats_key(const QString &path, int audio_track) {
 	return QString::fromLatin1(QCryptographicHash::hash(what, QCryptographicHash::Sha1).toHex());
 }
 
-/* The file as it is now: its size and time, which a kept grid must match. */
+/* Which analysis kept it: raised whenever the analysis would answer
+ * differently, so what an older one kept is found again rather than
+ * given -- the dotted check (2026-11-13) turned 88 into 132 for tracks
+ * an older snurra had kept at 88. */
+constexpr int ANALYSIS = 3;
+
+/* The file as it is now, and the analysis: its size and time, which a
+ * kept grid must match. */
 QString beats_stamp(const QString &path) {
 	const QFileInfo info(path);
-	return QStringLiteral("%1 %2").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch());
+	return QStringLiteral("%1 %2 a%3").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch()).arg(ANALYSIS);
 }
 
 }   // namespace
@@ -570,17 +577,17 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 	if (!QFileInfo(path).isFile()) return false;
 	QSettings kept(beats_file(), QSettings::IniFormat);
 	const QStringList value = kept.value(beats_key(path, audio_track)).toString().split(QLatin1Char(' '));
-	/* size time period first confidence rate key fit */
-	if (value.size() != 8 || value.at(0) + QLatin1Char(' ') + value.at(1) != beats_stamp(path)) return false;
-	const int found_at = value.at(5).toInt();
+	/* size time analysis period first confidence rate key fit */
+	if (value.size() != 9 || QStringList(value.mid(0, 3)).join(QLatin1Char(' ')) != beats_stamp(path)) return false;
+	const int found_at = value.at(6).toInt();
 	if (found_at <= 0) return false;
 	const double scale = double(rate) / found_at;
-	grid.period = value.at(2).toDouble() * scale;
-	grid.first = value.at(3).toDouble() * scale;
-	grid.confidence = value.at(4).toDouble();
+	grid.period = value.at(3).toDouble() * scale;
+	grid.first = value.at(4).toDouble() * scale;
+	grid.confidence = value.at(5).toDouble();
 	grid.rate = rate;
-	grid.key = std::clamp(value.at(6).toInt(), -1, 23);
-	grid.key_fit = value.at(7).toDouble();
+	grid.key = std::clamp(value.at(7).toInt(), -1, 23);
+	grid.key_fit = value.at(8).toDouble();
 	return true;
 }
 
