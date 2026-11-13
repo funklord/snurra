@@ -95,10 +95,10 @@ bool tiles_join_by_drop() {
  * same layout on an opaque window. $SNURRA_LAYOUT (--layout) decides it
  * outright: `drawers` or `square`.
  */
-static bool look_with_drawers() {
-	const QByteArray asked = qgetenv("SNURRA_LAYOUT");
-	if (asked == "square") return false;
-	if (asked == "drawers") return true;
+/* Whether the window can be seen through: a compositor draws what is
+ * behind it -- Wayland always, X11 when one holds its selection. */
+static bool see_through() {
+	if (qgetenv("SNURRA_LAYOUT") == "drawers") return true;
 	const QString platform = QGuiApplication::platformName();
 	if (platform == QLatin1String("wayland")) return true;
 #if SNURRA_XCB
@@ -121,9 +121,25 @@ static bool look_with_drawers() {
 	return false;
 }
 
+/*
+ * The normal look, everywhere a window can have a shape: seen through
+ * where a compositor draws behind it, and cut to the tiles and their open
+ * drawers (reshape) either way -- X11's shape needs no compositor. Square
+ * only when asked, or where nothing can say (offscreen). The holder,
+ * 2026-11-13: "we should not have a large square window around the
+ * players", on X11 with no compositor, where it had been square.
+ */
+static bool look_with_drawers() {
+	const QByteArray asked = qgetenv("SNURRA_LAYOUT");
+	if (asked == "square") return false;
+	if (asked == "drawers") return true;
+	const QString platform = QGuiApplication::platformName();
+	return platform == QLatin1String("wayland") || platform == QLatin1String("xcb");
+}
+
 snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	m_drawers_look = look_with_drawers();
-	if (m_drawers_look) setAttribute(Qt::WA_TranslucentBackground);
+	if (m_drawers_look && see_through()) setAttribute(Qt::WA_TranslucentBackground);
 	qInfo("snurra: the %s look", m_drawers_look ? "drawers" : "square");
 	m_engine = new snurra_engine(this);
 	connect(m_engine, &snurra_engine::idle, this, &snurra_node::leave_if_empty);
@@ -321,6 +337,7 @@ void snurra_node::place_tiles() {
 		if (m_tiles.size() > 1) title += QStringLiteral(" +%1").arg(m_tiles.size() - 1);
 	}
 	setWindowTitle(title);
+	reshape();
 }
 
 /* The window as tall as what is open: a drawer opened adds its height, a
@@ -341,6 +358,42 @@ void snurra_node::fit_to_drawers() {
 		resize(qMax(width(), minimumSizeHint().width()), sizeHint().height());
 		layout()->activate();
 		if (anchor && isWindow() && isVisible()) move(pos() - (anchor->mapTo(this, QPoint()) - before));
+		reshape();
+	});
+}
+
+void snurra_node::resizeEvent(QResizeEvent *event) {
+	QWidget::resizeEvent(event);
+	reshape();
+}
+
+/*
+ * The window cut to what it holds (the normal look): each tile and its
+ * open drawers, with the 2 pixels round them -- so the frame between two
+ * tiles is still there to move the window by -- the corner's size grip,
+ * and a drop's hint while one shows. After the layout has settled.
+ */
+void snurra_node::reshape() {
+	if (!m_drawers_look || m_shape_queued) return;
+	m_shape_queued = true;
+	QTimer::singleShot(0, this, [this] {
+		m_shape_queued = false;
+		if (m_tiles.isEmpty()) {
+			clearMask();
+			return;
+		}
+		QRegion shape;
+		auto add = [&shape](const QWidget *part) {
+			if (part && part->isVisible()) shape += part->geometry().adjusted(-2, -2, 2, 2);
+		};
+		for (snurra_tile *tile : m_tiles) {
+			add(tile);
+			add(tile->drawer_above());
+			add(tile->drawer_below());
+		}
+		add(findChild<QSizeGrip *>());
+		add(m_drop_hint);
+		setMask(shape);
 	});
 }
 
@@ -1201,6 +1254,7 @@ snurra_wire::side_t snurra_node::side_at(const QPoint &local) const {
 void snurra_node::hint_drop(bool show, snurra_wire::side_t side, snurra_tile *over) {
 	if (!show) {
 		m_drop_hint->hide();
+		reshape();
 		return;
 	}
 	/* Over a tile, an outline round it: that one is what goes. */
@@ -1209,6 +1263,7 @@ void snurra_node::hint_drop(bool show, snurra_wire::side_t side, snurra_tile *ov
 		m_drop_hint->setGeometry(over->geometry());
 		m_drop_hint->raise();
 		m_drop_hint->show();
+		reshape();
 		return;
 	}
 	m_drop_hint->setStyleSheet(QStringLiteral("background: palette(highlight);"));
@@ -1217,6 +1272,7 @@ void snurra_node::hint_drop(bool show, snurra_wire::side_t side, snurra_tile *ov
 	                                                    : QRect(0, height() - thick, width(), thick));
 	m_drop_hint->raise();
 	m_drop_hint->show();
+	reshape();
 }
 
 /* The index of one of this process's own tiles in a drag of it, or -1. */

@@ -101,6 +101,7 @@ protected:
 	void dragLeaveEvent(QDragLeaveEvent *event) override;
 	void dropEvent(QDropEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
+	void resizeEvent(QResizeEvent *event) override;
 	/* mplayer's keys, on the tile last touched (src/node.cpp). */
 	void keyPressEvent(QKeyEvent *event) override;
 
@@ -134,6 +135,7 @@ private:
 	void drop_tile(snurra_tile *tile);
 	void place_tiles();
 	void fit_to_drawers();
+	void reshape();
 	void ask_where();
 	void handle_moved(snurra_tile *tile, const QPoint &global);
 	void handle_released(snurra_tile *tile, const QPoint &global);
@@ -180,6 +182,7 @@ private:
 
 	bool m_drawers_look = false;
 	bool m_fitting = false;   /* a re-fit is queued */
+	bool m_shape_queued = false;
 	QString m_path;
 	QLocalServer *m_server = nullptr;
 	QGridLayout *m_grid = nullptr;

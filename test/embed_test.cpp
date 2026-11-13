@@ -252,6 +252,31 @@ void embed_test::the_look_is_drawers_or_square_as_asked() {
 		QVERIFY(node.drawers_look());
 		QVERIFY(node.testAttribute(Qt::WA_TranslucentBackground));
 	}
+	/* Cut to what it holds (the holder, 2026-11-13: no large square
+	 * window): A with its controls drawer open, B beside it with none --
+	 * the corner under B, beside A's drawer, is not the window's; the
+	 * frame between A and B is, to move the window by. */
+	{
+		snurra_node node;
+		snurra_tile_state a = placed(QStringLiteral("a"), 0, 0);
+		a.controls = true;
+		snurra_tile *first = node.add_tile(a);
+		snurra_tile *second = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+		node.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&node));
+		QWidget *drawer = first->drawer_below();
+		QVERIFY(drawer && drawer->isVisible());
+		QTRY_VERIFY_WITH_TIMEOUT(!node.mask().isEmpty(), 2000);
+		QTest::qWait(50);
+		const QRegion shape = node.mask();
+		QVERIFY(shape.contains(first->geometry().center()));
+		QVERIFY(shape.contains(second->geometry().center()));
+		QVERIFY(shape.contains(drawer->geometry().center()));
+		const QPoint between((first->geometry().right() + second->geometry().left()) / 2, first->geometry().center().y());
+		QVERIFY2(shape.contains(between), "the frame between the tiles is cut away");
+		const QPoint corner(second->geometry().center().x(), drawer->geometry().center().y());
+		QVERIFY2(!shape.contains(corner), "the empty corner under B is still the window's");
+	}
 	qputenv("SNURRA_LAYOUT", "square");
 	{
 		snurra_node node;

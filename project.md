@@ -1054,11 +1054,19 @@ controls; each tile very compact but resizeable).
   each lane three grid rows -- upward drawers, tiles, downward drawers --
   and re-fits its height (never its width, which a person may have set)
   as a drawer opens or closes; a tile alone, embedded, keeps its drawers
-  in itself. The look: `drawers` makes the window transparent around its
-  tiles and open drawers; `square` paints the same layout opaque; by
-  default `drawers` on Wayland and on X11 with a compositor (the owner of
-  `_NET_WM_CM_S0`, asked through xcb), `square` everywhere else,
-  offscreen included; `--layout` / $SNURRA_LAYOUT decides outright.
+  in itself. The look: `drawers` makes the window the shape of its tiles and
+  open drawers; `square` paints the same layout opaque; `drawers` by
+  default on Wayland and X11, `square` offscreen; `--layout` /
+  $SNURRA_LAYOUT decides outright. Since 2026-11-13 (the holder: "we
+  should not have a large square window around the players", on X11
+  with no compositor, where the look had been square) the window is cut
+  to each tile and open drawer, 2 px round them so the frame between
+  tiles still moves it, and the corner grip (`reshape`, a window mask:
+  X11's shape needs no compositor); seen through as well only where a
+  compositor draws behind it (Wayland, or X11's `_NET_WM_CM_S0` owned).
+  Seen in a bare Xvfb: A with its controls out beside B, and nothing in
+  the corner under B. The shape also leaves the empty corners' clicks to
+  what is behind.
   Measured offscreen (`a_drawer_adds_room_and_leaves_every_waveform_as_
   it_was`): A beside B, C below; A's controls out, all three waveforms
   keep their height, A's and B's tops stay level, the drawer sits flush
