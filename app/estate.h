@@ -76,6 +76,11 @@ public:
 
 	/* How many times the fetch was moved, for tests. */
 	int wants_asked() const { return m_wants.load(); }
+	/* The node's words for the last call that failed; empty after one
+	 * that did not. */
+	QString last_error();
+	/* Whether opening it began this node's fetch: held nowhere here. */
+	bool begun() const { return m_begun; }
 
 private:
 	std::mutex m_lock;   /* the call and its reply: one request at a time */
@@ -86,6 +91,8 @@ private:
 	std::atomic<int64_t> m_playable{ 0 };
 	std::atomic<bool> m_complete{ false };
 	int64_t m_wanted = -1;
+	QString m_error;
+	bool m_begun = false;
 	std::atomic<int> m_wants{ 0 };
 	void took(const fzn_rpc_library_play_resp_t &reply);
 };

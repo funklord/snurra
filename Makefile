@@ -110,6 +110,10 @@ test: $(BIN) tests-build fuzznetd
 	@[ -x $(TEST_BIN) ] || { echo "test: no test binary at $(TEST_BIN)" >&2; exit 1; }
 	@[ -x $(FUZZNETD) ] || { echo "test: no fuzznetd at $(FUZZNETD)" >&2; exit 1; }
 	SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
+	@# Two of one user's hosts, a file played from the one that has only
+	@# its name as it arrives from the other: 2 s, bounded inside by
+	@# fuzznet's own scenario deadline, and outside here.
+	timeout -k 10 $(TEST_TIMEOUT) python3 test/estate_two_hosts.py $(FUZZNETD) ./$(TEST_BIN)
 
 # --- install -----------------------------------------------------------------
 # The player and its desktop entry, so a file manager offers snurra for

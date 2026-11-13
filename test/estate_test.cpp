@@ -58,6 +58,7 @@ private slots:
 	void a_catalogued_file_is_listed_and_played_from_the_node();
 	void no_node_says_so_and_lists_nothing();
 	void the_library_lists_the_estate_beside_the_folder();
+	void a_file_on_another_host_plays_as_it_arrives();
 
 private:
 	/* A WAV stored on the node and catalogued as `title`: its root. */
@@ -68,6 +69,13 @@ private:
 };
 
 void estate_test::initTestCase() {
+	/* Under test/estate_two_hosts.py: its B, already running, and no node
+	 * of our own. */
+	if (!qEnvironmentVariable("SNURRA_ESTATE_ROOT").isEmpty()) {
+		m_socket = qEnvironmentVariable("SNURRA_FUZZNET_SOCKET");
+		QVERIFY2(!m_socket.isEmpty(), "two hosts, and no socket for B");
+		return;
+	}
 	const QString daemon = qEnvironmentVariable("SNURRA_FUZZNETD");
 	if (daemon.isEmpty() || !QFileInfo(daemon).isExecutable())
 		QSKIP("no fuzznetd: `make test` builds one from the vendored fuzznet and names it in $SNURRA_FUZZNETD");
@@ -304,6 +312,66 @@ void estate_test::the_library_lists_the_estate_beside_the_folder() {
 	for (int row = 0; row < model->rowCount(); ++row)
 		if (model->index(row, 0).data().toString() == QLatin1String("Tone L")) ++tones;
 	QCOMPARE(tones, 1);
+}
+
+/*
+ * A file another of the user's hosts holds (test/estate_two_hosts.py: A
+ * holds it, B -- the node at $SNURRA_FUZZNET_SOCKET -- has only its name and
+ * reference): not here at first; played, B's fetch is moved to where the
+ * reader is, and what plays is every frame of the file itself, opened by
+ * path where A was given it; sought ahead into what may not have arrived,
+ * it waits and goes on from the very frame. Only when the script runs it.
+ */
+void estate_test::a_file_on_another_host_plays_as_it_arrives() {
+	const QString root_hex = qEnvironmentVariable("SNURRA_ESTATE_ROOT");
+	const QString original = qEnvironmentVariable("SNURRA_ESTATE_FILE");
+	if (root_hex.isEmpty() || original.isEmpty()) QSKIP("two hosts: run by test/estate_two_hosts.py");
+	uint8_t root[32];
+	QVERIFY(snurra_estate_root(QStringLiteral("fuzznet:") + root_hex, root));
+	auto bytes = std::make_shared<snurra_estate_bytes>(root);
+	qInfo("on B at first: fetch begun %d, size %lld, whole here %d, the node said: %s", int(bytes->begun()),
+	      (long long)bytes->size(), int(bytes->has(0, std::max<int64_t>(1, bytes->size()))), qPrintable(bytes->last_error()));
+	QVERIFY2(bytes->begun(), "B held the file already: nothing would arrive");
+	QElapsedTimer took;
+	took.start();
+	std::unique_ptr<snurra_source> arriving = snurra_open_source(bytes, QStringLiteral("song.wav"), RATE, nullptr);
+	QVERIFY2(arriving, "not opened from B");
+	std::unique_ptr<snurra_source> local = snurra_open_source(original, RATE, RATE);
+	QVERIFY(local && local->length() > 0);
+	/* Ahead first, into the middle: it waits there for the bytes. */
+	const int64_t middle = local->length() / 2;
+	arriving->seek(middle);
+	local->seek(middle);
+	std::vector<float> theirs(2 * 256), ours(2 * 256);
+	int got = 0;
+	while (got == 0 && took.elapsed() < 60000) {
+		got = arriving->read(theirs.data(), 256);
+		if (got == 0) QTest::qWait(20);
+	}
+	QCOMPARE(got, local->read(ours.data(), 256));
+	QVERIFY2(theirs == ours, "the frames from the middle differ");
+	qInfo("the middle, from B, after %lld ms; the fetch moved %d time(s)", (long long)took.elapsed(), bytes->wants_asked());
+	/* Then the whole, from the start, frame for frame. */
+	arriving->seek(0);
+	local->seek(0);
+	int64_t frames = 0;
+	std::vector<float> a(2 * 4096), b(2 * 4096);
+	while (took.elapsed() < 120000) {
+		const int n = arriving->read(a.data(), 4096);
+		if (n == 0 && !arriving->at_end()) {
+			QTest::qWait(10);
+			continue;
+		}
+		const int m = local->read(b.data(), n > 0 ? n : 4096);
+		QCOMPARE(n > 0 ? n : 0, m > 0 ? m : 0);
+		if (n <= 0) break;
+		QVERIFY2(std::equal(a.begin(), a.begin() + 2 * n, b.begin()), qPrintable(QStringLiteral("frames from %1 differ").arg(frames)));
+		frames += n;
+	}
+	qInfo("played %lld frames from B in %lld ms, every one the file's own; the fetch moved %d time(s)", (long long)frames,
+	      (long long)took.elapsed(), bytes->wants_asked());
+	QCOMPARE(frames, local->length());
+	QVERIFY2(bytes->wants_asked() >= 1, "B's fetch was never moved to the reader");
 }
 
 int run_estate_tests(int argc, char **argv) {

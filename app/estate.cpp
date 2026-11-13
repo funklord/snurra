@@ -66,7 +66,31 @@ snurra_estate_bytes::snurra_estate_bytes(const uint8_t root[FZN_RPC_BLOB_HASH_LE
 	/* The size, and how much is here, from a one-byte read: the status
 	 * probe the node's own description names. */
 	std::lock_guard<std::mutex> hold(m_lock);
-	if (fzn_rpc_library_play(&m_call, m_root, 0, 1, m_reply.get()) == FZN_RPC_OK) took(*m_reply);
+	if (fzn_rpc_library_play(&m_call, m_root, 0, 1, m_reply.get()) == FZN_RPC_OK) {
+		took(*m_reply);
+		return;
+	}
+	/* Not known here: a file another host holds, which this node reads only
+	 * once a fetch has begun -- "never heard of it" and "none of it yet" are
+	 * fuzznet's two answers. Opened to be played, it is begun, from the
+	 * start; the reader moves it where it seeks (want). Measured
+	 * 2026-11-14 with two hosts: a node holding the file's reference and
+	 * its name answered "not in the library" until then. */
+	m_error = QString::fromUtf8(m_call.error);
+	if (fzn_rpc_blob_fetch_at(&m_call, m_root, 0) != FZN_RPC_OK) {
+		m_error = QString::fromUtf8(m_call.error);
+		return;
+	}
+	m_begun = true;
+	if (fzn_rpc_library_play(&m_call, m_root, 0, 1, m_reply.get()) == FZN_RPC_OK) {
+		took(*m_reply);
+		m_error.clear();
+	}
+}
+
+QString snurra_estate_bytes::last_error() {
+	std::lock_guard<std::mutex> hold(m_lock);
+	return m_error;
 }
 
 void snurra_estate_bytes::took(const fzn_rpc_library_play_resp_t &reply) {
@@ -81,7 +105,11 @@ int64_t snurra_estate_bytes::read(int64_t offset, uint8_t *out, int64_t n) {
 	if (size >= 0 && offset >= size) return -1;
 	std::lock_guard<std::mutex> hold(m_lock);
 	const uint16_t want = uint16_t(std::min<int64_t>(n, FZN_RPC_LIBRARY_PLAY_MAX_SLICE));
-	if (fzn_rpc_library_play(&m_call, m_root, uint64_t(offset), want, m_reply.get()) != FZN_RPC_OK) return 0;
+	if (fzn_rpc_library_play(&m_call, m_root, uint64_t(offset), want, m_reply.get()) != FZN_RPC_OK) {
+		m_error = QString::fromUtf8(m_call.error);
+		return 0;
+	}
+	m_error.clear();
 	took(*m_reply);
 	if (m_reply->underrun) return 0;        /* not here yet */
 	if (m_reply->data_len == 0) return -1;  /* past the end */

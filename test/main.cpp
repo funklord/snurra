@@ -39,6 +39,9 @@ int main(int argc, char **argv) {
 	QTemporaryDir cache;
 	qputenv("SNURRA_CACHE", cache.path().toLocal8Bit());
 	QApplication app(argc, argv);
+	/* One class alone, for a script that runs one test of it
+	 * (test/estate_two_hosts.py): the others would fail its name. */
+	if (qEnvironmentVariable("SNURRA_TEST_CLASS") == QLatin1String("estate")) return run_estate_tests(argc, argv);
 	const int handover = run_handover_tests(argc, argv);
 	const int codec = run_codec_tests(argc, argv);
 	const int deck = run_deck_tests(argc, argv);

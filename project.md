@@ -160,8 +160,25 @@ and everything above it knows nothing of SFTP or fuzznet.
       a scheme -- `fuzznet:`, `tone:` -- is now given to a tile as it is
       (`snurra_source_of`): made absolute, it had become a file under
       the current folder.
-    - Next: a file still arriving from a second host, and Android, where
-      the node lives in another app's sandbox.
+    - **A file still arriving from another host**
+      (`test/estate_two_hosts.py`, run by `make test`, 2 s): two of one
+      user's hosts over loopback, made by fuzznet's own scenario helpers
+      at the pin; A puts a 10 s WAV and catalogues it, B lists the name
+      and holds the reference and none of the bytes; snurra plays it
+      from B. Found on the way: **a node answers a play of a file it has
+      never fetched with "not in the library"** -- though its catalogue
+      lists it -- since fuzznet tells "never heard of it" from "none of
+      it yet" and a play reads this node's store. So opening a file to
+      play it begins the fetch, from the start, when the first probe
+      says so (`snurra_estate_bytes::begun`); the reader moves it where
+      it seeks. Measured: sought to the middle first, it played from
+      there after 271 ms, the fetch moved once; then all 480000 frames,
+      each the file's own as A was given it. With `want` doing nothing
+      the check that the fetch was moved fails -- but over loopback the
+      fetch from the start reached the middle as soon anyway (355 ms),
+      so this shows the fetch is asked to move, not that it then plays
+      sooner; that wants a slow or lossy link (fuzznet's faults build).
+    - Next: Android, where the node lives in another app's sandbox.
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
