@@ -76,7 +76,7 @@ public:
 	 * and the group moves every lane at once. Alone, or embedded, the tile
 	 * does them itself.
 	 */
-	void set_grouped(bool grouped) { m_grouped = grouped; }
+	void set_grouped(bool grouped);
 	void request_playing(bool playing);
 	/* Plays `frame` from the moment `at_us` on the shared clock, any fade
 	 * done with; or holds at `frame`, paused. */
@@ -120,6 +120,13 @@ public:
 	void set_key_lock(bool on);
 	/* The key moved on its own, in semitones (deck.h); its dial follows. */
 	void set_key_shift(int semitones);
+	/* A beat loop of the jump's step from the beat just played (a DJ's),
+	 * on its own only -- in a window a seek is the group's; off, it plays
+	 * on. Its bounds in track frames while on. */
+	void set_loop(bool on);
+	bool looping() const { return m_looping; }
+	int64_t loop_from() const { return m_loop_from; }
+	int64_t loop_to() const { return m_loop_to; }
 	bool key_lock() const { return m_state.key_lock; }
 
 	/* Sync (project.md sec 4): asks the window to match this tile's beat to
@@ -301,6 +308,12 @@ private:
 	QLabel *m_beat_label = nullptr;
 	class QDial *m_key_shift = nullptr;
 	class QToolButton *m_key_sync = nullptr;
+	class QToolButton *m_loop = nullptr;
+	bool m_looping = false;
+	int64_t m_loop_from = 0;
+	int64_t m_loop_to = 0;
+	qint64 m_loop_switch_us = INT64_MIN;
+	void keep_loop();
 	void show_beat();
 	int key_shift() const;
 	QToolButton *m_key_lock = nullptr;

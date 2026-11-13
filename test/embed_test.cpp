@@ -71,6 +71,7 @@ private slots:
 	void the_library_finds_tempos_only_when_asked();
 	void the_library_shows_each_tunes_key();
 	void a_tile_says_its_beat_and_key_as_heard();
+	void a_beat_loop_plays_its_bars_again_seamlessly();
 	void key_sync_moves_a_tile_into_the_leaders_key();
 	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
@@ -1214,6 +1215,77 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	QTest::mouseDClick(knob, Qt::LeftButton);
 	QCOMPARE(tile->state().key_shift, 0);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
+}
+
+/*
+ * A beat loop (a DJ's): on a deck playing at 240 BPM, 4 bars are 4 s.
+ * Looped from the beat just played, it never passes the loop's end, goes
+ * round at least twice in 10 s, and stands where an unbroken count round
+ * the loop says -- each way back seamless, as the jumps are. Off, it
+ * plays on past the end. In a window it is not offered.
+ */
+void embed_test::a_beat_loop_plays_its_bars_again_seamlessly() {
+	QTemporaryDir dir;
+	QFile file(dir.filePath(QStringLiteral("deck.wav")));
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav_of(48000 * 40, [](int) { return 1000; }));
+	file.close();
+	snurra_dj dj;
+	snurra_media media;
+	media.path = file.fileName();
+	QVERIFY(dj.load(0, media));
+	dj.show();
+	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(deck);
+	QTRY_VERIFY_WITH_TIMEOUT(deck->deck()->length() > 0, 3000);
+	deck->set_playing(true);
+	QTest::qWait(1500);   /* its own analysis done: no beat, which would undo ours */
+	deck->set_beats(snurra_beat_grid{ 12000, 0, 10, 48000 });
+	const int rate = deck->deck()->rate();
+	const qint64 in_us = snurra_clock_us();
+	const int64_t in = deck->deck()->position_at(in_us);
+	deck->set_loop(true);
+	QVERIFY(deck->looping());
+	const int64_t from = in / 12000 * 12000;
+	QCOMPARE(deck->loop_from(), from);
+	QCOMPARE(deck->loop_to(), from + 192000);
+	int64_t lowest = INT64_MAX, highest = 0;
+	int rounds = 0;
+	qint64 counted_at = -2000;
+	int64_t last = in;
+	QElapsedTimer looped;
+	looped.start();
+	while (looped.elapsed() < 10000) {
+		QTest::qWait(20);
+		const int64_t at = deck->frame_now();
+		lowest = std::min(lowest, at);
+		highest = std::max(highest, at);
+		/* Once a pass: a seek asked shows its target until the deck takes
+		 * it, then the old place until it is heard (deck.h), so the way
+		 * back can read twice in a moment. */
+		if (at < last - 96000 && looped.elapsed() - counted_at > 1000) {
+			++rounds;
+			counted_at = looped.elapsed();
+		}
+		last = at;
+	}
+	const qint64 out_us = snurra_clock_us();
+	const int64_t at = deck->deck()->position_at(out_us);
+	const int64_t counted = from + (in - from + snurra_us_to_frames(out_us - in_us, rate)) % 192000;
+	const double off_ms = double(at - counted) * 1000 / rate;
+	qInfo("looped %d times, between %lld and %lld of [%lld, %lld); %.1f ms off the count", rounds, (long long)lowest,
+	      (long long)highest, (long long)from, (long long)(from + 192000), off_ms);
+	QVERIFY(rounds >= 2 && rounds <= 3);
+	QVERIFY2(highest < from + 192000 + 480, qPrintable(QString::number(highest - from - 192000)));
+	QVERIFY(lowest >= from);
+	QVERIFY2(std::abs(off_ms) < 5, qPrintable(QStringLiteral("%1 ms off").arg(off_ms)));
+	deck->set_loop(false);
+	QTRY_VERIFY_WITH_TIMEOUT(deck->frame_now() > from + 192000 + 4800, 6000);
+
+	snurra_node node;
+	snurra_tile *windowed = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	windowed->set_loop(true);
+	QVERIFY(!windowed->looping());
 }
 
 /*

@@ -1309,6 +1309,26 @@ controls; each tile very compact but resizeable).
   within 0.22 dB in each (`key_lock_keeps_the_pitch_as_the_tempo_moves`).
   The resampler stepping a frame at a time instead leaves the pitch at
   440 and fails it. The tile's key reads as heard, shift and all.
+  **A beat loop** (2026-11-13, Traktor's loop, by the position: "loop"):
+  the jump's step -- 4 bars with a beat -- from the beat at or before
+  where it is heard, shown as a band on the waveform; again, it plays
+  on. Each way back is asked of the deck for the moment the loop's end
+  will be heard, the old place on until then (`start_at`), once a pass
+  when that moment is within a seek's lead and a tick; asked late, it
+  lands as far past the start as it was past the end, so the beat
+  holds. A tile on its own only, as a DJ player's deck: in a window a
+  seek is the group's and would move every lane, so the button is off
+  there. Measured at 240 BPM (4 bars, 4 s) over 10 s: never past the
+  end, twice round, 0.0 ms off an unbroken count round the loop
+  (`a_beat_loop_plays_its_bars_again_seamlessly`); switched a lead
+  early instead, it plays from before the start and fails -- the count
+  alone still agreed, the phase being kept, so the test checks the
+  bounds too. **Open, a deck's report of a seek's place**: asked and
+  not yet taken, the target is reported held (so a second jump goes on
+  from the first); taken, the old place is reported until the switch
+  is heard -- so for some 100 ms before a jump or a loop's way back the
+  time shown can read the target, the old place, then the target.
+  Heard right; shown flickering.
   **Key sync** beside the knob ("in key", Traktor's): the shift that
   puts this tile's key on the leader's Camelot number -- relative major
   and minor being one, as they mix -- the smallest way, the tempo's own

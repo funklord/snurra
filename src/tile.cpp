@@ -97,6 +97,13 @@ public:
 		update();
 	}
 
+	/* A loop, as fractions of the track; from >= to for none: a band. */
+	void set_loop(double from, double to) {
+		m_loop_from = from;
+		m_loop_to = to;
+		update();
+	}
+
 	void set_beats(double first, double period) {
 		m_beat_first = first;
 		m_beat_period = period;
@@ -156,6 +163,12 @@ protected:
 				const int x = int(at * width());
 				if (x > 0) painter.drawLine(x, height() - reach, x, height());
 			}
+		}
+		if (m_loop_to > m_loop_from) {
+			QPainter painter(this);
+			QColor band(0x40, 0xc0, 0x60);
+			band.setAlpha(70);
+			painter.fillRect(QRectF(m_loop_from * width(), 0, (m_loop_to - m_loop_from) * width(), height()), band);
 		}
 		if (m_cue_at >= 0) {
 			QPainter painter(this);
@@ -365,6 +378,8 @@ private:
 	QList<QPointF> m_envelope;
 	QString m_note;
 	double m_cue_at = -1;
+	double m_loop_from = 0;
+	double m_loop_to = 0;
 	QList<double> m_chapter_starts;
 	bool m_shifting = false;   /* a Ctrl drag moving the lane */
 	double m_shift_x = 0;      /* where it began, in pixels */
@@ -796,6 +811,16 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	 * the buttons' row, with a beat ("4 bars"), a phone's deck gave the
 	 * jumps 44 of the 53 they ask. */
 	where->addWidget(m_shape);
+	/* A loop of the jump's step, a DJ's beat loop: a tile on its own,
+	 * as a DJ player's deck -- in a window a seek is the group's. */
+	m_loop = new QToolButton(m_controls);
+	m_loop->setObjectName(QStringLiteral("snurra-loop"));
+	m_loop->setAutoRaise(true);
+	m_loop->setCheckable(true);
+	m_loop->setText(tr("loop"));
+	m_loop->setAccessibleName(tr("Loop"));
+	m_loop->setToolTip(tr("Loop the jump's step from the beat just played; again, play on"));
+	where->addWidget(m_loop);
 	strip->addLayout(where);
 	m_level = new QSlider(Qt::Horizontal, m_controls);
 	m_level->setAccessibleName(tr("Level"));
@@ -938,6 +963,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	connect(m_key_sync, &QToolButton::clicked, this, &snurra_tile::request_key_sync);
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_cue, &QToolButton::clicked, this, &snurra_tile::cue);
+	connect(m_loop, &QToolButton::toggled, this, &snurra_tile::set_loop);
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
 		m_deck->set_level(float(level) / 100);
@@ -1491,6 +1517,61 @@ void snurra_tile::cue() {
 	show_cue();
 }
 
+/*
+ * A beat loop (a DJ's): from the beat at or before where it is heard --
+ * where it is, with no beat -- the jump's step long. Kept by keep_loop
+ * each tick. Only on its own, as a DJ player's deck: in a window a seek
+ * is the group's, and a loop there would move every lane.
+ */
+void snurra_tile::set_loop(bool on) {
+	m_looping = on && !m_grouped && m_owner;
+	if (m_looping) {
+		const int64_t frame = frame_now();
+		int64_t from = frame;
+		if (m_grid.valid()) from = int64_t(std::llround(m_grid.first + std::floor((double(frame) - m_grid.first) / m_grid.period) * m_grid.period));
+		m_loop_from = std::max<int64_t>(0, from);
+		m_loop_to = m_loop_from + us_to_frames(jump_us(false), m_deck->rate());
+		if (length_frames() > 0) m_loop_to = std::min(m_loop_to, length_frames());
+		m_loop_switch_us = INT64_MIN;
+	}
+	m_loop->blockSignals(true);
+	m_loop->setChecked(m_looping);
+	m_loop->blockSignals(false);
+	const double length = double(length_frames());
+	if (m_looping && length > 0) m_waveform->set_loop(double(m_loop_from) / length, double(m_loop_to) / length);
+	else m_waveform->set_loop(0, 0);
+}
+
+/*
+ * The way back to the loop's start, asked of the deck for the moment its
+ * end will be heard -- the old place on until then, the start from then
+ * (start_at), so it is seamless -- once each pass, when that moment is
+ * within a seek's lead and a tick. Asked late, it goes back as far past
+ * the start as it was past the end, so the beat holds.
+ */
+void snurra_tile::set_grouped(bool grouped) {
+	m_grouped = grouped;
+	if (m_loop) m_loop->setEnabled(!grouped);
+	if (grouped && m_looping) set_loop(false);
+}
+
+void snurra_tile::keep_loop() {
+	if (!m_looping || !m_state.playing || !m_owner) return;
+	const qint64 now = snurra_clock_us();
+	if (now < m_loop_switch_us + 10000) return;   /* this pass's is asked */
+	const int64_t frame = m_deck->position_at(now);
+	if (frame < m_loop_from || frame >= m_loop_to) return;
+	const double tempo = double(m_deck->tempo());
+	const qint64 until_end = qint64(double(frames_to_us(m_loop_to - frame, m_deck->rate())) / tempo);
+	const qint64 lead = m_owner->latency_us() + 50000;
+	constexpr qint64 TICK = 100000;
+	if (until_end > lead + TICK + 20000) return;
+	const qint64 at = now + std::max(until_end, lead);
+	const int64_t past = int64_t(std::llround(double(us_to_frames(at - now - until_end, m_deck->rate())) * tempo));
+	m_deck->start_at(m_loop_from + past % std::max<int64_t>(1, m_loop_to - m_loop_from), at);
+	m_loop_switch_us = at;
+}
+
 int snurra_tile::chapter_at(qint64 us) const {
 	int found = -1;
 	for (size_t i = 0; i < m_chapters.size(); ++i)
@@ -1762,6 +1843,7 @@ void snurra_tile::tick() {
 		}
 	}
 	if (m_state.playing && m_deck->ended()) set_playing(false);
+	keep_loop();
 	/* No sound, and only then a failure if no picture either: a GIF or a
 	 * screen recording has none, and was told it could not be played.
 	 * The picture's reader opens later than the sound gives up, so wait
