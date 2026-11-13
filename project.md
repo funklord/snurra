@@ -945,7 +945,17 @@ controls; each tile very compact but resizeable).
   and a brace-initialised `snurra_media` of three still compiles. A
   `.srt` beside `path` is offered after the host's, bytes or not (BeerSSH,
   inbox 20261113T0834Z: a local film given as bytes and path showed none,
-  the tile looking beside the bytes' name). Its promises: the engine is inside (the process's
+  the tile looking beside the bytes' name). **Hydra plays through
+  snurra** (inbox 20261113T1442Z, a signal): listed beside mpv and
+  mplayer when `snurra` is on PATH, called `snurra <url>` and nothing
+  else -- the URL hydra's local proxy, which adds the CDN's Referer,
+  cookies and User-Agent and answers ranges; an HLS or DASH stream is
+  assembled first (whether snurra's FFmpeg plays a manifest through the
+  proxy is unmeasured). Seen playing such a URL at 12 s. Its saved mixes
+  carry their tracklist as chapters in the file (Matroska for Opus, MP4
+  for AAC, titles "Artist - Title"), a .cue beside it, or an .m3u with
+  VLC's start- and stop-times, with title, artist, date, source and
+  description tags -- snurra's to read or not. Its promises: the engine is inside (the process's
   one); bytes stall, never fail; a host's bytes may be read from any
   snurra thread at once (so the facade passes them as the peak bytes
   too); deleting the player at any moment retires its decks and keeps
