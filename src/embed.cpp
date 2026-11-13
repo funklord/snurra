@@ -9,6 +9,7 @@
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/engine.h"
+#include "snurra/subtitles.h"
 #include "snurra/tile.h"
 
 namespace {
@@ -81,7 +82,15 @@ bool snurra_player::open(const snurra_media &media) {
 	/* The host's bytes serve the waveform too: embed.h has hosts allow
 	 * reads from more than one thread. */
 	snurra_tile *tile = snurra_tile::embedded(*d->engine, state, media.bytes, this, media.bytes);
-	tile->set_subtitle_files(media.subtitles);
+	/* The host's subtitle files first; then, where the bytes are a local
+	 * file's, the .srt beside that file -- the tile looks beside its
+	 * source, which for bytes is only their name (BeerSSH, inbox
+	 * 20261113T0834Z: none found on a phone with film.srt beside film). */
+	QStringList subtitles = media.subtitles;
+	if (media.bytes && !media.path.isEmpty())
+		for (const QString &beside : snurra_srt_beside(media.path))
+			if (!subtitles.contains(beside)) subtitles << beside;
+	tile->set_subtitle_files(subtitles);
 	d->tiles.append(tile);
 	d->row->addWidget(tile);
 	tile->show();

@@ -28,6 +28,7 @@
 
 #include "snurra/clock.h"
 #include "snurra/deck.h"
+#include "snurra/embed.h"
 #include "snurra/node.h"
 #include "snurra/peaks.h"
 #include "snurra/source.h"
@@ -71,6 +72,7 @@ private slots:
 	void colours_are_ffmpegs_own();
 	void a_full_screen_button_shows_while_the_pointer_moves();
 	void a_picture_is_made_as_wide_as_it_is_shown();
+	void a_local_films_srt_is_found_when_its_bytes_are_given();
 
 private:
 	bool make(const QString &name, const QStringList &video_args, double offset);
@@ -1075,4 +1077,33 @@ void video_test::a_picture_is_made_as_wide_as_it_is_shown() {
 	QVERIFY(full);
 	QTRY_COMPARE_WITH_TIMEOUT(full->property("made").toSize().width(), qMin(640, int(std::lround(full->width() * full->devicePixelRatioF()))), 3000);
 	tile->set_full_screen(false);
+}
+
+/*
+ * A host that gives a local film as both its bytes and its path, as
+ * BeerSSH does (inbox 20261113T0834Z): the .srt beside the path is found,
+ * not looked for beside the bytes' name alone.
+ */
+void video_test::a_local_films_srt_is_found_when_its_bytes_are_given() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QVERIFY(QDir(m_dir.path()).mkpath(QStringLiteral("host")));
+	const QString name = QStringLiteral("host/film.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	QFile srt(m_dir.filePath(QStringLiteral("host/film.srt")));
+	QVERIFY(srt.open(QIODevice::WriteOnly));
+	srt.write("1\n00:00:00,000 --> 00:00:03,000\nBESIDE THE FILE\n\n");
+	srt.close();
+	QFile file(m_dir.filePath(name));
+	QVERIFY(file.open(QIODevice::ReadOnly));
+	auto bytes = std::make_shared<memory_bytes>(file.readAll());
+	bytes->arrive(0, bytes->size());
+	snurra_media media;
+	media.name = QStringLiteral("film.mp4");
+	media.path = m_dir.filePath(name);
+	media.bytes = bytes;
+	snurra_player player;
+	QVERIFY(player.open(media));
+	snurra_tile *tile = player.findChild<snurra_tile *>();
+	QVERIFY(tile);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->subtitles_name(), QStringLiteral("film.srt"), 5000);
 }

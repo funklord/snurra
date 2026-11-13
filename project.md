@@ -887,7 +887,10 @@ controls; each tile very compact but resizeable).
   files the host fetched from beside a remote file, offered first as a
   `.srt` beside a local file is -- BeerSSH plays remote files as bytes,
   so a film's `.srt` on the host was never seen; empty changes nothing,
-  and a brace-initialised `snurra_media` of three still compiles. Its promises: the engine is inside (the process's
+  and a brace-initialised `snurra_media` of three still compiles. A
+  `.srt` beside `path` is offered after the host's, bytes or not (BeerSSH,
+  inbox 20261113T0834Z: a local film given as bytes and path showed none,
+  the tile looking beside the bytes' name). Its promises: the engine is inside (the process's
   one); bytes stall, never fail; a host's bytes may be read from any
   snurra thread at once (so the facade passes them as the peak bytes
   too); deleting the player at any moment retires its decks and keeps

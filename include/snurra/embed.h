@@ -47,8 +47,9 @@ struct snurra_media {
 	QString path;                          /* a local file, when there is one */
 	std::shared_ptr<snurra_bytes> bytes;   /* the bytes, still arriving or not; used over `path` when set */
 	/* (2) Subtitle files the host has fetched -- a .srt beside a remote
-	 * file, copied over -- as local paths, offered first, as a .srt beside
-	 * a local file is. Empty: none but what the file carries. */
+	 * file, copied over -- as local paths, offered first; then those
+	 * beside `path`, with bytes or without. Empty: those beside `path`
+	 * and what the file carries. */
 	QStringList subtitles;
 	/* Later fields are added here, at the end, with defaults that keep today's meaning. */
 };
