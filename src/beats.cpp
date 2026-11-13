@@ -36,8 +36,12 @@ constexpr double AUDIBLE = 50;
  * the stronger: the lines alternate strong and weak, and the strong ones
  * are the beat -- kick and snare on the quarters, hats alone between. */
 constexpr double ALTERNATING = 0.5;
-/* The correlation with a key's profile under which no key is given. */
-constexpr double KEY_FIT = 0.5;
+/* The correlation with a key's profile under which no key is given: a
+ * margin over what has none -- noise 0.27, a kick with a click 0.33, a
+ * bare 55 Hz kick 0.40. Not higher: on the holder's tracks against
+ * Mixxx (2026-11-13) the fit did not foretell agreement, those under
+ * 0.5 agreeing as often as those over it, half. */
+constexpr double KEY_FIT = 0.45;
 
 /* In place, radix 2; `data` a power of two long. */
 void fft(std::vector<std::complex<float>> &data) {
@@ -534,7 +538,7 @@ QString beats_key(const QString &path, int audio_track) {
  * differently, so what an older one kept is found again rather than
  * given -- the dotted check (2026-11-13) turned 88 into 132 for tracks
  * an older snurra had kept at 88. */
-constexpr int ANALYSIS = 3;
+constexpr int ANALYSIS = 4;   /* 4: keys from a fit of 0.45, not 0.5 */
 
 /* The file as it is now, and the analysis: its size and time, which a
  * kept grid must match. */

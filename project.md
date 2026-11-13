@@ -289,7 +289,8 @@ does the same with a tile's playback:
   from G2 to C7 to its nearest note, a block weighed by its own loudest
   note so a loud chorus does not outvote a quiet verse -- correlated
   with Krumhansl and Kessler's major and minor profiles at all 24
-  rotations, snurra's own code like the beat's; none under a fit of 0.5.
+  rotations, snurra's own code like the beat's; none under a fit of 0.45
+  (0.5 at first; see below).
   Read at a quarter the rate (a low pass at 3 kHz, every fourth frame
   kept): whole, it doubled an analysis's time, five one-minute signals
   3.0-4.0 s without it and 6.3-7.0 s with it; quartered, 5.0 s.
@@ -325,8 +326,14 @@ does the same with a tile's playback:
   -- 18 of the 36 given, half, mix with Mixxx's -- 8 the same tonic in
   the other mode, 10 other, and 12 given none, the fit on real music
   lower (median 0.647, least 0.266) than on made chords. So the key is
-  weaker than the tempo: the other mode is the likeliest miss, and the
-  0.5 bar leaves a quarter of real tunes without one. Better profiles
+  weaker than the tempo, the other mode the likeliest miss. The fit did
+  not foretell agreement: the 12 under 0.5, given their best key all
+  the same, agreed with Mixxx as often as the 36 over it (6 of 12, 18
+  of 36). So the bar is 0.45: what has no key must stay under it, and
+  the measured ones do with 0.05 to spare -- noise 0.27, a kick with a
+  click 0.33, a bare 55 Hz kick 0.40 (a pitched note, an A, which is why
+  a bar can only be a margin here) -- and 43 of the 48 have a key. 0.38
+  was tried first and gave the bare kick one. Better profiles
   for electronic music (Faraldo's) are the next thing to try, measured
   the same way.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
