@@ -161,6 +161,9 @@ public:
 	/* mplayer's #: the file's next sound track (a film's languages), from
 	 * where it is, crossed over as a seek. */
 	void next_audio_track();
+	/* mplayer's .: paused, the picture's next frame -- the whole group
+	 * moved to where it begins. Nothing for a track with no picture. */
+	void step_frame();
 	qint64 subtitle_delay() const { return m_subtitle_delay; }
 	QString subtitles_name() const;
 

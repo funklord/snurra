@@ -992,6 +992,17 @@ snurra_tile_state snurra_tile::state() const {
 	return now;
 }
 
+void snurra_tile::step_frame() {
+	if (!m_video || !m_video->has_video()) return;
+	if (m_state.playing) request_playing(false);
+	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
+	const snurra_video_frame shown = m_video->frame_at(heard);
+	/* A little into the frame, not on its first microsecond: a position
+	 * goes through frames of sound and back, and rounding it down by one
+	 * would show the frame before. */
+	seek(m_video->next_frame_after(shown.valid() ? shown.pts_us : heard) + 1000);
+}
+
 void snurra_tile::seek(qint64 position_us) {
 	if (m_grouped) {
 		emit seek_requested(this, qBound<qint64>(0, position_us, m_state.duration_us));

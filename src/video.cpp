@@ -253,6 +253,13 @@ snurra_video_frame snurra_video::frame_at(int64_t us) {
 	return shown;
 }
 
+int64_t snurra_video::next_frame_after(int64_t us) const {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	for (const snurra_video_frame &frame : m_frames)
+		if (frame.pts_us > us) return frame.pts_us;
+	return us + m_frame_us;
+}
+
 /* Under the lock. */
 bool snurra_video::want_seek(int64_t target) const {
 	if (target < m_floor) return true;

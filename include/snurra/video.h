@@ -63,6 +63,10 @@ public:
 	void set_on_open(std::function<void(bool has_video)> on_open);
 
 	snurra_video_frame frame_at(int64_t us);
+	/* When the frame after the one shown for `us` begins, from those
+	 * decoded ahead; one frame's length on, by the stream's rate, where
+	 * none is decoded yet (mplayer's . steps by it). */
+	int64_t next_frame_after(int64_t us) const;
 
 	/* The subtitle streams in the file, each gathering its cues as the
 	 * picture is read past them (a cue that began before a seek's key frame

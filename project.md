@@ -674,6 +674,15 @@ controls; each tile very compact but resizeable).
   forms of `-ss` land exactly, paused, with the level and tempo
   (`mplayers_options_say_where_and_how_it_plays`), and an early full
   screen arrives with the picture; each fails with its line taken out.
+- **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
+  group moved to where it begins (from the frames decoded ahead, or one
+  frame's length on where none is yet), a playing tile paused first;
+  nothing for a track with no picture. The seek lands 1 ms into the
+  frame, since a position rounded through frames of sound and back
+  could otherwise show the one before. Tested against ffprobe's frame
+  times in an x264 file with B-frames, five steps each exactly the next
+  (`a_period_steps_one_frame_on_paused`); a step that returns where it
+  was fails it.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`
