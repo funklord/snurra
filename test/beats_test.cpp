@@ -115,6 +115,7 @@ private slots:
 	void a_trains_overlap_brings_the_next_in_on_the_beat_data();
 	void a_trains_overlap_brings_the_next_in_on_the_beat();
 	void a_set_whose_phase_moves_has_its_tempo();
+	void a_dotted_rhythm_is_not_taken_for_the_beat();
 	void a_key_is_found_data();
 	void a_key_is_found();
 	void keys_are_named_on_the_camelot_wheel();
@@ -415,4 +416,39 @@ void beats_test::keys_are_named_on_the_camelot_wheel() {
 	QVERIFY(snurra_key_order(21) < snurra_key_order(0));   /* 8A, then 8B */
 	QVERIFY(snurra_key_order(0) < snurra_key_order(7));    /* 8B, then 9B */
 	QVERIFY(snurra_key_order(-1) > snurra_key_order(4));   /* none, last */
+}
+
+/*
+ * A beat under a dotted rhythm (the holder's tracks against Mixxx,
+ * 2026-11-13: 132 found as 88, 138 as 92): a kick on every beat at 132
+ * and an open hat over a soft chord every beat and a half, which the
+ * autocorrelation alone took for the beat (88.00, before the dotted
+ * check). The beat is 132, not the hats' 88.
+ */
+void beats_test::a_dotted_rhythm_is_not_taken_for_the_beat() {
+	std::vector<float> mono(size_t(60) * RATE, 0.0f);
+	std::mt19937 noise(3);
+	std::uniform_real_distribution<float> white(-1, 1);
+	const double period = 60.0 * RATE / 132;
+	for (int k = 0;; ++k) {
+		const double at = 0.05 * RATE + k * period;
+		if (at >= double(mono.size())) break;
+		add_hit(mono, at, KICK, noise);
+	}
+	for (int k = 0;; ++k) {
+		const size_t at = size_t(std::lround(0.05 * RATE + k * 1.5 * period));
+		if (at >= mono.size()) break;
+		float last = 0;
+		for (size_t i = 0; i < size_t(RATE / 8) && at + i < mono.size(); ++i) {
+			const double t = double(i) / RATE;
+			const float n = white(noise);
+			const double chord = std::sin(2 * M_PI * 440 * t) + std::sin(2 * M_PI * 554 * t) + std::sin(2 * M_PI * 659 * t);
+			mono[at + i] += float((0.7 * (n - last) + 0.1 * chord) * std::exp(-t / 0.05));
+			last = n;
+		}
+	}
+	memory_source source(mono);
+	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
+	qInfo("a kick at 132 under hats at 88: %.2f BPM (confidence %.1f)", grid.bpm(), grid.confidence);
+	QVERIFY2(std::abs(grid.bpm() - 132) < 0.1, qPrintable(QStringLiteral("%1 BPM").arg(grid.bpm())));
 }

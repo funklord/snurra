@@ -302,7 +302,29 @@ does the same with a tile's playback:
   its 55 Hz leaks into C2's bins, and a block of kick alone, weighed by
   its loudest note, voted for it in full. Minor keys given the major
   profile fail the test. A lone held pitch is given its major key -- a
-  440 Hz tone fits A major at 0.68. Not yet heard on real music.
+  440 Hz tone fits A major at 0.68.
+  **On real music, against Mixxx** (2026-11-13): the 48 of the holder's
+  tracks Mixxx has analysed for key (its library read, read-only; the
+  files on the holder's NAS), through `snurra_find_beats`. Mixxx is a
+  second detector, not the truth, so these are agreements. Tempo: of
+  the 40 Mixxx gave one, 33 within 0.5 BPM, and 5 at two thirds of it
+  -- 132 as 88 twice, 138 as 92 twice, 136 as 90.8: a pulse every beat
+  and a half taken for the beat. Hence the dotted check in `grid_of`:
+  folded in the body at two thirds of the period, a true beat has a
+  kick on its line every cycle, where at the period the kicks fall on
+  three lines in turn, so the stronger a cycle is the beat; all five
+  then agree and no other track moved, 38 of 40
+  (`a_dotted_rhythm_is_not_taken_for_the_beat`, an open hat every beat
+  and a half over a kick at 132, read 88.00 before it). The two left,
+  Mixxx 71.3 and 90 against snurra 95 and 120, are four to three and
+  undecided. Key: 6 the same, 5 its relative, 7 a step round the wheel
+  -- 18 of the 36 given, half, mix with Mixxx's -- 8 the same tonic in
+  the other mode, 10 other, and 12 given none, the fit on real music
+  lower (median 0.647, least 0.266) than on made chords. So the key is
+  weaker than the tempo: the other mode is the likeliest miss, and the
+  0.5 bar leaves a quarter of real tunes without one. Better profiles
+  for electronic music (Faraldo's) are the next thing to try, measured
+  the same way.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the

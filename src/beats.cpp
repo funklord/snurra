@@ -348,6 +348,39 @@ static snurra_beat_grid grid_of(const onsets_t &found, int rate, const std::func
 		span = 4 * span / STEPS;
 		chosen = fold(strength, period);
 	}
+	/* A beat or a dotted one: the autocorrelation can take a pulse every
+	 * beat and a half for the beat -- 88 for 132, 92 for 138 in the
+	 * holder's tracks measured against Mixxx (2026-11-13). Folded at two
+	 * thirds of the period, a true beat puts a kick on its line every
+	 * cycle, where at the period the kicks fall on three lines in turn,
+	 * one each other cycle; so the stronger a cycle, in the body, is the
+	 * beat. */
+	if (60 * hops_a_second / (2 * period / 3) <= FASTEST) {
+		auto per_cycle = [&found](double at) {
+			const fold_t folded = fold_at(found.body, at, fold(found.body, at).phase);
+			return folded.peak / (double(found.body.size()) / at);
+		};
+		const double faster = 2 * period / 3;
+		if (per_cycle(faster) > per_cycle(period)) {
+			period = faster;
+			double span_fast = 0.005 * faster;
+			chosen = fold(strength, period);
+			for (int pass = 0; pass < 3; ++pass) {
+				constexpr int STEPS = 80;
+				const double from = period - span_fast;
+				for (int i = 0; i <= STEPS; ++i) {
+					const double candidate = from + 2 * span_fast * i / STEPS;
+					const fold_t tried = fold(strength, candidate);
+					if (tried.peak > chosen.peak) {
+						chosen = tried;
+						period = candidate;
+					}
+				}
+				span_fast = 4 * span_fast / STEPS;
+				chosen = fold(strength, period);
+			}
+		}
+	}
 	/* A tempo or its half: folded at twice the period, are the beat's two
 	 * lines equal, or one strong and one weak? */
 	if (60 * hops_a_second / (2 * period) >= SLOWEST) {
