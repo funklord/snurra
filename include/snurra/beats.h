@@ -23,6 +23,11 @@ struct snurra_beat_grid {
 	double first = 0;        /* the first beat's frame */
 	double confidence = 0;   /* how far the beat stands out of the rest: 1 is none */
 	int rate = 0;
+	/* And the key, found in the same reading (snurra_find_beats): 0 to 11
+	 * C to B major, 12 to 23 C to B minor, -1 none; and how well its
+	 * profile fits, a correlation. */
+	int key = -1;
+	double key_fit = 0;
 
 	bool valid() const { return period > 0; }
 	double bpm() const { return valid() ? 60.0 * rate / period : 0; }
@@ -41,11 +46,25 @@ struct snurra_beat_grid {
 snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop = {});
 
 /*
+ * A key as a DJ reads it: the Camelot wheel's number and letter, where
+ * a step round or across is a key that mixes, then the key's own name --
+ * "8A Am". Empty for none. Shifted by `semitones` first, as playing
+ * faster without key lock raises it.
+ */
+QString snurra_key_name(int key, int semitones = 0);
+/* The key raised by `semitones` (or lowered), its mode kept; -1 stays. */
+int snurra_key_shifted(int key, int semitones);
+/* Where a key sorts: by its Camelot number, A before B; none last. */
+int snurra_key_order(int key);
+
+/*
  * Beat grids worked out before, kept in the user's cache --
  * $SNURRA_CACHE, else the desktop's (~/.cache/snurra) -- in beats.ini: by
  * the file's path and sound track, and good only while its size and time
- * are the same. "No beat" is kept too. A grid is given at `rate`, from
- * whatever rate it was found at. False where none is kept.
+ * are the same. "No beat" is kept too, and the key with the grid; one
+ * kept before keys were is not kept, so it is found again. A grid is
+ * given at `rate`, from whatever rate it was found at. False where none
+ * is kept.
  */
 bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid);
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid);

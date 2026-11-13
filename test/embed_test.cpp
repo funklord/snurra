@@ -8,6 +8,7 @@
  */
 #include <QDial>
 #include <QMimeData>
+#include <QLabel>
 #include <QPushButton>
 #include <QElapsedTimer>
 #include <QAbstractItemModel>
@@ -67,6 +68,8 @@ private slots:
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
 	void the_library_finds_tempos_only_when_asked();
+	void the_library_shows_each_tunes_key();
+	void a_tile_says_its_beat_and_key_as_heard();
 	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
@@ -1110,6 +1113,65 @@ void embed_test::a_beat_found_once_is_kept_and_shown() {
 }
 
 /*
+ * The key (beats.h) in the library: a held C major chord and a bare kick.
+ * Asked, the chord gets 8B C and the kick, with no key, none; sorted by
+ * Key, the one with none is last whichever way.
+ */
+void embed_test::the_library_shows_each_tunes_key() {
+	QTemporaryDir dir;
+	const QString kick = kick_file(dir, QStringLiteral("a kick.wav"), 120, 0.1);
+	const QString chord = dir.filePath(QStringLiteral("b chord.wav"));
+	QFile file(chord);
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav_of(48000 * 12, [](int i) {
+		double v = 0;
+		for (int midi : { 48, 60, 64, 67 })
+			v += std::sin(2 * M_PI * 440 * std::pow(2.0, (midi - 69) / 12.0) * i / 48000.0);
+		return int(5000 * v);
+	}));
+	file.close();
+	snurra_library library(dir.path());
+	QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+	QTreeView *view = library.findChild<QTreeView *>();
+	QAbstractItemModel *model = view->model();
+	QCOMPARE(model->headerData(3, Qt::Horizontal).toString(), QStringLiteral("Key"));
+	auto key_of = [&](const QString &path) { return model->index(int(library.shown().indexOf(path)), 3).data().toString(); };
+	library.findChild<QPushButton *>(QStringLiteral("snurra-find-tempos"))->click();
+	QTRY_VERIFY_WITH_TIMEOUT(!library.finding_tempos(), 20000);
+	QCOMPARE(key_of(chord), QStringLiteral("8B C"));
+	QVERIFY(key_of(kick).isEmpty());
+	view->sortByColumn(3, Qt::AscendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ chord, kick }));
+	view->sortByColumn(3, Qt::DescendingOrder);
+	QCOMPARE(library.shown(), (QStringList{ chord, kick }));
+}
+
+/*
+ * A tile's beat and key as heard (a DJ deck's head): 120 BPM in A minor,
+ * at +6 % without key lock 127.2 BPM and a semitone up, Bb minor (3A);
+ * with key lock the key stays 8A.
+ */
+void embed_test::a_tile_says_its_beat_and_key_as_heard() {
+	snurra_node node;
+	snurra_tile_state state = placed(QStringLiteral("a"), 0, 0);
+	state.controls = true;
+	snurra_tile *tile = node.add_tile(state);
+	QLabel *said = node.findChild<QLabel *>(QStringLiteral("snurra-beat"));
+	QVERIFY(said);
+	snurra_beat_grid grid;
+	grid.rate = 48000;
+	grid.period = 24000;
+	grid.key = 21;
+	tile->set_beats(grid);
+	QCOMPARE(said->text(), QStringLiteral("120.0 BPM 8A"));
+	tile->set_tempo(1.06f);
+	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 3A"));
+	QCOMPARE(said->toolTip(), QStringLiteral("Key 3A Bbm as heard"));
+	tile->set_key_lock(true);
+	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
+}
+
+/*
  * Find tempos (the library's button): a folder of a 120 kick, a 126 kick
  * and a steady tone. Listed, nothing is analysed, however long it waits;
  * asked, the kicks get their BPM and keep it (beats.h), and the tone,
@@ -1153,7 +1215,7 @@ void embed_test::the_library_finds_tempos_only_when_asked() {
 	QCOMPARE(library.shown(), (QStringList{ slow, fast, tone_path }));
 	view->sortByColumn(0, Qt::DescendingOrder);
 	QCOMPARE(library.shown(), (QStringList{ tone_path, fast, slow }));
-	view->sortByColumn(3, Qt::AscendingOrder);
+	view->sortByColumn(4, Qt::AscendingOrder);
 	QCOMPARE(library.shown(), (QStringList{ slow, fast, tone_path }));
 }
 

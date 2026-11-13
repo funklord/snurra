@@ -115,6 +115,9 @@ private slots:
 	void a_trains_overlap_brings_the_next_in_on_the_beat_data();
 	void a_trains_overlap_brings_the_next_in_on_the_beat();
 	void a_set_whose_phase_moves_has_its_tempo();
+	void a_key_is_found_data();
+	void a_key_is_found();
+	void keys_are_named_on_the_camelot_wheel();
 };
 
 /*
@@ -334,3 +337,82 @@ void beats_test::a_set_whose_phase_moves_has_its_tempo() {
 }
 
 #include "beats_test.moc"
+
+/*
+ * The key (beats.h): chords made here in a known key -- each note with
+ * its harmonics, the root again an octave down as a bass -- two seconds
+ * each, round and round for a minute; a major key's I IV V I, a minor
+ * key's i iv v i (the natural minor, so the very notes of its relative
+ * major, told apart only by where they lean). A drum loop and noise have
+ * none.
+ */
+namespace {
+
+std::vector<float> chords(const std::vector<std::vector<int>> &progression, bool drums) {
+	std::vector<float> mono = drums ? beat(124, 0.1, false).mono : std::vector<float>(size_t(60) * RATE, 0.0f);
+	const size_t each = 2 * RATE;
+	for (size_t i = 0; i < mono.size(); ++i) {
+		const std::vector<int> &chord = progression[(i / each) % progression.size()];
+		const double t = double(i) / RATE;
+		double v = 0;
+		for (size_t n = 0; n < chord.size(); ++n) {
+			const double hz = 440 * std::pow(2.0, (chord[n] - 69) / 12.0);
+			for (int h = 1; h <= 4; ++h) v += 0.05 / h * std::sin(2 * M_PI * hz * h * t);
+		}
+		const double bass = 440 * std::pow(2.0, (chord[0] - 12 - 69) / 12.0);
+		v += 0.08 * std::sin(2 * M_PI * bass * t);
+		mono[i] += float(v);
+	}
+	return mono;
+}
+
+}   // namespace
+
+void beats_test::a_key_is_found_data() {
+	QTest::addColumn<int>("kind");
+	QTest::addColumn<int>("key");
+	/* MIDI notes: 60 is middle C. */
+	QTest::newRow("C major") << 0 << 0;
+	QTest::newRow("A minor") << 1 << 21;
+	QTest::newRow("Gb major, with drums") << 2 << 6;
+	QTest::newRow("Eb minor") << 3 << 15;
+	QTest::newRow("white noise") << 4 << -1;
+	QTest::newRow("drums alone") << 5 << -1;
+}
+
+void beats_test::a_key_is_found() {
+	QFETCH(int, kind);
+	QFETCH(int, key);
+	std::vector<float> mono;
+	if (kind == 0) mono = chords({ { 60, 64, 67 }, { 65, 69, 72 }, { 67, 71, 74 }, { 60, 64, 67 } }, false);
+	if (kind == 1) mono = chords({ { 57, 60, 64 }, { 62, 65, 69 }, { 64, 67, 71 }, { 57, 60, 64 } }, false);
+	if (kind == 2) mono = chords({ { 66, 70, 73 }, { 71, 75, 78 }, { 73, 77, 80 }, { 66, 70, 73 } }, true);
+	if (kind == 3) mono = chords({ { 63, 66, 70 }, { 68, 71, 75 }, { 70, 73, 77 }, { 63, 66, 70 } }, false);
+	if (kind == 4) {
+		mono.assign(size_t(60) * RATE, 0.0f);
+		std::mt19937 noise(5);
+		std::uniform_real_distribution<float> white(-0.3f, 0.3f);
+		for (float &v : mono) v = white(noise);
+	}
+	if (kind == 5) mono = beat(124, 0.1, false).mono;
+	memory_source source(mono);
+	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
+	qInfo("found %d (%s), fit %.3f", grid.key, qPrintable(snurra_key_name(grid.key)), grid.key_fit);
+	QCOMPARE(grid.key, key);
+}
+
+void beats_test::keys_are_named_on_the_camelot_wheel() {
+	QCOMPARE(snurra_key_name(0), QStringLiteral("8B C"));
+	QCOMPARE(snurra_key_name(21), QStringLiteral("8A Am"));
+	QCOMPARE(snurra_key_name(7), QStringLiteral("9B G"));
+	QCOMPARE(snurra_key_name(5), QStringLiteral("7B F"));
+	QCOMPARE(snurra_key_name(6), QStringLiteral("2B Gb"));
+	QCOMPARE(snurra_key_name(15), QStringLiteral("2A Ebm"));
+	QCOMPARE(snurra_key_name(-1), QString());
+	/* Two semitones up, B minor; one down from C, B major. */
+	QCOMPARE(snurra_key_name(21, 2), QStringLiteral("10A Bm"));
+	QCOMPARE(snurra_key_name(0, -1), QStringLiteral("1B B"));
+	QVERIFY(snurra_key_order(21) < snurra_key_order(0));   /* 8A, then 8B */
+	QVERIFY(snurra_key_order(0) < snurra_key_order(7));    /* 8B, then 9B */
+	QVERIFY(snurra_key_order(-1) > snurra_key_order(4));   /* none, last */
+}

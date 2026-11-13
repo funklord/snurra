@@ -822,6 +822,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_tempo_label = new QLabel(m_controls);
 	m_tempo_label->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("-16.0 %")));
 	speed->addWidget(m_tempo_label);
+	/* The beat and the key as heard, as a DJ deck's head shows them: the
+	 * BPM at this tempo, the key moved with it unless locked. */
+	m_beat_label = new QLabel(m_controls);
+	m_beat_label->setObjectName(QStringLiteral("snurra-beat"));
+	speed->addWidget(m_beat_label);
 	m_key_lock = new QToolButton(m_controls);
 	m_key_lock->setObjectName(QStringLiteral("snurra-key-lock"));
 	m_key_lock->setAutoRaise(true);
@@ -959,6 +964,7 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
+	show_beat();
 	if (m_sync) m_sync->setEnabled(grid.valid() && (m_grouped || m_sync_available));
 	const double length = double(length_frames());
 	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
@@ -1614,6 +1620,22 @@ void snurra_tile::set_tempo(float tempo) {
 	m_tempo->setValue(tenths);
 	m_tempo->blockSignals(false);
 	m_tempo_label->setText(QStringLiteral("%1%2 %").arg(tenths > 0 ? QStringLiteral("+") : QString()).arg(tenths / 10.0, 0, 'f', 1));
+	show_beat();
+}
+
+/* Without key lock a tempo is a pitch: 6 % faster is a semitone up. */
+int snurra_tile::key_shift() const {
+	return m_state.key_lock ? 0 : int(std::lround(12 * std::log2(double(m_state.tempo))));
+}
+
+void snurra_tile::show_beat() {
+	if (!m_beat_label) return;
+	QStringList said;
+	if (m_grid.valid()) said << tr("%1 BPM").arg(m_grid.bpm() * double(m_state.tempo), 0, 'f', 1);
+	const QString key = snurra_key_name(m_grid.key, key_shift());
+	if (!key.isEmpty()) said << key.section(QLatin1Char(' '), 0, 0);
+	m_beat_label->setText(said.join(QLatin1Char(' ')));
+	m_beat_label->setToolTip(key.isEmpty() ? QString() : tr("Key %1 as heard").arg(key));
 }
 
 void snurra_tile::set_key_lock(bool on) {
@@ -1622,6 +1644,7 @@ void snurra_tile::set_key_lock(bool on) {
 	m_key_lock->blockSignals(true);
 	m_key_lock->setChecked(on);
 	m_key_lock->blockSignals(false);
+	show_beat();
 }
 
 int64_t snurra_tile::frame_now() const {

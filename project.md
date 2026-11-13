@@ -278,6 +278,31 @@ does the same with a tile's playback:
   A header clicked sorts by its column, as a DJ's browser does: Name and
   Artist by their words, BPM by number with tunes that have none last
   whichever way, Folder -- the first order -- by path; ties by path.
+  **The key** (2026-11-13, sec 3e's "not yet"; Traktor shows it, for
+  mixing in key): found in the same reading as the beat, so Find tempos
+  finds both and `beats.ini` keeps both (an entry kept before keys is
+  found again). A chromagram -- 8192-frame blocks end to end, each bin
+  from G2 to C7 to its nearest note, a block weighed by its own loudest
+  note so a loud chorus does not outvote a quiet verse -- correlated
+  with Krumhansl and Kessler's major and minor profiles at all 24
+  rotations, snurra's own code like the beat's; none under a fit of 0.5.
+  Read at a quarter the rate (a low pass at 3 kHz, every fourth frame
+  kept): whole, it doubled an analysis's time, five one-minute signals
+  3.0-4.0 s without it and 6.3-7.0 s with it; quartered, 5.0 s.
+  Shown as the Camelot wheel's number and letter, then the key's name
+  ("8A Am"), in a Key column sorted round the wheel so keys that mix sit
+  together, and on a tile beside its tempo with its BPM, both as heard:
+  the BPM at the tile's tempo, the key moved by 12 log2 of it, rounded,
+  unless key lock holds it (`a_tile_says_its_beat_and_key_as_heard`).
+  Measured on chords made in a key, a minute of I IV V I or i iv v i:
+  C major, A minor (the same notes as C major), Gb major over a kick and
+  Eb minor all found, fit 0.905 to 0.974; white noise and a bare kick
+  none, 0.27 and 0.33 (`a_key_is_found`, `the_library_shows_each_tunes_key`).
+  The chromagram began at C2 at first, and a bare kick read as Db minor:
+  its 55 Hz leaks into C2's bins, and a block of kick alone, weighed by
+  its loudest note, voted for it in full. Minor keys given the major
+  profile fail the test. A lone held pitch is given its major key -- a
+  440 Hz tone fits A major at 0.68. Not yet heard on real music.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
   `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the
@@ -1240,8 +1265,8 @@ controls; each tile very compact but resizeable).
   to 10 s stands at 11 s of its track and goes on 1.10 times as fast.
   mplayer's speed keys drive it (2026-11-12): ] and [ by 10 %, each the
   other's inverse, } and { double and halve, backspace back to 1 --
-  tested by key presses through X. Not yet: pitch shifting on its own,
-  and key detection. **Sync** (2026-11-12): a tile's button sets
+  tested by key presses through X. Not yet: pitch shifting on its own;
+  key detection since built (sec 3b, the library). **Sync** (2026-11-12): a tile's button sets
   its tempo so its beat runs at the leader's -- the first other tile
   playing with a grid, at that tile's tempo; a double or half if nearer
   -- then bends its phase onto the leader's, the shorter way round, as a

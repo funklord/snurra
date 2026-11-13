@@ -32,6 +32,9 @@
 namespace {
 
 constexpr int PATH_ROLE = Qt::UserRole + 1;   /* the full path, on the name */
+constexpr int KEY_ROLE = Qt::UserRole + 2;    /* the key (beats.h), on the key */
+/* The list's columns. */
+enum { NAME, ARTIST, BPM, KEY, FOLDER, COLUMNS };
 constexpr int LISTED_MOST = 50000;            /* tunes listed */
 constexpr int LOOKED_AT_MOST = 200000;        /* files looked at, a disk's worth */
 
@@ -64,26 +67,30 @@ public:
 protected:
 	bool filterAcceptsRow(int row, const QModelIndex &parent) const override {
 		if (m_words.isEmpty()) return true;
-		const QString text = sourceModel()->index(row, 3, parent).data().toString() + QLatin1Char('/')
-		                     + sourceModel()->index(row, 0, parent).data().toString() + QLatin1Char(' ')
-		                     + sourceModel()->index(row, 1, parent).data().toString();
+		const QString text = sourceModel()->index(row, FOLDER, parent).data().toString() + QLatin1Char('/')
+		                     + sourceModel()->index(row, NAME, parent).data().toString() + QLatin1Char(' ')
+		                     + sourceModel()->index(row, ARTIST, parent).data().toString();
 		for (const QString &word : m_words)
 			if (!text.contains(word, Qt::CaseInsensitive)) return false;
 		return true;
 	}
 	/* By the column clicked, as a DJ's browser sorts: Name and Artist by
-	 * their words, BPM by number, a tune with none after those with one,
+	 * their words, BPM by number, Key round the Camelot wheel -- so keys
+	 * that mix are side by side -- a tune with none after those with one,
 	 * whichever way; Folder -- the first order -- by path. Ties by path. */
 	bool lessThan(const QModelIndex &left, const QModelIndex &right) const override {
-		const QString a = sourceModel()->index(left.row(), 0).data(PATH_ROLE).toString();
-		const QString b = sourceModel()->index(right.row(), 0).data(PATH_ROLE).toString();
+		const QString a = sourceModel()->index(left.row(), NAME).data(PATH_ROLE).toString();
+		const QString b = sourceModel()->index(right.row(), NAME).data(PATH_ROLE).toString();
 		const int column = left.column();
-		if (column == 2) {
+		if (column == BPM || column == KEY) {
 			const QString x = left.data().toString();
 			const QString y = right.data().toString();
 			if (x.isEmpty() != y.isEmpty()) return (sortOrder() == Qt::AscendingOrder) == y.isEmpty();
-			if (x != y) return x.toDouble() < y.toDouble();
-		} else if (column == 0 || column == 1) {
+			if (column == BPM && x != y) return x.toDouble() < y.toDouble();
+			const int p = snurra_key_order(left.data(KEY_ROLE).isValid() ? left.data(KEY_ROLE).toInt() : -1);
+			const int q = snurra_key_order(right.data(KEY_ROLE).isValid() ? right.data(KEY_ROLE).toInt() : -1);
+			if (column == KEY && p != q) return p < q;
+		} else if (column == NAME || column == ARTIST) {
 			const int words = m_counting.compare(left.data().toString(), right.data().toString());
 			if (words != 0) return words < 0;
 		}
@@ -141,8 +148,8 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_search->setPlaceholderText(tr("Search"));
 	m_search->setClearButtonEnabled(true);
 	QPushButton *choose = new QPushButton(tr("Folder..."), this);
-	m_model = new QStandardItemModel(0, 4, this);
-	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Artist"), tr("BPM"), tr("Folder") });
+	m_model = new QStandardItemModel(0, COLUMNS, this);
+	m_model->setHorizontalHeaderLabels({ tr("Name"), tr("Artist"), tr("BPM"), tr("Key"), tr("Folder") });
 	m_filter = new library_filter(this);
 	m_filter->setSourceModel(m_model);
 	m_view = new library_view(this, this);
@@ -154,15 +161,16 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_view->setDragEnabled(true);
 	m_view->setSortingEnabled(true);
-	m_view->sortByColumn(3, Qt::AscendingOrder);   /* the folders' order first */
+	m_view->sortByColumn(FOLDER, Qt::AscendingOrder);   /* the folders' order first */
 	m_view->setDragDropMode(QAbstractItemView::DragOnly);
 	/* The name takes the room, the folder a fixed share: names were cut to
 	 * a dozen letters beside an empty folder column (seen 2026-11-13). */
 	m_view->header()->setStretchLastSection(false);
-	m_view->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-	for (int column : { 1, 2, 3 }) {
+	m_view->header()->setSectionResizeMode(NAME, QHeaderView::Stretch);
+	for (int column : { ARTIST, BPM, KEY, FOLDER }) {
 		m_view->header()->setSectionResizeMode(column, QHeaderView::Interactive);
-		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * (column == 2 ? 4 : 12));
+		const int letters = column == BPM ? 4 : column == KEY ? 5 : 12;
+		m_view->header()->resizeSection(column, fontMetrics().horizontalAdvance(QLatin1Char('M')) * letters);
 	}
 	m_status = new QLabel(this);
 	/* Wrapped: a long folder's line otherwise set the window's least width,
@@ -175,7 +183,7 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	top->addWidget(choose);
 	m_find = new QPushButton(tr("Find tempos"), this);
 	m_find->setObjectName(QStringLiteral("snurra-find-tempos"));
-	m_find->setToolTip(tr("Work out the BPM of every tune listed that has none yet; kept for next time"));
+	m_find->setToolTip(tr("Work out the BPM and key of every tune listed that has none yet; kept for next time"));
 	top->addWidget(m_find);
 	connect(m_find, &QPushButton::clicked, this, &snurra_library::find_tempos);
 	QVBoxLayout *column = new QVBoxLayout(this);
@@ -287,8 +295,11 @@ void snurra_library::scan() {
 			/* The tempo where a deck has found it before (beats.h's cache):
 			 * nothing is analysed for the list. */
 			snurra_beat_grid grid;
-			if (snurra_cached_beats(path, -1, 48000, grid) && grid.valid()) tags.bpm = grid.bpm();
-			if (tags.title.isEmpty() && tags.artist.isEmpty() && tags.bpm <= 0) continue;
+			if (snurra_cached_beats(path, -1, 48000, grid)) {
+				tags.bpm = grid.bpm();
+				tags.key = grid.key;
+			}
+			if (tags.title.isEmpty() && tags.artist.isEmpty() && tags.bpm <= 0 && tags.key < 0) continue;
 			told.emplace_back(path, tags);
 			if (told.size() >= 200) {
 				QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
@@ -307,8 +318,12 @@ void snurra_library::tagged(const std::vector<std::pair<QString, snurra_tags>> &
 		QStandardItem *name = m_items.value(path);
 		if (!name) continue;
 		if (!tags.title.isEmpty()) name->setText(tags.title);
-		if (QStandardItem *artist = m_model->item(name->row(), 1); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
-		if (QStandardItem *bpm = m_model->item(name->row(), 2); bpm && tags.bpm > 0) bpm->setText(QString::number(tags.bpm, 'f', 1));
+		if (QStandardItem *artist = m_model->item(name->row(), ARTIST); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
+		if (QStandardItem *bpm = m_model->item(name->row(), BPM); bpm && tags.bpm > 0) bpm->setText(QString::number(tags.bpm, 'f', 1));
+		if (QStandardItem *key = m_model->item(name->row(), KEY); key && tags.key >= 0) {
+			key->setText(snurra_key_name(tags.key));
+			key->setData(tags.key, KEY_ROLE);
+		}
 	}
 }
 
@@ -316,7 +331,8 @@ void snurra_library::find_tempos() {
 	if (m_finding) return;
 	QStringList wanted;
 	for (int row = 0; row < m_model->rowCount(); ++row)
-		if (m_model->item(row, 2)->text().isEmpty()) wanted << m_model->item(row, 0)->data(PATH_ROLE).toString();
+		if (m_model->item(row, BPM)->text().isEmpty() || m_model->item(row, KEY)->text().isEmpty())
+			wanted << m_model->item(row, NAME)->data(PATH_ROLE).toString();
 	if (wanted.isEmpty()) return;
 	stop_tempos();
 	m_finding = true;
@@ -337,9 +353,10 @@ void snurra_library::find_tempos() {
 				grid.rate = RATE;
 				snurra_cache_beats(path, -1, grid);
 			}
-			if (!grid.valid()) continue;
+			if (!grid.valid() && grid.key < 0) continue;
 			snurra_tags tags;
 			tags.bpm = grid.bpm();
+			tags.key = grid.key;
 			std::vector<std::pair<QString, snurra_tags>> told{ { path, tags } };
 			QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
 		}
@@ -375,9 +392,9 @@ void snurra_library::found(const QStringList &paths, bool last) {
 		QString where = root.relativeFilePath(info.absolutePath());
 		if (where == QLatin1String(".")) where.clear();
 		m_items.insert(path, name);
-		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(), new QStandardItem(where) });
+		m_model->appendRow({ name, new QStandardItem(), new QStandardItem(), new QStandardItem(), new QStandardItem(where) });
 	}
-	m_filter->sort(m_filter->sortColumn() < 0 ? 3 : m_filter->sortColumn(), m_filter->sortOrder());
+	m_filter->sort(m_filter->sortColumn() < 0 ? FOLDER : m_filter->sortColumn(), m_filter->sortOrder());
 	m_filter->setDynamicSortFilter(true);
 	if (last) m_scanning = false;
 	say();

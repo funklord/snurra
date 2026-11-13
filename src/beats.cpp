@@ -36,6 +36,8 @@ constexpr double AUDIBLE = 50;
  * the stronger: the lines alternate strong and weak, and the strong ones
  * are the beat -- kick and snare on the quarters, hats alone between. */
 constexpr double ALTERNATING = 0.5;
+/* The correlation with a key's profile under which no key is given. */
+constexpr double KEY_FIT = 0.5;
 
 /* In place, radix 2; `data` a power of two long. */
 void fft(std::vector<std::complex<float>> &data) {
@@ -87,6 +89,94 @@ std::vector<float> standing_out(const std::vector<float> &flux) {
 struct onsets_t {
 	std::vector<float> all;
 	std::vector<float> body;
+	double notes[12] = {};   /* chroma_t's, C first */
+};
+
+/*
+ * The key's evidence, read in the same pass: how strongly each of the
+ * twelve notes sounds over the track, a chromagram. Blocks of KEY_WINDOW
+ * frames end to end, each bin from G2 to C7 counted to the note nearest
+ * it, a block weighed by its own loudest note -- so a loud chorus does
+ * not outvote a quiet verse -- and silence left out.
+ */
+constexpr int KEY_WINDOW = 8192;   /* 5.9 Hz a bin at 48 kHz: notes a bin apart from about 100 Hz */
+
+class chroma_t {
+public:
+	/* Notes up to C7 need no more than 12 kHz: at 32 kHz and over every
+	 * fourth frame is kept, after a low pass at 3 kHz, so the FFT is a
+	 * quarter the size for the same bins. Whole, it doubled the time a
+	 * tune's analysis took -- five one-minute signals, 3.0 to 4.0 s without
+	 * the chromagram, 6.3 to 7.0 s with it; so, 5.0 s. */
+	explicit chroma_t(int rate) : m_every(rate >= 32000 ? 4 : rate >= 16000 ? 2 : 1), m_size(KEY_WINDOW / m_every) {
+		m_spectrum.resize(size_t(m_size));
+		m_window.resize(size_t(m_size));
+		for (int i = 0; i < m_size; ++i) m_window[size_t(i)] = float(0.5 - 0.5 * std::cos(2 * M_PI * i / m_size));
+		const double kept_rate = double(rate) / m_every;
+		for (int k = 1; k < m_size / 2; ++k) {
+			const double hz = double(k) * kept_rate / m_size;
+			/* G2 to C7: a kick's 40 to 60 Hz, leaking into C2's bins, made a
+			 * bare drum loop read as Db minor. */
+			if (hz < 98 || hz > 2093) continue;
+			const long midi = std::lround(69 + 12 * std::log2(hz / 440));
+			m_bins.push_back({ k, int(midi % 12) });
+		}
+		/* A fourth-order Butterworth, two sections, at 3 kHz: what would
+		 * fold onto the notes, from 9.9 kHz up at 48 kHz, is 40 dB down. */
+		if (m_every > 1) {
+			const double q[2] = { 1 / (2 * std::cos(M_PI / 8)), 1 / (2 * std::cos(3 * M_PI / 8)) };
+			for (int i = 0; i < 2; ++i) {
+				const double w = 2 * M_PI * 3000 / rate;
+				const double alpha = std::sin(w) / (2 * q[i]);
+				const double a0 = 1 + alpha;
+				m_low[i] = { float((1 - std::cos(w)) / 2 / a0), float((1 - std::cos(w)) / a0), float((1 - std::cos(w)) / 2 / a0),
+					     float(-2 * std::cos(w) / a0), float((1 - alpha) / a0) };
+			}
+		}
+		m_block.reserve(size_t(m_size));
+	}
+	void add(float frame) {
+		if (m_every > 1) {
+			for (section_t &low : m_low) frame = low.run(frame);
+			if (++m_skipped < m_every) return;
+			m_skipped = 0;
+		}
+		m_block.push_back(frame);
+		if (int(m_block.size()) < m_size) return;
+		for (int i = 0; i < m_size; ++i) m_spectrum[size_t(i)] = std::complex<float>(m_block[size_t(i)] * m_window[size_t(i)], 0);
+		m_block.clear();
+		fft(m_spectrum);
+		double block[12] = {};
+		for (const bin_t &bin : m_bins) block[bin.note] += std::abs(m_spectrum[size_t(bin.k)]);
+		const double loudest = *std::max_element(block, block + 12);
+		if (loudest < 1e-3 * m_size / KEY_WINDOW) return;   /* silence, or near it */
+		for (int note = 0; note < 12; ++note) notes[note] += block[note] / loudest;
+	}
+	double notes[12] = {};
+
+private:
+	struct bin_t {
+		int k;
+		int note;
+	};
+	struct section_t {
+		float b0, b1, b2, a1, a2;
+		float z1 = 0, z2 = 0;
+		float run(float x) {
+			const float y = b0 * x + z1;
+			z1 = b1 * x - a1 * y + z2;
+			z2 = b2 * x - a2 * y;
+			return y;
+		}
+	};
+	const int m_every;
+	const int m_size;
+	int m_skipped = 0;
+	section_t m_low[2] = {};
+	std::vector<bin_t> m_bins;
+	std::vector<float> m_block;
+	std::vector<std::complex<float>> m_spectrum;
+	std::vector<float> m_window;
 };
 
 onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &stop) {
@@ -100,13 +190,17 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 	std::vector<float> previous_linear(WINDOW / 2 + 1, 0.0f);
 	std::vector<float> flux;
 	std::vector<float> body;
+	chroma_t chroma(rate);
 	source.seek(0);
 	bool first = true;
 	for (;;) {
 		if (stop && stop()) return {};
 		const int n = source.read(block.data(), 4096);
 		if (n <= 0) break;
-		for (int i = 0; i < n; ++i) mono.push_back(0.5f * (block[2 * size_t(i)] + block[2 * size_t(i) + 1]));
+		for (int i = 0; i < n; ++i) {
+			mono.push_back(0.5f * (block[2 * size_t(i)] + block[2 * size_t(i) + 1]));
+			chroma.add(mono.back());
+		}
 		size_t at = 0;
 		while (mono.size() - at >= size_t(WINDOW)) {
 			for (int i = 0; i < WINDOW; ++i) spectrum[size_t(i)] = std::complex<float>(mono[at + size_t(i)] * window[size_t(i)], 0);
@@ -130,7 +224,9 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 		}
 		mono.erase(mono.begin(), mono.begin() + std::ptrdiff_t(at));
 	}
-	return { standing_out(flux), standing_out(body) };
+	onsets_t found{ standing_out(flux), standing_out(body) };
+	std::copy(chroma.notes, chroma.notes + 12, found.notes);
+	return found;
 }
 
 /* Every onset folded at `period` hops into bins a tenth of a hop wide,
@@ -290,8 +386,57 @@ static snurra_beat_grid grid_of(const onsets_t &found, int rate, const std::func
  * throughout and in phase from that minute on until the next join moves
  * it.
  */
+/*
+ * The key whose profile the notes match best: Krumhansl and Kessler's
+ * probe-tone ratings, how well each note of the scale is heard to fit a
+ * major and a minor key, correlated with the notes at all 24 rotations.
+ * None where the best fit is weak -- noise, a drum loop -- since a key
+ * shown is a key mixed by.
+ */
+static int key_of(const double notes[12], double &fit) {
+	static const double MAJOR[12] = { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
+	static const double MINOR[12] = { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
+	auto correlation = [](const double *profile, const double *heard, int tonic) {
+		double profile_mean = 0, heard_mean = 0;
+		for (int i = 0; i < 12; ++i) {
+			profile_mean += profile[i] / 12;
+			heard_mean += heard[i] / 12;
+		}
+		double both = 0, profile_spread = 0, heard_spread = 0;
+		for (int i = 0; i < 12; ++i) {
+			const double p = profile[i] - profile_mean;
+			const double h = heard[(i + tonic) % 12] - heard_mean;
+			both += p * h;
+			profile_spread += p * p;
+			heard_spread += h * h;
+		}
+		return heard_spread > 0 ? both / std::sqrt(profile_spread * heard_spread) : 0.0;
+	};
+	int best = -1;
+	fit = 0;
+	for (int key = 0; key < 24; ++key) {
+		const double r = correlation(key < 12 ? MAJOR : MINOR, notes, key % 12);
+		if (r > fit) {
+			fit = r;
+			best = key;
+		}
+	}
+	return fit >= KEY_FIT ? best : -1;
+}
+
+static snurra_beat_grid find_grid(const onsets_t &found, int rate, const std::function<bool()> &stop);
+
 snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop) {
 	const onsets_t found = onsets(source, rate, stop);
+	double fit = 0;
+	const int key = key_of(found.notes, fit);
+	snurra_beat_grid grid = find_grid(found, rate, stop);
+	grid.key = key;
+	grid.key_fit = fit;
+	return grid;
+}
+
+static snurra_beat_grid find_grid(const onsets_t &found, int rate, const std::function<bool()> &stop) {
 	const snurra_beat_grid whole = grid_of(found, rate, stop);
 	const double hops_a_second = double(rate) / HOP;
 	const size_t minute = size_t(hops_a_second * 60);
@@ -360,12 +505,40 @@ QString beats_stamp(const QString &path) {
 
 }   // namespace
 
+int snurra_key_shifted(int key, int semitones) {
+	if (key < 0 || key > 23) return -1;
+	return (key / 12) * 12 + ((key % 12 + semitones) % 12 + 12) % 12;
+}
+
+/* A major key's place on the Camelot wheel: C is 8, each fifth up one
+ * more; a minor key's is its relative major's, three semitones up. */
+static int camelot_number(int key) {
+	const int major = key < 12 ? key : (key + 3) % 12;
+	return (major * 7 + 7) % 12 + 1;
+}
+
+int snurra_key_order(int key) {
+	if (key < 0 || key > 23) return 1000;
+	return camelot_number(key) * 2 + (key < 12 ? 1 : 0);
+}
+
+QString snurra_key_name(int key, int semitones) {
+	key = snurra_key_shifted(key, semitones);
+	if (key < 0) return QString();
+	static const char *const NOTES[12] = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+	return QStringLiteral("%1%2 %3%4")
+	        .arg(camelot_number(key))
+	        .arg(key < 12 ? QLatin1Char('B') : QLatin1Char('A'))
+	        .arg(QLatin1String(NOTES[key % 12]))
+	        .arg(key < 12 ? QString() : QStringLiteral("m"));
+}
+
 bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid) {
 	if (!QFileInfo(path).isFile()) return false;
 	QSettings kept(beats_file(), QSettings::IniFormat);
 	const QStringList value = kept.value(beats_key(path, audio_track)).toString().split(QLatin1Char(' '));
-	/* size time period first confidence rate */
-	if (value.size() != 6 || value.at(0) + QLatin1Char(' ') + value.at(1) != beats_stamp(path)) return false;
+	/* size time period first confidence rate key fit */
+	if (value.size() != 8 || value.at(0) + QLatin1Char(' ') + value.at(1) != beats_stamp(path)) return false;
 	const int found_at = value.at(5).toInt();
 	if (found_at <= 0) return false;
 	const double scale = double(rate) / found_at;
@@ -373,18 +546,22 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 	grid.first = value.at(3).toDouble() * scale;
 	grid.confidence = value.at(4).toDouble();
 	grid.rate = rate;
+	grid.key = std::clamp(value.at(6).toInt(), -1, 23);
+	grid.key_fit = value.at(7).toDouble();
 	return true;
 }
 
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid) {
 	if (!QFileInfo(path).isFile() || grid.rate <= 0) return;
 	QSettings kept(beats_file(), QSettings::IniFormat);
-	kept.setValue(beats_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5")
+	kept.setValue(beats_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
 	                                                     .arg(beats_stamp(path))
 	                                                     .arg(grid.period, 0, 'g', 17)
 	                                                     .arg(grid.first, 0, 'g', 17)
 	                                                     .arg(grid.confidence, 0, 'g', 6)
-	                                                     .arg(grid.rate));
+	                                                     .arg(grid.rate)
+	                                                     .arg(grid.key)
+	                                                     .arg(grid.key_fit, 0, 'g', 4));
 }
 
 snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done,

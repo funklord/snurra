@@ -287,6 +287,9 @@ private:
 	static constexpr int TEMPO_RANGE = 160;   /* tenths of a per cent: +-16 % */
 	static constexpr int TEMPO_SNAP = 5;      /* +-0.5 %, dragged, is the middle */
 	QLabel *m_tempo_label = nullptr;
+	QLabel *m_beat_label = nullptr;
+	void show_beat();
+	int key_shift() const;
 	QToolButton *m_key_lock = nullptr;
 	QToolButton *m_sync = nullptr;
 	QToolButton *m_cue = nullptr;
