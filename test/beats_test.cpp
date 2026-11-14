@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "snurra/beats.h"
+#include "snurra/fingerprint.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
 
@@ -116,6 +117,7 @@ private slots:
 	void a_trains_overlap_brings_the_next_in_on_the_beat();
 	void a_set_whose_phase_moves_has_its_tempo();
 	void a_dotted_rhythm_is_not_taken_for_the_beat();
+	void a_fingerprint_knows_a_tune_however_it_is_encoded();
 	void a_key_is_found_data();
 	void a_key_is_found();
 	void keys_are_named_on_the_camelot_wheel();
@@ -451,4 +453,82 @@ void beats_test::a_dotted_rhythm_is_not_taken_for_the_beat() {
 	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
 	qInfo("a kick at 132 under hats at 88: %.2f BPM (confidence %.1f)", grid.bpm(), grid.confidence);
 	QVERIFY2(std::abs(grid.bpm() - 132) < 0.1, qPrintable(QStringLiteral("%1 BPM").arg(grid.bpm())));
+}
+
+/*
+ * Fingerprints (fingerprint.h, the holder 2026-11-14): a tune made here --
+ * notes of a seeded melody over a bass, half a second each -- written as a
+ * WAV and as an MP3 of it, and a second tune from another seed. snurra's
+ * fingerprint of the WAV is the ffmpeg program's own (its chromaprint
+ * muxer, read separately), near; the MP3's is near; the other tune's is
+ * as far as chance.
+ */
+namespace {
+
+QByteArray melody_wav(unsigned seed, int seconds) {
+	std::mt19937 notes(seed);
+	std::uniform_int_distribution<int> pick(0, 11);
+	QByteArray pcm;
+	double phase[3] = { 0, 0, 0 };
+	int note = 0;
+	for (int i = 0; i < seconds * RATE; ++i) {
+		if (i % (RATE / 2) == 0) note = pick(notes);
+		const double hz[3] = { 220 * std::pow(2.0, note / 12.0), 440 * std::pow(2.0, (note + 4) / 12.0), 110 * std::pow(2.0, (note % 5) / 12.0) };
+		double v = 0;
+		for (int k = 0; k < 3; ++k) {
+			phase[k] += 2 * M_PI * hz[k] / RATE;
+			v += 0.2 * std::sin(phase[k]);
+		}
+		const qint16 sample = qint16(12000 * v);
+		pcm.append(reinterpret_cast<const char *>(&sample), 2);
+	}
+	auto le32 = [](quint32 v) { return QByteArray(reinterpret_cast<const char *>(&v), 4); };
+	auto le16 = [](quint16 v) { return QByteArray(reinterpret_cast<const char *>(&v), 2); };
+	return "RIFF" + le32(quint32(36 + pcm.size())) + "WAVEfmt " + le32(16) + le16(1) + le16(1) + le32(RATE) + le32(RATE * 2)
+	       + le16(2) + le16(16) + "data" + le32(quint32(pcm.size())) + pcm;
+}
+
+}   // namespace
+
+void beats_test::a_fingerprint_knows_a_tune_however_it_is_encoded() {
+	QVERIFY2(snurra_fingerprints_available(), "this FFmpeg has no chromaprint muxer");
+	const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+	if (ffmpeg.isEmpty()) QSKIP("no ffmpeg program");
+	QTemporaryDir dir;
+	auto write = [&dir](const QString &name, const QByteArray &bytes) {
+		QFile file(dir.filePath(name));
+		file.open(QIODevice::WriteOnly);
+		file.write(bytes);
+		return file.fileName();
+	};
+	const QString tune = write(QStringLiteral("tune.wav"), melody_wav(1, 40));
+	const QString other = write(QStringLiteral("other.wav"), melody_wav(2, 40));
+	const QString mp3 = dir.filePath(QStringLiteral("tune.mp3"));
+	QProcess encode;
+	encode.start(ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-i"), tune,
+	                       QStringLiteral("-b:a"), QStringLiteral("128k"), mp3 });
+	QVERIFY(encode.waitForFinished(60000) && encode.exitCode() == 0);
+	/* The ffmpeg program's own, read apart from snurra. */
+	QProcess theirs;
+	theirs.start(ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-i"), tune, QStringLiteral("-f"),
+	                       QStringLiteral("chromaprint"), QStringLiteral("-fp_format"), QStringLiteral("raw"), QStringLiteral("-") });
+	QVERIFY(theirs.waitForFinished(60000) && theirs.exitCode() == 0);
+	const QByteArray their_bytes = theirs.readAllStandardOutput();
+	std::vector<uint32_t> their_raw(size_t(their_bytes.size()) / 4);
+	memcpy(their_raw.data(), their_bytes.constData(), their_raw.size() * 4);
+
+	const snurra_fingerprint a = snurra_fingerprint_of(tune);
+	const snurra_fingerprint b = snurra_fingerprint_of(mp3);
+	const snurra_fingerprint c = snurra_fingerprint_of(other);
+	QVERIFY(a.valid() && b.valid() && c.valid());
+	const double program = snurra_fingerprint_distance(a.raw, their_raw);
+	const double encoded = snurra_fingerprint_distance(a.raw, b.raw);
+	const double unlike = snurra_fingerprint_distance(a.raw, c.raw);
+	qInfo("fingerprint: %zu values over %.1f s, \"%s...\"; from the ffmpeg program %.3f, as MP3 %.3f, another tune %.3f",
+	      a.raw.size(), a.seconds, a.base64.left(12).constData(), program, encoded, unlike);
+	QVERIFY(a.base64.startsWith("AQ"));
+	QVERIFY(std::abs(a.seconds - 40) < 0.1);
+	QVERIFY2(program < 0.05, qPrintable(QString::number(program)));
+	QVERIFY2(encoded < 0.2, qPrintable(QString::number(encoded)));
+	QVERIFY2(unlike > 0.35, qPrintable(QString::number(unlike)));
 }

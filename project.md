@@ -381,10 +381,18 @@ does the same with a tile's playback:
   own, at most 50000 tunes of 200000 files looked at. **Names, if ever
   tidied for display** (the holder, 2026-11-13): a YouTube ID in a name
   stays -- "if we ever do this kind of cleanup we do not remove youtube
-  IDs" -- and no file is renamed. Recognition by fingerprint
-  (Chromaprint and AcoustID, as Picard and beets use) waits on the
-  holder: linking Chromaprint (LGPL-2.1+) and sending fingerprints to
-  AcoustID are the holder's to decide. **A file's own tags are shown**
+  IDs" -- and no file is renamed. **Fingerprints** (the holder,
+  2026-11-14: "snurra should do fingerprinting as well";
+  `fingerprint.h`): Chromaprint's, as AcoustID, Picard and beets use --
+  made through FFmpeg's own chromaprint muxer, which FFmpeg already links,
+  so snurra links nothing new (an FFmpeg without it, as a phone's kit may
+  be, gives none). The first 120 s, raw for comparing here and in base64
+  as AcoustID takes it, one reading for both. Measured on made tunes:
+  snurra's equals the ffmpeg program's own (0.000 of bits apart), an MP3
+  of the tune 0.000, another tune 0.412, as chance gives
+  (`a_fingerprint_knows_a_tune_however_it_is_encoded`; byte-swapped
+  values fail it). Asking AcoustID needs a client key registered to a
+  person -- the holder's. **A file's own tags are shown**
   (2026-11-13): Name is its title where it has one, beside an Artist
   column -- ID3, Vorbis comments, MP4 and Matroska tags through FFmpeg,
   the container's or else the first stream's (Ogg keeps them there) --
