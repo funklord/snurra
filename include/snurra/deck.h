@@ -127,8 +127,12 @@ public:
 	using envelope_t = std::vector<std::pair<int64_t, float>>;
 	void set_envelope(const envelope_t &points);
 
-	/* The frame heard at `us`, from what the callback last rendered. */
+	/* The frame heard at `us`, from what the callback last rendered -- the
+	 * old place, carried along, until a timed seek's moment (start_at). */
 	int64_t position_at(int64_t us) const;
+	/* Where the deck is going at `us`: a seek's target once asked, before
+	 * its moment too, so a second jump goes on from the first. */
+	int64_t planned_at(int64_t us) const;
 
 	/* What the callback last rendered, exactly: `frame` is heard at `us`,
 	 * and `advanced` frames from it went out (0: paused or starved). A

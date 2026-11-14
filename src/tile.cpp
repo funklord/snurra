@@ -1887,7 +1887,9 @@ QSize snurra_tile::minimumSizeHint() const {
 /* From where the deck is -- or was just asked to go -- not from the tile's
  * last tick: two jumps in a row add up. */
 void snurra_tile::seek_by(qint64 delta_us) {
-	seek(frames_to_us(frame_now(), m_deck->rate()) + delta_us);
+	/* From where it is going: a jump asked a moment ago and not yet heard
+	 * is gone on from, not undone. */
+	seek(frames_to_us(m_deck->planned_at(snurra_clock_us()), m_deck->rate()) + delta_us);
 }
 
 void snurra_tile::set_level(int level) {

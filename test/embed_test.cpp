@@ -74,6 +74,7 @@ private slots:
 	void the_library_shows_each_tunes_key();
 	void a_tile_says_its_beat_and_key_as_heard();
 	void a_beat_loop_plays_its_bars_again_seamlessly();
+	void a_timed_seek_is_reported_where_it_is_heard();
 	void key_sync_moves_a_tile_into_the_leaders_key();
 	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
@@ -1316,6 +1317,59 @@ void embed_test::a_beat_loop_plays_its_bars_again_seamlessly() {
 	snurra_tile *windowed = node.add_tile(placed(QStringLiteral("a"), 0, 0));
 	windowed->set_loop(true);
 	QVERIFY(!windowed->looping());
+}
+
+/*
+ * A timed seek (start_at, as a jump and a loop's way back make one): asked
+ * for a moment 400 ms on, the position reported never steps back before
+ * that moment -- it is the old place, heard -- and is the target from
+ * then on, while the plan is the target from the asking. It read the
+ * target, then the old place, then the target, for some 100 ms before
+ * every jump (2026-11-14).
+ */
+void embed_test::a_timed_seek_is_reported_where_it_is_heard() {
+	QTemporaryDir dir;
+	QFile file(dir.filePath(QStringLiteral("deck.wav")));
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	file.write(make_wav_of(48000 * 40, [](int) { return 1000; }));
+	file.close();
+	snurra_dj dj;
+	snurra_media media;
+	media.path = file.fileName();
+	QVERIFY(dj.load(0, media));
+	dj.show();
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->deck()->length() > 0, 3000);
+	tile->set_playing(true);
+	QTest::qWait(800);
+	snurra_deck *deck = tile->deck();
+	const qint64 asked_at = snurra_clock_us();
+	const qint64 moment = asked_at + 400000;
+	const int64_t target = deck->position_at(asked_at) + 20 * 48000;
+	deck->start_at(target, moment);
+	int64_t last = -1;
+	int backward = 0;
+	int planned_wrong = 0;
+	double worst_after_ms = 0;
+	while (snurra_clock_us() < moment + 400000) {
+		QTest::qWait(5);
+		const qint64 now = snurra_clock_us();
+		const int64_t heard = deck->position_at(now);
+		if (now < moment - 20000) {
+			if (heard < last) ++backward;
+			if (heard >= target) ++backward;   /* the target before its moment */
+			if (deck->planned_at(now) < target) ++planned_wrong;
+			last = heard;
+		} else if (now > moment + 100000) {
+			const int64_t expected = target + snurra_us_to_frames(now - moment, 48000);
+			worst_after_ms = std::max(worst_after_ms, std::abs(double(heard - expected)) * 1000 / 48000);
+		}
+	}
+	qInfo("before the moment: %d steps back or early; plan off %d times; after it, %.1f ms off at worst", backward, planned_wrong, worst_after_ms);
+	QCOMPARE(backward, 0);
+	QCOMPARE(planned_wrong, 0);
+	QVERIFY2(worst_after_ms < 5, qPrintable(QString::number(worst_after_ms)));
 }
 
 /*

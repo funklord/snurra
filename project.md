@@ -1620,12 +1620,16 @@ controls; each tile very compact but resizeable).
   (`a_beat_loop_plays_its_bars_again_seamlessly`); switched a lead
   early instead, it plays from before the start and fails -- the count
   alone still agreed, the phase being kept, so the test checks the
-  bounds too. **Open, a deck's report of a seek's place**: asked and
-  not yet taken, the target is reported held (so a second jump goes on
-  from the first); taken, the old place is reported until the switch
-  is heard -- so for some 100 ms before a jump or a loop's way back the
-  time shown can read the target, the old place, then the target.
-  Heard right; shown flickering.
+  bounds too. **A deck's report of a timed seek's place** (closed 2026-11-14): asked
+  and not yet taken, the target was reported held; taken, the old place
+  until its moment -- so for some 100 ms before a jump or a loop's way
+  back the time shown read the target, the old place, then the target.
+  `position_at` now reports what is heard, the old place carried along
+  until the moment, and `planned_at` where the deck is going, which the
+  tile's jumps plan from, so a second jump still goes on from the first
+  (`a_timed_seek_is_reported_where_it_is_heard`: before the moment no
+  step back and never the target, after it 0.0 ms off; the held report
+  read 74 wrong).
   **Key sync** beside the knob ("in key", Traktor's): the shift that
   puts this tile's key on the leader's Camelot number -- relative major
   and minor being one, as they mix -- the smallest way, the tempo's own

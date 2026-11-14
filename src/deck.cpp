@@ -213,6 +213,36 @@ void snurra_deck::last_rendered(int64_t &frame, int64_t &us, int64_t &advanced) 
 }
 
 int64_t snurra_deck::position_at(int64_t us) const {
+	/*
+	 * A timed seek asked and its moment not come: the old place is what is
+	 * heard, and is reported. Reported as the target held, the time shown
+	 * read the target, then the old place once the callback took the seek,
+	 * then the target again, for some 100 ms before every jump and every
+	 * loop's way back (2026-11-14).
+	 */
+	const int64_t anchor = m_seek_anchor_us.load(std::memory_order_relaxed);
+	if (anchor != INT64_MIN && us < anchor
+	    && m_generation.load(std::memory_order_acquire) != m_published_generation.load(std::memory_order_acquire)) {
+		int64_t frame = 0;
+		int64_t at = 0;
+		int64_t advanced = 0;
+		for (;;) {
+			const uint32_t before = m_published_sequence.load(std::memory_order_acquire);
+			if (before & 1) continue;
+			frame = m_published_frame.load(std::memory_order_relaxed);
+			at = m_published_us.load(std::memory_order_relaxed);
+			advanced = m_published_advanced.load(std::memory_order_relaxed);
+			std::atomic_thread_fence(std::memory_order_acquire);
+			if (m_published_sequence.load(std::memory_order_relaxed) == before) break;
+		}
+		const double tempo = m_published_tempo.load(std::memory_order_relaxed);
+		const int64_t along = advanced > 0 ? int64_t(std::llround(double(snurra_us_to_frames(us - at, m_rate)) * tempo)) : 0;
+		return std::max<int64_t>(0, frame + along);
+	}
+	return planned_at(us);
+}
+
+int64_t snurra_deck::planned_at(int64_t us) const {
 	int64_t frame = 0;
 	int64_t at = 0;
 	int64_t advanced = 0;
