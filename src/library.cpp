@@ -197,6 +197,9 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_identify->setToolTip(tr("Ask AcoustID who the chosen tunes are -- their fingerprints are sent there; "
 	                          "names shown and kept, no file renamed"));
 	top->addWidget(m_identify);
+	/* Only where fingerprints can be made: the Android kit's FFmpeg has no
+	 * chromaprint muxer (measured on 6.12.0's, both ABIs, 2026-11-14). */
+	m_identify->setVisible(snurra_fingerprints_available());
 	m_network = new QNetworkAccessManager(this);
 	connect(m_identify, &QPushButton::clicked, this, [this] { identify(chosen()); });
 	QVBoxLayout *column = new QVBoxLayout(this);

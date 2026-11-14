@@ -410,7 +410,9 @@ does the same with a tile's playback:
   "-ID" and " [ID]"), for tags' titles too (the holder, 2026-11-13).
   Tested end to end against the stand-in
   (`the_library_identifies_a_tune_and_keeps_its_id`; not reading what was
-  kept fails it). The suite's settings are its own since: it had read
+  kept fails it). The button is shown only where fingerprints can be
+  made: the Android kit's FFmpeg (6.12.0, both ABIs) has no chromaprint
+  muxer, so a phone has no Identify. The suite's settings are its own since: it had read
   and written the person's `~/.config/snurra`. **Not built: finding the
   library's tunes inside a DJ set** by fingerprint, measured first
   (2026-11-14): a real tune (the holder's "Impulse") sped up by 1 % came
