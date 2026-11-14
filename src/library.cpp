@@ -15,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMimeData>
+#include <QNetworkAccessManager>
 #include <QPointer>
 #include <QProcess>
 #include <QPushButton>
@@ -29,6 +30,7 @@
 #include <QVBoxLayout>
 
 #include "snurra/beats.h"
+#include "snurra/fingerprint.h"
 #include "snurra/source.h"
 #include "snurra/theme.h"
 
@@ -190,6 +192,13 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 	m_find->setToolTip(tr("Work out the BPM and key of every tune listed that has none yet; kept for next time"));
 	top->addWidget(m_find);
 	connect(m_find, &QPushButton::clicked, this, &snurra_library::find_tempos);
+	m_identify = new QPushButton(tr("Identify"), this);
+	m_identify->setObjectName(QStringLiteral("snurra-identify"));
+	m_identify->setToolTip(tr("Ask AcoustID who the chosen tunes are -- their fingerprints are sent there; "
+	                          "names shown and kept, no file renamed"));
+	top->addWidget(m_identify);
+	m_network = new QNetworkAccessManager(this);
+	connect(m_identify, &QPushButton::clicked, this, [this] { identify(chosen()); });
 	QVBoxLayout *column = new QVBoxLayout(this);
 	column->addLayout(top);
 	column->addWidget(m_view, 1);
@@ -225,6 +234,7 @@ snurra_library::snurra_library(const QString &folder, QWidget *parent) : QWidget
 }
 
 snurra_library::~snurra_library() {
+	stop_identify();
 	stop_tempos();
 	stop_scan();
 }
@@ -338,6 +348,11 @@ void snurra_library::scan() {
 				tags.bpm = grid.bpm();
 				tags.key = grid.key;
 			}
+			/* AcoustID's name, where it was asked before (fingerprint.h). */
+			if (snurra_identity known; snurra_cached_identity(path, known)) {
+				tags.title = known.title;
+				tags.artist = known.artist;
+			}
 			if (tags.title.isEmpty() && tags.artist.isEmpty() && tags.bpm <= 0 && tags.key < 0) continue;
 			told.emplace_back(path, tags);
 			if (told.size() >= 200) {
@@ -356,7 +371,7 @@ void snurra_library::tagged(const std::vector<std::pair<QString, snurra_tags>> &
 	for (const auto &[path, tags] : told) {
 		QStandardItem *name = m_items.value(path);
 		if (!name) continue;
-		if (!tags.title.isEmpty()) name->setText(tags.title);
+		if (!tags.title.isEmpty()) name->setText(snurra_shown_title(path, tags.title));
 		if (QStandardItem *artist = m_model->item(name->row(), ARTIST); artist && !tags.artist.isEmpty()) artist->setText(tags.artist);
 		if (QStandardItem *bpm = m_model->item(name->row(), BPM); bpm && tags.bpm > 0) bpm->setText(QString::number(tags.bpm, 'f', 1));
 		if (QStandardItem *key = m_model->item(name->row(), KEY); key && tags.key >= 0) {
@@ -405,6 +420,58 @@ void snurra_library::find_tempos() {
 			self->m_find->setEnabled(true);
 		});
 	});
+}
+
+QStringList snurra_library::chosen() const {
+	QStringList paths;
+	for (const QModelIndex &index : m_view->selectionModel()->selectedRows(NAME)) paths << index.data(PATH_ROLE).toString();
+	return paths;
+}
+
+void snurra_library::identify(const QStringList &paths) {
+	if (paths.isEmpty() || m_identifying) return;
+	stop_identify();
+	m_identifying = true;
+	m_identify->setEnabled(false);
+	m_prints_stop = false;
+	m_asking = int(paths.size());
+	m_status->setText(tr("Identifying %n tune(s) through AcoustID ...", nullptr, int(paths.size())));
+	QPointer<snurra_library> self(this);
+	m_prints = std::thread([this, paths, self] {
+		for (const QString &path : paths) {
+			if (m_prints_stop.load()) return;
+			const snurra_fingerprint print = snurra_fingerprint_of(path, 120, [this] { return m_prints_stop.load(); });
+			QMetaObject::invokeMethod(this, [self, path, print] {
+				if (!self) return;
+				auto done = [self, path](const snurra_identity &identity, const QString &error) {
+					if (!self) return;
+					if (identity.found()) {
+						snurra_cache_identity(path, identity);
+						snurra_tags tags;
+						tags.title = identity.title;
+						tags.artist = identity.artist;
+						self->tagged({ { path, tags } });
+						self->m_status->setText(tr("AcoustID: %1 -- %2").arg(identity.title, identity.artist));
+					} else {
+						self->m_status->setText(tr("%1: %2").arg(QFileInfo(path).fileName(), error));
+					}
+					if (--self->m_asking <= 0) {
+						self->m_identifying = false;
+						self->m_identify->setEnabled(true);
+					}
+				};
+				if (!print.valid()) done(snurra_identity{}, tr("no fingerprint could be made"));
+				else snurra_identify(self->m_network, print, int(std::lround(print.length)), done);
+			});
+		}
+	});
+}
+
+void snurra_library::stop_identify() {
+	m_prints_stop = true;
+	if (m_prints.joinable()) m_prints.join();
+	m_identifying = false;
+	if (m_identify) m_identify->setEnabled(true);
 }
 
 void snurra_library::stop_tempos() {

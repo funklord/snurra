@@ -1,6 +1,10 @@
 #include "snurra/fingerprint.h"
 
+#include "snurra/beats.h"
 #include "snurra/source.h"
+
+#include <QFileInfo>
+#include <QRegularExpression>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -123,6 +127,7 @@ snurra_fingerprint snurra_fingerprint_of(const QString &name, double seconds, co
 	memcpy(print.raw.data(), raw.constData(), print.raw.size() * 4);
 	print.base64 = print.base64.trimmed();
 	print.seconds = double(read) / RATE;
+	print.length = double(source->length()) / RATE;
 	if (print.raw.empty()) print.base64.clear();
 	return print;
 }
@@ -204,4 +209,35 @@ void snurra_identify(QNetworkAccessManager *network, const snurra_fingerprint &p
 		}
 		told(best, best.found() ? QString() : QStringLiteral("AcoustID knows no recording for it"));
 	});
+}
+
+bool snurra_cached_identity(const QString &name, snurra_identity &identity) {
+	if (!QFileInfo(name).isFile() && !snurra_name_lasts(name)) return false;
+	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
+	const QStringList value = kept.value(QStringLiteral("identity/") + snurra_kept_key(name, -1)).toStringList();
+	/* stamp, title, artist, recording, score */
+	if (value.size() != 5 || value.at(0) != snurra_kept_stamp(name)) return false;
+	identity.title = value.at(1);
+	identity.artist = value.at(2);
+	identity.recording = value.at(3);
+	identity.score = value.at(4).toDouble();
+	return identity.found();
+}
+
+void snurra_cache_identity(const QString &name, const snurra_identity &identity) {
+	if ((!QFileInfo(name).isFile() && !snurra_name_lasts(name)) || !identity.found()) return;
+	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
+	kept.setValue(QStringLiteral("identity/") + snurra_kept_key(name, -1),
+	              QStringList{ snurra_kept_stamp(name), identity.title, identity.artist, identity.recording,
+	                           QString::number(identity.score, 'g', 4) });
+}
+
+QString snurra_shown_title(const QString &path, const QString &title) {
+	if (title.isEmpty()) return title;
+	/* yt-dlp's two ways: "Title-ID" and "Title [ID]", an ID eleven of
+	 * letters, digits, - and _. */
+	static const QRegularExpression id(QStringLiteral("(?:-|\\s\\[)([A-Za-z0-9_-]{11})\\]?$"));
+	const QRegularExpressionMatch found = id.match(QFileInfo(path).completeBaseName());
+	if (!found.hasMatch() || title.contains(found.captured(1))) return title;
+	return title + QStringLiteral(" [") + found.captured(1) + QLatin1Char(']');
 }

@@ -67,6 +67,13 @@ int snurra_key_order(int key);
  * again. A grid is given at `rate`, from whatever rate it was found at.
  * False where none is kept.
  */
+/* Where things worked out are kept (the grids here, identities in
+ * fingerprint.h): the file, a name's key in it, and the stamp a kept thing
+ * must match -- a file's size and time, "0 0" for a lasting name. */
+QString snurra_kept_file();
+QString snurra_kept_key(const QString &path, int audio_track);
+QString snurra_kept_stamp(const QString &path);
+
 bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid);
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid);
 

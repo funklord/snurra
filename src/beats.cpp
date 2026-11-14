@@ -532,9 +532,7 @@ static snurra_beat_grid find_grid(const onsets_t &found, int rate, const std::fu
 	return grid;
 }
 
-namespace {
-
-QString beats_file() {
+QString snurra_kept_file() {
 	QString dir = qEnvironmentVariable("SNURRA_CACHE");
 	if (dir.isEmpty()) dir = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QStringLiteral("/snurra");
 	QDir().mkpath(dir);
@@ -544,11 +542,20 @@ QString beats_file() {
 /* The key: a hash of the path and the track, so any path is a plain key --
  * a lasting name as it is, which made absolute would change with the
  * folder snurra was started in. */
-QString beats_key(const QString &path, int audio_track) {
+QString snurra_kept_key(const QString &path, int audio_track) {
 	const QString who = snurra_name_lasts(path) ? path : QFileInfo(path).absoluteFilePath();
 	const QByteArray what = (who + QLatin1Char('|') + QString::number(audio_track)).toUtf8();
 	return QString::fromLatin1(QCryptographicHash::hash(what, QCryptographicHash::Sha1).toHex());
 }
+
+QString snurra_kept_stamp(const QString &path) {
+	/* A lasting name's content is its name: nothing to compare. */
+	if (snurra_name_lasts(path)) return QStringLiteral("0 0");
+	const QFileInfo info(path);
+	return QStringLiteral("%1 %2").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch());
+}
+
+namespace {
 
 /* Which analysis kept it: raised whenever the analysis would answer
  * differently, so what an older one kept is found again rather than
@@ -559,11 +566,7 @@ constexpr int ANALYSIS = 4;   /* 4: keys from a fit of 0.45, not 0.5 */
 /* The file as it is now, and the analysis: its size and time, which a
  * kept grid must match. */
 QString beats_stamp(const QString &path) {
-	/* A lasting name's content is its name: nothing to compare but the
-	 * analysis (snurra_name_lasts). */
-	if (snurra_name_lasts(path)) return QStringLiteral("0 0 a%1").arg(ANALYSIS);
-	const QFileInfo info(path);
-	return QStringLiteral("%1 %2 a%3").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch()).arg(ANALYSIS);
+	return snurra_kept_stamp(path) + QStringLiteral(" a%1").arg(ANALYSIS);
 }
 
 }   // namespace
@@ -598,8 +601,8 @@ QString snurra_key_name(int key, int semitones) {
 
 bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid) {
 	if (!QFileInfo(path).isFile() && !snurra_name_lasts(path)) return false;
-	QSettings kept(beats_file(), QSettings::IniFormat);
-	const QStringList value = kept.value(beats_key(path, audio_track)).toString().split(QLatin1Char(' '));
+	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
+	const QStringList value = kept.value(snurra_kept_key(path, audio_track)).toString().split(QLatin1Char(' '));
 	/* size time analysis period first confidence rate key fit */
 	if (value.size() != 9 || QStringList(value.mid(0, 3)).join(QLatin1Char(' ')) != beats_stamp(path)) return false;
 	const int found_at = value.at(6).toInt();
@@ -616,8 +619,8 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid) {
 	if ((!QFileInfo(path).isFile() && !snurra_name_lasts(path)) || grid.rate <= 0) return;
-	QSettings kept(beats_file(), QSettings::IniFormat);
-	kept.setValue(beats_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
+	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
+	kept.setValue(snurra_kept_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
 	                                                     .arg(beats_stamp(path))
 	                                                     .arg(grid.period, 0, 'g', 17)
 	                                                     .arg(grid.first, 0, 'g', 17)

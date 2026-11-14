@@ -62,6 +62,14 @@ public:
 	 * by itself -- it holds a core a while, and a phone's battery. */
 	void find_tempos();
 	bool finding_tempos() const { return m_finding; }
+	/* AcoustID's names for `paths` (fingerprint.h): fingerprinted one after
+	 * another on a thread of their own, asked of AcoustID -- which is sent
+	 * their fingerprints, so only when asked -- shown and kept, never
+	 * written into a file or its name. */
+	void identify(const QStringList &paths);
+	bool identifying() const { return m_identifying; }
+	/* The tunes chosen in the list, as full paths. */
+	QStringList chosen() const;
 	/* What is listed, as full paths, in the list's order; and whether
 	 * the folder is still being looked through. */
 	QStringList shown() const;
@@ -102,6 +110,13 @@ private:
 	bool m_finding = false;
 	class QPushButton *m_find = nullptr;
 	void stop_tempos();
+	std::thread m_prints;
+	std::atomic<bool> m_prints_stop{ false };
+	bool m_identifying = false;
+	int m_asking = 0;   /* answers still to come */
+	class QPushButton *m_identify = nullptr;
+	class QNetworkAccessManager *m_network = nullptr;
+	void stop_identify();
 	std::atomic<bool> m_stop{ false };
 	bool m_scanning = false;
 	bool m_narrow = false;   /* Folder hidden and Artist narrowed, for the name's sake */

@@ -23,6 +23,7 @@ struct snurra_fingerprint {
 	std::vector<uint32_t> raw;
 	QByteArray base64;
 	double seconds = 0;
+	double length = 0;   /* the whole tune's, in seconds, as AcoustID asks it */
 	bool valid() const { return !raw.empty(); }
 };
 
@@ -81,5 +82,16 @@ QString snurra_acoustid_key();
 class QNetworkAccessManager;
 void snurra_identify(QNetworkAccessManager *network, const snurra_fingerprint &print, int duration_s,
                      const std::function<void(const snurra_identity &identity, const QString &error)> &told);
+
+/* Identities kept, as beat grids are (beats.h's kept things): by the file
+ * and its size and time, a lasting name by itself; given back only while
+ * those match. False where none is kept. */
+bool snurra_cached_identity(const QString &name, snurra_identity &identity);
+void snurra_cache_identity(const QString &name, const snurra_identity &identity);
+
+/* What to show for `path` titled `title`: the title, with the YouTube ID its
+ * file's name carries -- "...-FYLJdKxTxJ0" or "... [FYLJdKxTxJ0]" -- kept
+ * beside it (the holder, 2026-11-13: a tidied name never loses its ID). */
+QString snurra_shown_title(const QString &path, const QString &title);
 
 #endif

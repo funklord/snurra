@@ -10,6 +10,7 @@
 #include <QMimeData>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QElapsedTimer>
@@ -1000,6 +1001,14 @@ void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 		if (button->isVisibleTo(&dj) && button->objectName().startsWith(QLatin1String("snurra-")))
 			QVERIFY2(button->width() >= button->sizeHint().width(),
 			         qPrintable(QStringLiteral("%1 %2 wide of %3").arg(button->objectName()).arg(button->width()).arg(button->sizeHint().width())));
+	/* The browser's buttons too, and the search keeps room to type in. */
+	for (QPushButton *button : browser->findChildren<QPushButton *>())
+		if (button->isVisibleTo(&dj))
+			QVERIFY2(button->width() >= button->sizeHint().width(),
+			         qPrintable(QStringLiteral("%1 %2 wide of %3").arg(button->text()).arg(button->width()).arg(button->sizeHint().width())));
+	QLineEdit *search = browser->findChild<QLineEdit *>();
+	qInfo("browser at 412: search %d wide", search->width());
+	QVERIFY2(search->width() >= 80, qPrintable(QString::number(search->width())));
 	dj.resize(900, 600);
 	QTest::qWait(50);
 	QVERIFY(!columns->isSectionHidden(4));

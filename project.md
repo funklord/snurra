@@ -399,7 +399,19 @@ does the same with a tile's playback:
   (`acoustid_is_asked_and_its_answer_read`; taking the first result in
   place of the best fails it). The client key is registered to a person
   -- the holder's to make; `$SNURRA_ACOUSTID_KEY` or the setting
-  `acoustid/key` gives it, and without one nothing is sent. **A file's own tags are shown**
+  `acoustid/key` gives it, and without one nothing is sent. **Identify**, a button in the
+  library and the DJ player's browser: the chosen tunes fingerprinted one
+  after another on a thread, AcoustID asked for each, and its name shown
+  as a tag's is -- Name and Artist, no file renamed -- and kept beside
+  the beat grids (`beats.ini`'s identity group, by the file's size and
+  time, a lasting name by itself), so the next listing shows it asking
+  nothing. A YouTube ID the file's name carries stays beside the title
+  shown, "Night Drive [FYLJdKxTxJ0]" (`snurra_shown_title`, yt-dlp's
+  "-ID" and " [ID]"), for tags' titles too (the holder, 2026-11-13).
+  Tested end to end against the stand-in
+  (`the_library_identifies_a_tune_and_keeps_its_id`; not reading what was
+  kept fails it). The suite's settings are its own since: it had read
+  and written the person's `~/.config/snurra`. **A file's own tags are shown**
   (2026-11-13): Name is its title where it has one, beside an Artist
   column -- ID3, Vorbis comments, MP4 and Matroska tags through FFmpeg,
   the container's or else the first stream's (Ogg keeps them there) --

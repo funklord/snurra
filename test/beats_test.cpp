@@ -6,7 +6,11 @@
  * signals with no beat at all, which must be given none.
  */
 #include <QNetworkAccessManager>
+#include <QAbstractItemModel>
+#include <QItemSelectionModel>
 #include <QProcess>
+#include <QPushButton>
+#include <QTreeView>
 #include <QSettings>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -23,6 +27,7 @@
 
 #include "snurra/beats.h"
 #include "snurra/fingerprint.h"
+#include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
 
@@ -124,6 +129,7 @@ private slots:
 	void a_dotted_rhythm_is_not_taken_for_the_beat();
 	void a_fingerprint_knows_a_tune_however_it_is_encoded();
 	void acoustid_is_asked_and_its_answer_read();
+	void the_library_identifies_a_tune_and_keeps_its_id();
 	void a_key_is_found_data();
 	void a_key_is_found();
 	void keys_are_named_on_the_camelot_wheel();
@@ -634,6 +640,56 @@ void beats_test::acoustid_is_asked_and_its_answer_read() {
 	service.answer = R"({"status":"ok","results":[]})";
 	ask();
 	QVERIFY(error.contains(QLatin1String("no recording")));
+	qunsetenv("SNURRA_ACOUSTID_KEY");
+	qunsetenv("SNURRA_ACOUSTID_URL");
+}
+
+/*
+ * Identify in the library: a made tune named as yt-dlp names a download,
+ * "...-FYLJdKxTxJ0.wav", chosen and identified through the stand-in for
+ * AcoustID -- shown as "Night Drive [FYLJdKxTxJ0]" by its artists, the
+ * file not renamed, AcoustID asked with the tune's whole 40 s; and a
+ * library opened again shows it at once from what was kept, asking
+ * nothing.
+ */
+void beats_test::the_library_identifies_a_tune_and_keeps_its_id() {
+	QCOMPARE(snurra_shown_title(QStringLiteral("/m/Song-FYLJdKxTxJ0.opus"), QStringLiteral("Night Drive")), QStringLiteral("Night Drive [FYLJdKxTxJ0]"));
+	QCOMPARE(snurra_shown_title(QStringLiteral("/m/Song [FYLJdKxTxJ0].mp3"), QStringLiteral("Night Drive")), QStringLiteral("Night Drive [FYLJdKxTxJ0]"));
+	QCOMPARE(snurra_shown_title(QStringLiteral("/m/Song.mp3"), QStringLiteral("Night Drive")), QStringLiteral("Night Drive"));
+	acoustid_stand_in service;
+	QVERIFY(service.listen(QHostAddress::LocalHost));
+	qputenv("SNURRA_ACOUSTID_URL", QStringLiteral("http://127.0.0.1:%1/v2/lookup").arg(service.serverPort()).toLatin1());
+	qputenv("SNURRA_ACOUSTID_KEY", "test-key");
+	service.answer = R"({"status":"ok","results":[{"id":"b","score":0.93,"recordings":[{"id":"r2","title":"Night Drive",
+		"artists":[{"name":"Somebody"},{"name":"Someone Else"}]}]}]})";
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("night thing-FYLJdKxTxJ0.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(melody_wav(3, 40));
+	}
+	{
+		snurra_library library(dir.path());
+		QTRY_VERIFY_WITH_TIMEOUT(!library.scanning(), 5000);
+		QTreeView *view = library.findChild<QTreeView *>();
+		QAbstractItemModel *model = view->model();
+		QTRY_COMPARE_WITH_TIMEOUT(model->rowCount(), 1, 5000);
+		view->selectionModel()->select(model->index(0, 0), QItemSelectionModel::Select | QItemSelectionModel::Rows);
+		QCOMPARE(library.chosen(), QStringList{ path });
+		library.findChild<QPushButton *>(QStringLiteral("snurra-identify"))->click();
+		QVERIFY(library.identifying());
+		QTRY_VERIFY_WITH_TIMEOUT(!library.identifying(), 30000);
+		QCOMPARE(model->index(0, 0).data().toString(), QStringLiteral("Night Drive [FYLJdKxTxJ0]"));
+		QCOMPARE(model->index(0, 1).data().toString(), QStringLiteral("Somebody, Someone Else"));
+		QCOMPARE(QUrlQuery(QString::fromUtf8(service.asked)).queryItemValue(QStringLiteral("duration")), QStringLiteral("40"));
+		QVERIFY(QFileInfo::exists(path));
+	}
+	const int asked = service.requests;
+	snurra_library again(dir.path());
+	QTRY_COMPARE_WITH_TIMEOUT(again.findChild<QTreeView *>()->model()->index(0, 0).data().toString(),
+	                          QStringLiteral("Night Drive [FYLJdKxTxJ0]"), 5000);
+	QCOMPARE(service.requests, asked);
 	qunsetenv("SNURRA_ACOUSTID_KEY");
 	qunsetenv("SNURRA_ACOUSTID_URL");
 }
