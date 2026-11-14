@@ -2,6 +2,15 @@
 
 #include "snurra/source.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QSettings>
+#include <QUrlQuery>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -130,4 +139,69 @@ double snurra_fingerprint_distance(const std::vector<uint32_t> &a, const std::ve
 		best = std::min(best, double(differ) / double(32 * (to - from)));
 	}
 	return best;
+}
+
+QString snurra_acoustid_key() {
+	const QString set = qEnvironmentVariable("SNURRA_ACOUSTID_KEY");
+	if (!set.isEmpty()) return set;
+	return QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("acoustid/key")).toString();
+}
+
+void snurra_identify(QNetworkAccessManager *network, const snurra_fingerprint &print, int duration_s,
+                     const std::function<void(const snurra_identity &identity, const QString &error)> &told) {
+	const QString key = snurra_acoustid_key();
+	if (key.isEmpty()) {
+		told(snurra_identity{}, QStringLiteral("no AcoustID key: register one at acoustid.org and set acoustid/key"));
+		return;
+	}
+	if (!print.valid() || print.base64.isEmpty()) {
+		told(snurra_identity{}, QStringLiteral("no fingerprint to ask about"));
+		return;
+	}
+	const QString service = qEnvironmentVariable("SNURRA_ACOUSTID_URL", QStringLiteral("https://api.acoustid.org/v2/lookup"));
+	/* A POST, as the fingerprint is long; the meta asked for is the
+	 * recordings and their artists, compressed to the fields used. */
+	QUrlQuery form;
+	form.addQueryItem(QStringLiteral("client"), key);
+	form.addQueryItem(QStringLiteral("format"), QStringLiteral("json"));
+	form.addQueryItem(QStringLiteral("meta"), QStringLiteral("recordings compress"));
+	form.addQueryItem(QStringLiteral("duration"), QString::number(duration_s));
+	form.addQueryItem(QStringLiteral("fingerprint"), QString::fromLatin1(print.base64));
+	QNetworkRequest request{ QUrl(service) };
+	request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/x-www-form-urlencoded"));
+	request.setTransferTimeout(20000);
+	QNetworkReply *reply = network->post(request, form.query(QUrl::FullyEncoded).toUtf8());
+	QObject::connect(reply, &QNetworkReply::finished, reply, [reply, told] {
+		reply->deleteLater();
+		const QByteArray body = reply->readAll();
+		const QJsonObject answer = QJsonDocument::fromJson(body).object();
+		if (answer.isEmpty()) {
+			told(snurra_identity{}, reply->error() != QNetworkReply::NoError ? reply->errorString()
+			                                                                 : QStringLiteral("AcoustID's answer could not be read"));
+			return;
+		}
+		if (answer.value(QStringLiteral("status")).toString() != QLatin1String("ok")) {
+			const QString said = answer.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString();
+			told(snurra_identity{}, QStringLiteral("AcoustID: %1").arg(said.isEmpty() ? QStringLiteral("refused") : said));
+			return;
+		}
+		/* The best-scoring result that names a recording. */
+		snurra_identity best;
+		for (const QJsonValue &value : answer.value(QStringLiteral("results")).toArray()) {
+			const QJsonObject result = value.toObject();
+			const double score = result.value(QStringLiteral("score")).toDouble();
+			const QJsonArray recordings = result.value(QStringLiteral("recordings")).toArray();
+			if (recordings.isEmpty() || score <= best.score) continue;
+			const QJsonObject recording = recordings.first().toObject();
+			if (recording.value(QStringLiteral("title")).toString().isEmpty()) continue;
+			QStringList artists;
+			for (const QJsonValue &artist : recording.value(QStringLiteral("artists")).toArray())
+				artists << artist.toObject().value(QStringLiteral("name")).toString();
+			best.title = recording.value(QStringLiteral("title")).toString();
+			best.artist = artists.join(QStringLiteral(", "));
+			best.recording = recording.value(QStringLiteral("id")).toString();
+			best.score = score;
+		}
+		told(best, best.found() ? QString() : QStringLiteral("AcoustID knows no recording for it"));
+	});
 }

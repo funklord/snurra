@@ -50,4 +50,36 @@ bool snurra_fingerprints_available();
 double snurra_fingerprint_distance(const std::vector<uint32_t> &a, const std::vector<uint32_t> &b, int shift = 80,
                                    int least = 40);
 
+/*
+ * What AcoustID says a fingerprint is (acoustid.org's v2 lookup, as Picard
+ * asks it): the best-scoring result's first recording -- its title, its
+ * artists joined, its MusicBrainz id -- and the score, 0 to 1. Shown, never
+ * written into a file or its name (the holder, 2026-11-13: no renaming,
+ * YouTube IDs kept).
+ */
+struct snurra_identity {
+	QString title;
+	QString artist;
+	QString recording;   /* MusicBrainz recording id */
+	double score = 0;
+	bool found() const { return !title.isEmpty(); }
+};
+
+/* The client key AcoustID asks every caller for: $SNURRA_ACOUSTID_KEY, else
+ * the settings' acoustid/key; empty for none. Registered to a person at
+ * acoustid.org, so none is built in. */
+QString snurra_acoustid_key();
+
+/*
+ * Asks AcoustID who `print` is -- the fingerprint and the tune's whole
+ * length in seconds, and nothing else, sent only when this is called --
+ * and calls `told` on `network`'s thread with what it says, or with an
+ * error in words: no key, the service's own message, no answer. The
+ * service is $SNURRA_ACOUSTID_URL where set (the tests' own server), else
+ * https://api.acoustid.org/v2/lookup.
+ */
+class QNetworkAccessManager;
+void snurra_identify(QNetworkAccessManager *network, const snurra_fingerprint &print, int duration_s,
+                     const std::function<void(const snurra_identity &identity, const QString &error)> &told);
+
 #endif

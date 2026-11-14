@@ -5,7 +5,12 @@
  * tempo off by a little turns into a drift that grows to the end. And
  * signals with no beat at all, which must be given none.
  */
+#include <QNetworkAccessManager>
 #include <QProcess>
+#include <QSettings>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QUrlQuery>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -118,6 +123,7 @@ private slots:
 	void a_set_whose_phase_moves_has_its_tempo();
 	void a_dotted_rhythm_is_not_taken_for_the_beat();
 	void a_fingerprint_knows_a_tune_however_it_is_encoded();
+	void acoustid_is_asked_and_its_answer_read();
 	void a_key_is_found_data();
 	void a_key_is_found();
 	void keys_are_named_on_the_camelot_wheel();
@@ -531,4 +537,103 @@ void beats_test::a_fingerprint_knows_a_tune_however_it_is_encoded() {
 	QVERIFY2(program < 0.05, qPrintable(QString::number(program)));
 	QVERIFY2(encoded < 0.2, qPrintable(QString::number(encoded)));
 	QVERIFY2(unlike > 0.35, qPrintable(QString::number(unlike)));
+}
+
+/*
+ * AcoustID asked (fingerprint.h), of a server of the test's own standing in
+ * for api.acoustid.org: it keeps the request and answers as told. With no
+ * key nothing is sent and the reason given; with one, the key, the tune's
+ * whole length and the fingerprint go, and the best-scoring recording of
+ * the answer is taken, its artists joined; AcoustID's own refusal comes
+ * back in its words; an answer naming no recording says so.
+ */
+namespace {
+
+class acoustid_stand_in : public QTcpServer {
+public:
+	QByteArray answer;
+	QByteArray asked;   /* the last request's body */
+	int requests = 0;
+	acoustid_stand_in() {
+		connect(this, &QTcpServer::newConnection, this, [this] {
+			while (QTcpSocket *socket = nextPendingConnection()) {
+				connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+					m_in[socket] += socket->readAll();
+					const QByteArray &in = m_in[socket];
+					const qsizetype head = in.indexOf("\r\n\r\n");
+					if (head < 0) return;
+					qsizetype length = 0;
+					for (const QByteArray &line : in.left(head).split('\n'))
+						if (line.toLower().startsWith("content-length:")) length = line.mid(15).trimmed().toLongLong();
+					if (in.size() < head + 4 + length) return;
+					asked = in.mid(head + 4, length);
+					++requests;
+					socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+					              + QByteArray::number(answer.size()) + "\r\nConnection: close\r\n\r\n" + answer);
+					socket->disconnectFromHost();
+				});
+			}
+		});
+	}
+
+private:
+	QHash<QTcpSocket *, QByteArray> m_in;
+};
+
+}   // namespace
+
+void beats_test::acoustid_is_asked_and_its_answer_read() {
+	acoustid_stand_in service;
+	QVERIFY(service.listen(QHostAddress::LocalHost));
+	qputenv("SNURRA_ACOUSTID_URL", QStringLiteral("http://127.0.0.1:%1/v2/lookup").arg(service.serverPort()).toLatin1());
+	snurra_fingerprint print;
+	print.raw = { 1, 2, 3 };
+	print.base64 = "AQAA_test-print";
+	print.seconds = 40;
+	QNetworkAccessManager network;
+	snurra_identity got;
+	QString error;
+	bool told = false;
+	auto ask = [&] {
+		told = false;
+		snurra_identify(&network, print, 214, [&](const snurra_identity &identity, const QString &why) {
+			got = identity;
+			error = why;
+			told = true;
+		});
+		QTRY_VERIFY_WITH_TIMEOUT(told, 10000);
+	};
+
+	qunsetenv("SNURRA_ACOUSTID_KEY");
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("acoustid/key"));
+	ask();
+	QVERIFY2(error.contains(QLatin1String("no AcoustID key")), qPrintable(error));
+	QCOMPARE(service.requests, 0);
+
+	qputenv("SNURRA_ACOUSTID_KEY", "test-key");
+	service.answer = R"({"status":"ok","results":[
+		{"id":"a","score":0.51,"recordings":[{"id":"r1","title":"Wrong One","artists":[{"name":"Nobody"}]}]},
+		{"id":"b","score":0.93,"recordings":[{"id":"r2","title":"Night Drive","artists":[{"name":"Somebody"},{"name":"Someone Else"}]}]},
+		{"id":"c","score":0.99}]})";
+	ask();
+	QVERIFY2(error.isEmpty(), qPrintable(error));
+	QCOMPARE(got.title, QStringLiteral("Night Drive"));
+	QCOMPARE(got.artist, QStringLiteral("Somebody, Someone Else"));
+	QCOMPARE(got.recording, QStringLiteral("r2"));
+	QCOMPARE(got.score, 0.93);
+	const QUrlQuery sent(QString::fromUtf8(service.asked));
+	QCOMPARE(sent.queryItemValue(QStringLiteral("client")), QStringLiteral("test-key"));
+	QCOMPARE(sent.queryItemValue(QStringLiteral("duration")), QStringLiteral("214"));
+	QCOMPARE(sent.queryItemValue(QStringLiteral("fingerprint"), QUrl::FullyDecoded), QStringLiteral("AQAA_test-print"));
+
+	service.answer = R"({"status":"error","error":{"code":4,"message":"invalid API key"}})";
+	ask();
+	QCOMPARE(error, QStringLiteral("AcoustID: invalid API key"));
+	QVERIFY(!got.found());
+
+	service.answer = R"({"status":"ok","results":[]})";
+	ask();
+	QVERIFY(error.contains(QLatin1String("no recording")));
+	qunsetenv("SNURRA_ACOUSTID_KEY");
+	qunsetenv("SNURRA_ACOUSTID_URL");
 }

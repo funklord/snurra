@@ -391,8 +391,15 @@ does the same with a tile's playback:
   snurra's equals the ffmpeg program's own (0.000 of bits apart), an MP3
   of the tune 0.000, another tune 0.412, as chance gives
   (`a_fingerprint_knows_a_tune_however_it_is_encoded`; byte-swapped
-  values fail it). Asking AcoustID needs a client key registered to a
-  person -- the holder's. **A file's own tags are shown**
+  values fail it). **Asking AcoustID** (`snurra_identify`): the
+  fingerprint and the tune's whole length, nothing else, sent only when
+  asked, to its v2 lookup; the best-scoring recording taken, artists
+  joined, its MusicBrainz id kept; AcoustID's refusals in its words.
+  Tested against a server of the test's own standing in for it
+  (`acoustid_is_asked_and_its_answer_read`; taking the first result in
+  place of the best fails it). The client key is registered to a person
+  -- the holder's to make; `$SNURRA_ACOUSTID_KEY` or the setting
+  `acoustid/key` gives it, and without one nothing is sent. **A file's own tags are shown**
   (2026-11-13): Name is its title where it has one, beside an Artist
   column -- ID3, Vorbis comments, MP4 and Matroska tags through FFmpeg,
   the container's or else the first stream's (Ogg keeps them there) --
