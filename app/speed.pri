@@ -1,4 +1,4 @@
-# The picture's pixel loops at -O2, the rest of the player at -Os
+# The picture's pixel loops and the analysis at -O2, the rest of the player at -Os
 # (snurra.pro). Measured 2026-11-14, a 4K film at 60 under load: at -Os the
 # conversion (src/video.cpp's to_rgb) showed 6 pictures a second, 13 with
 # its helpers inlined by force, 20 split across four threads; at -O2 the
@@ -9,7 +9,10 @@
 # A compiler of its own, since qmake has no flags a file: the shared flags,
 # then -O2, the last -O winning. Not in snurra.pri: what a project linking
 # the library builds with is its own.
-SNURRA_FAST = $$SNURRA_ROOT/src/video.cpp   # as snurra.pri names it, or -= removes nothing
+# And the beat and key analysis (src/beats.cpp, FFTs over a whole tune):
+# a minute of audio took 0.93 s at -Os and 0.47 s at -O2, twice as long for
+# Find tempos over a library and twice the battery on a phone.
+SNURRA_FAST = $$SNURRA_ROOT/src/video.cpp $$SNURRA_ROOT/src/beats.cpp   # as snurra.pri names them, or -= removes nothing
 SOURCES -= $$SNURRA_FAST
 snurra_fast.input = SNURRA_FAST
 snurra_fast.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_BASE}$${first(QMAKE_EXT_OBJ)}

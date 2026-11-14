@@ -847,7 +847,12 @@ compiled at -O2 in the player (`app/speed.pri`, a compiler of its own,
 since qmake has no flags a file; clang ignores GCC's optimize pragma,
 so the phone needs it this way), the rest at -Os: 44 KB more code
 (538369 to 582313 bytes). 1080p at 60 shows 60 either way. Not in
-`snurra.pri`, whose consumers keep their own flags.
+`snurra.pri`, whose consumers keep their own flags. **The analysis
+too** (`src/beats.cpp`): a minute of audio analysed in 0.93 s at -Os,
+0.47 s at -O2 -- twice as long for Find tempos over a library, and
+twice the battery on a phone -- for 11 KB more (593328). The waveform's
+peaks and the audio callback stay -Os: the one waits on FFmpeg's own
+decoding, the other is a few filters a frame, far inside its period.
 
 **Built for size, 2026-11-13** (sec 1: tiny, held deliberately):
 `-Os` with sections collected (`--gc-sections`). The `-Os` stood in
