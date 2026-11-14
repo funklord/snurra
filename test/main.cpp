@@ -2,6 +2,10 @@
 #include <QApplication>
 #include <QTemporaryDir>
 
+#include <algorithm>
+#include <cstring>
+#include <vector>
+
 #include <sys/resource.h>
 
 int run_handover_tests(int argc, char **argv);
@@ -31,6 +35,8 @@ int main(int argc, char **argv) {
 	 */
 	const struct rlimit cap { 256ul << 20, 256ul << 20 };
 	setrlimit(RLIMIT_FSIZE, &cap);
+	const struct rlimit no_core { 0, 0 };
+	setrlimit(RLIMIT_CORE, &no_core);
 	/* Widgets for the embedding tests, on no screen at all. */
 	if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
 	/* Beat grids are kept in the user's cache (beats.h); a run keeps its
@@ -39,6 +45,20 @@ int main(int argc, char **argv) {
 	QTemporaryDir cache;
 	qputenv("SNURRA_CACHE", cache.path().toLocal8Bit());
 	QApplication app(argc, argv);
+	/*
+	 * And no crash handler at all: a crash ends the run there. A double
+	 * free in a reader thread (2026-11-14) set QtTest's handler printing
+	 * "Received signal 6" 2.4 million times, until the 256 MB cap above
+	 * ended it -- the cap held, and the handler was what wrote. Given to
+	 * every class, as QtTest takes it, unless it was given already.
+	 */
+	std::vector<char *> given(argv, argv + argc);
+	static char no_handler[] = "-nocrashhandler";
+	if (std::none_of(given.begin(), given.end(), [](const char *a) { return std::strcmp(a, no_handler) == 0; }))
+		given.insert(given.begin() + 1, no_handler);
+	argc = int(given.size());
+	given.push_back(nullptr);
+	argv = given.data();
 	/* One class alone, for a script that runs one test of it
 	 * (test/estate_two_hosts.py): the others would fail its name. */
 	if (qEnvironmentVariable("SNURRA_TEST_CLASS") == QLatin1String("estate")) return run_estate_tests(argc, argv);
