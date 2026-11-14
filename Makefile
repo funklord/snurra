@@ -46,7 +46,7 @@ $(FUZZNET_PROBE):
 	git submodule update --init --depth 1 fuzznet
 	@test -f $@ || { echo "snurra: fuzznet could not be fetched" >&2; exit 1; }
 
-$(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri app/speed.pri | $(FUZZNET_PROBE)
+$(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
 	@# qmake's rules depend on sources alone, so a change to the flags,
@@ -206,7 +206,7 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 # changes: then the build's objects and staged libraries are cleared, as
 # a kit updated in place carries dates older than what was built from the
 # last one.
-$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri app/speed.pri | $(FUZZNET_PROBE)
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 $(ANDROID_BUILD_DIR)/Makefile: $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
                               $(ANDROID_BUILD_DIR)/includes.list | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)

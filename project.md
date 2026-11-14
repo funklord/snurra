@@ -834,25 +834,25 @@ trade exactness for time; not built, and the DJ requirement argues
 against it as a default. The length of bytes not all here is the
 duration's estimate, not the last packets'.
 
-**But the picture's pixel loops at -O2, 2026-11-14**: a 4K film at
-60, played in a tile, showed 6 pictures a second with the player at
--Os, where the same code at -O2 showed 44 -- the build-for-size change
-below had made every per-sample helper of the conversion
-(`src/video.cpp`'s `to_rgb`) a call. Forcing those inline gave 13;
-splitting the frame's rows across up to four threads gave 20 at -Os
-and all 60 at -O2 (measured under load 25 to 36, which is why figures
-from different moments differ). FFmpeg alone decodes that film at 2.7
-times real time, so decoding was never the limit. `video.cpp` is
-compiled at -O2 in the player (`app/speed.pri`, a compiler of its own,
-since qmake has no flags a file; clang ignores GCC's optimize pragma,
-so the phone needs it this way), the rest at -Os: 44 KB more code
-(538369 to 582313 bytes). 1080p at 60 shows 60 either way. Not in
-`snurra.pri`, whose consumers keep their own flags. **The analysis
-too** (`src/beats.cpp`): a minute of audio analysed in 0.93 s at -Os,
-0.47 s at -O2 -- twice as long for Find tempos over a library, and
-twice the battery on a phone -- for 11 KB more (593328). The waveform's
-peaks and the audio callback stay -Os: the one waits on FFmpeg's own
-decoding, the other is a few filters a frame, far inside its period.
+**-O2 faster than -Os, 2026-11-14 -- an exception taken back, being
+researched.** Measured under load: a 4K film at 60 played in a tile showed
+6 pictures a second at -Os where the same code at -O2 showed 44; forcing
+the conversion's per-sample helpers inline gave 13 at -Os, and splitting a
+frame's rows across up to four threads (`in_bands`, kept) 20. The beat and
+key analysis took 0.93 s a minute at -Os and 0.47 s at -O2. An -O2
+exception for `video.cpp` and then `beats.cpp` (8f81351, 42c6cea) was
+taken back at the holder's word the same day: "-O2 being faster than -Os
+is a code smell, please research this deeper before deciding on an
+exception". What -Os leaves undone in those loops is the question; the
+answer goes here. (42c6cea was also pushed on a suite that had failed --
+on the crash below, not on the flag -- which should not have happened.)
+
+**Open: a double free playing DASH in a tile, 2026-11-14.** Once, in a
+full suite, `an_hls_stream_plays_and_seeks(DASH)`'s tile aborted with
+"double free or corruption (fasttop)" while FFmpeg's DASH demuxer opened
+a segment; the row had passed alone before. QtTest's handler then printed
+"Received signal 6" some 2.4 million times, until the suite's own 256 MB
+file-size cap stopped it. Being found under AddressSanitizer.
 
 **Built for size, 2026-11-13** (sec 1: tiny, held deliberately):
 `-Os` with sections collected (`--gc-sections`). The `-Os` stood in
