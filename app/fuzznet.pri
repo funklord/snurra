@@ -20,6 +20,10 @@ HEADERS += $$PWD/estate.h
 # a link that kept every function would not link (the tests, 2026-11-14).
 QMAKE_LFLAGS += -Wl,--gc-sections
 QMAKE_CXXFLAGS += -ffunction-sections -fdata-sections
-QMAKE_CFLAGS += -std=c11 -ffunction-sections -fdata-sections
+# Hidden, so a shared library -- the player on a phone -- does not export
+# them: an exported function is a root the collection keeps, and rpc.c's
+# unused calls then needed modules left out (the Android link, 2026-11-14,
+# undefined fzn_sticker_spec_parse and more since dcf0374).
+QMAKE_CFLAGS += -std=c11 -ffunction-sections -fdata-sections -fvisibility=hidden
 QMAKE_CFLAGS_RELEASE -= -O2
 QMAKE_CFLAGS_RELEASE += -Os
