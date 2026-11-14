@@ -867,6 +867,14 @@ code leaning on -O2, not a reason to change flags:
   with the stretch, the same sums in the same order: 2.5 % at -Os (1.4
   at -O2), bit for bit the same output, and every key-lock figure in the
   suite unchanged.
+- **Sanitizers over the day's new code** (the estate, the picture's
+  bands, the stretch's buffers, the DASH lock; the whole suite under ASan
+  and UBSan): no report from snurra's code; two from fuzznet's, both a
+  qsort of a NULL array when a fresh node's catalogue is empty
+  (`local/rpc.c` 2822, 2823) -- reported to it (inbox 20261114T0146Z).
+- **The deck's callback as a whole** (a tone, EQ in with a band killed,
+  varispeed at 1.03): 1.35 % of real time at -Os, 1.27 % at -O2 -- no
+  smell there, so the lens stopped.
 The player stays -Os throughout. What the forced inlining and the row
 bands kept cost: 29 KB of code (538369 to 567498 bytes).
 
