@@ -12,7 +12,8 @@ constexpr int CAPACITY = 16384;   /* track frames held: a segment, its search, a
 
 snurra_stretch::snurra_stretch(int rate, std::function<bool(float &, float &)> pull)
     : m_seq(rate * 40 / 1000), m_overlap(rate * 8 / 1000), m_seek(rate * 15 / 1000), m_pull(std::move(pull)),
-      m_in(size_t(2 * CAPACITY)), m_middle(size_t(2 * m_overlap)), m_out(size_t(2 * m_seq)) {}
+      m_in(size_t(2 * CAPACITY)), m_middle(size_t(2 * m_overlap)), m_out(size_t(2 * m_seq)),
+      m_theirs(size_t(m_seek + m_overlap)), m_mine(size_t(m_overlap)) {}
 
 void snurra_stretch::reset(int64_t frame) {
 	m_in_start = frame;
@@ -158,7 +159,35 @@ bool snurra_stretch::step(double tempo) {
 	const int64_t base = int64_t(std::floor(m_nominal));
 	if (!have(base + m_seek + m_seq)) return false;
 	int best = 0;
-	if (m_have_middle) {
+	const int64_t window = base - m_in_start;
+	if (m_have_middle && window >= 0 && window + m_seek + m_overlap <= m_in_len) {
+		/*
+		 * The window all here, as have() above makes it: its frames summed
+		 * once, and the last segment's end, rather than each read through
+		 * at() -- which -Os leaves a call, clamping its index -- for every
+		 * sample of every offset. The same sums in the same order, so the
+		 * same segment is chosen: key lock took 7.9 % of a core at -Os,
+		 * 2.8 % at -O2 (perf, 2026-11-14).
+		 */
+		const float *in = m_in.data() + 2 * window;
+		for (int j = 0; j < m_seek + m_overlap; ++j) m_theirs[size_t(j)] = in[2 * j] + in[2 * j + 1];
+		for (int j = 0; j < m_overlap; ++j) m_mine[size_t(j)] = m_middle[size_t(2 * j)] + m_middle[size_t(2 * j + 1)];
+		double best_score = -1e300;
+		for (int offset = 0; offset < m_seek; ++offset) {
+			double cross = 0;
+			double energy = 1e-9;
+			const float *theirs = m_theirs.data() + offset;
+			for (int j = 0; j < m_overlap; ++j) {
+				cross += double(m_mine[size_t(j)]) * theirs[j];
+				energy += double(theirs[j]) * theirs[j];
+			}
+			const double score = cross / std::sqrt(energy);
+			if (score > best_score) {
+				best_score = score;
+				best = offset;
+			}
+		}
+	} else if (m_have_middle) {
 		double best_score = -1e300;
 		for (int offset = 0; offset < m_seek; ++offset) {
 			double cross = 0;

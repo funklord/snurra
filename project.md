@@ -859,6 +859,14 @@ code leaning on -O2, not a reason to change flags:
   arithmetic, with a square root for the magnitude: a minute 0.93 s to
   0.42-0.48 at -Os, the same as -O2; the holder's 48 Mixxx-analysed
   tracks 320 s to 149 s, every key, BPM and fit the same.
+- **Key lock** (`snurra_stretch::step`, in the audio callback): the
+  same lens found it -- 7.9 % of a core a deck at -Os, 2.8 % at -O2, 43 %
+  of it in `at()`, left a call clamping its index for every sample of
+  every offset of the WSOLA search. The window is all here once
+  `have()` has run, so its channels are summed once into buffers made
+  with the stretch, the same sums in the same order: 2.5 % at -Os (1.4
+  at -O2), bit for bit the same output, and every key-lock figure in the
+  suite unchanged.
 The player stays -Os throughout. What the forced inlining and the row
 bands kept cost: 29 KB of code (538369 to 567498 bytes).
 

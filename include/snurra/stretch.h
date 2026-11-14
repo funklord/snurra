@@ -64,6 +64,8 @@ private:
 	std::vector<float> m_middle;   /* the last segment's last overlap, stereo */
 	bool m_have_middle = false;
 	std::vector<float> m_out;      /* frames out of the last segment, stereo */
+	std::vector<float> m_theirs;   /* the search window, its channels summed */
+	std::vector<float> m_mine;     /* the last segment's end, its channels summed */
 	int m_out_at = 0;
 	int m_out_len = 0;
 	double m_out_tempo = 1;
