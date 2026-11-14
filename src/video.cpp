@@ -200,6 +200,10 @@ QImage to_rgb(const AVFrame *from, int widest) {
 		return byte < 0 ? 0 : byte > 255 ? 255 : byte;
 	};
 	const int shift = divisor == 256 ? 8 : divisor == 4 ? 2 : 0;
+	/* qRgb, which -Os left a call (perf, 2026-11-14). */
+	auto pixel = [](int r, int g, int b) __attribute__((always_inline)) {
+		return QRgb(0xff000000u | (unsigned(r) << 16) | (unsigned(g) << 8) | unsigned(b));
+	};
 	auto sample = [wide, shift](const uint8_t *row, int i) __attribute__((always_inline)) -> int {
 		if (!wide) return row[i];
 		uint16_t value = 0;
@@ -228,6 +232,8 @@ QImage to_rgb(const AVFrame *from, int widest) {
 		std::vector<int> luma_to(static_cast<size_t>(width));
 		std::vector<int> chroma_from(static_cast<size_t>(width));
 		std::vector<int> chroma_to(static_cast<size_t>(width));
+		std::vector<float> luma_across(static_cast<size_t>(width));     /* 1 / the columns each spans */
+		std::vector<float> chroma_across(static_cast<size_t>(width));
 		for (int x = 0; x < width; ++x) {
 			const int x0 = columns[size_t(x)];
 			const int x1 = std::max(x0 + 1, columns[size_t(x) + 1]);
@@ -235,6 +241,8 @@ QImage to_rgb(const AVFrame *from, int widest) {
 			luma_to[size_t(x)] = x1;
 			chroma_from[size_t(x)] = x0 >> x_shift;
 			chroma_to[size_t(x)] = std::min(chroma_width, std::max((x0 >> x_shift) + 1, ((x1 - 1) >> x_shift) + 1));
+			luma_across[size_t(x)] = 1.0f / float(x1 - x0);
+			chroma_across[size_t(x)] = 1.0f / float(chroma_to[size_t(x)] - chroma_from[size_t(x)]);
 		}
 		in_bands(height, [&](int band_from, int band_to) {
 			std::vector<int> luma_sum(static_cast<size_t>(from->width));
@@ -246,15 +254,34 @@ QImage to_rgb(const AVFrame *from, int widest) {
 				std::fill(luma_sum.begin(), luma_sum.end(), 0);
 				std::fill(cb_sum.begin(), cb_sum.end(), 0);
 				std::fill(cr_sum.begin(), cr_sum.end(), 0);
-				for (int sy = y0; sy < y1; ++sy) {
-					const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
-					for (int sx = 0; sx < from->width; ++sx) luma_sum[size_t(sx)] += sample(luma, sx);
-				}
+				/*
+				 * The 8-bit planar case -- nearly every film -- in loops with
+				 * no test a sample: -Os keeps a loop-invariant test inside its
+				 * loop where -O2 would hoist it, and the `wide` and
+				 * `interleaved` tests read a sample cost the 4K conversion a
+				 * sixth of its time (perf, 2026-11-14).
+				 */
+				int *const luma_into = luma_sum.data();
+				const int film_width = from->width;
+				if (wide)
+					for (int sy = y0; sy < y1; ++sy) {
+						const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
+						for (int sx = 0; sx < film_width; ++sx) luma_into[sx] += sample(luma, sx);
+					}
 				const int c0 = y0 >> y_shift;
 				const int c1 = std::max(c0 + 1, ((y1 - 1) >> y_shift) + 1);
 				for (int cy = c0; cy < c1; ++cy) {
 					const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
 					const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
+					if (!wide && !interleaved) {
+						int *const cb_into = cb_sum.data();
+						int *const cr_into = cr_sum.data();
+						for (int cx = 0; cx < chroma_width; ++cx) {
+							cb_into[cx] += cb_row[cx];
+							cr_into[cx] += cr_row[cx];
+						}
+						continue;
+					}
 					for (int cx = 0; cx < chroma_width; ++cx) {
 						int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
 						int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
@@ -270,7 +297,17 @@ QImage to_rgb(const AVFrame *from, int widest) {
 					const int x0 = luma_from[size_t(x)];
 					const int x1 = luma_to[size_t(x)];
 					int l = 0;
-					for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
+					if (wide) {
+						for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
+					} else {
+						/* 8 bits: straight from the film's rows, with no sums
+						 * kept between -- a write a sample, which -Os does not
+						 * vectorise, was most of what was left. */
+						for (int sy = y0; sy < y1; ++sy) {
+							const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
+							for (int sx = x0; sx < x1; ++sx) l += luma[sx];
+						}
+					}
 					const int cx0 = chroma_from[size_t(x)];
 					const int cx1 = chroma_to[size_t(x)];
 					int cb = 0;
@@ -279,12 +316,13 @@ QImage to_rgb(const AVFrame *from, int widest) {
 						cb += cb_sum[size_t(cx)];
 						cr += cr_sum[size_t(cx)];
 					}
-					const float luma_each = luma_rows / float(x1 - x0);
-					const float chroma_each = chroma_rows / float(cx1 - cx0);
+					/* A multiply: a divide a pixel was a twenty-fifth of the time. */
+					const float luma_each = luma_rows * luma_across[size_t(x)];
+					const float chroma_each = chroma_rows * chroma_across[size_t(x)];
 					const int lv = luma_part[std::min(255, int(float(l) * luma_each + 0.5f))];
 					const int cbv = std::min(255, int(float(cb) * chroma_each + 0.5f));
 					const int crv = std::min(255, int(float(cr) * chroma_each + 0.5f));
-					out[x] = qRgb(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
+					out[x] = pixel(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
 				}
 			}
 		});
@@ -305,7 +343,7 @@ QImage to_rgb(const AVFrame *from, int widest) {
 				int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
 				if (swapped) std::swap(cb, cr);
 				const int l = luma_part[sample(luma, sx)];
-				out[x] = qRgb(to_byte(l + r_from_v[cr]), to_byte(l + g_from_u[cb] + g_from_v[cr]), to_byte(l + b_from_u[cb]));
+				out[x] = pixel(to_byte(l + r_from_v[cr]), to_byte(l + g_from_u[cb] + g_from_v[cr]), to_byte(l + b_from_u[cb]));
 			}
 		}
 	});
