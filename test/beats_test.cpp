@@ -133,6 +133,9 @@ private slots:
 	void a_key_is_found_data();
 	void a_key_is_found();
 	void keys_are_named_on_the_camelot_wheel();
+	void loudness_is_measured_as_ebu_r128_says_data();
+	void loudness_is_measured_as_ebu_r128_says();
+	void a_loud_tune_is_cut_and_a_quiet_one_boosted_to_its_peak();
 };
 
 /*
@@ -414,6 +417,70 @@ void beats_test::a_key_is_found() {
 	const snurra_beat_grid grid = snurra_find_beats(source, RATE);
 	qInfo("found %d (%s), fit %.3f", grid.key, qPrintable(snurra_key_name(grid.key)), grid.key_fit);
 	QCOMPARE(grid.key, key);
+}
+
+using loudness_parts = QList<QPair<double, double>>;   /* dBFS, seconds */
+
+/* EBU Tech 3341's test signals: a 1 kHz sine in both channels, a level in
+ * dBFS for so many seconds, one after another; the integrated loudness
+ * must come out within 0.1 LU of what the document says. */
+void beats_test::loudness_is_measured_as_ebu_r128_says_data() {
+	QTest::addColumn<loudness_parts>("parts");
+	QTest::addColumn<double>("lufs");
+	QTest::addColumn<int>("rate");
+	using parts = loudness_parts;
+	QTest::newRow("case 1: -23 dBFS") << parts{ { -23, 20 } } << -23.0 << 48000;
+	QTest::newRow("case 2: -33 dBFS") << parts{ { -33, 20 } } << -33.0 << 48000;
+	/* The relative gate: the quiet ends are 13 LU down and gated out. */
+	QTest::newRow("case 3: -36, -23, -36") << parts{ { -36, 10 }, { -23, 60 }, { -36, 10 } } << -23.0 << 48000;
+	/* The absolute gate: -72 is below -70 and ignored. */
+	QTest::newRow("case 4: -72, -36, -23, -36, -72")
+	        << parts{ { -72, 10 }, { -36, 10 }, { -23, 60 }, { -36, 10 }, { -72, 10 } } << -23.0 << 48000;
+	/* And the filter designed at another rate. */
+	QTest::newRow("case 1 at 44.1 kHz") << parts{ { -23, 20 } } << -23.0 << 44100;
+}
+
+void beats_test::loudness_is_measured_as_ebu_r128_says() {
+	QFETCH(loudness_parts, parts);
+	QFETCH(double, lufs);
+	QFETCH(int, rate);
+	std::vector<float> mono;
+	double highest = 0;
+	for (const auto &part : parts) {
+		const double amplitude = std::pow(10.0, part.first / 20);
+		highest = std::max(highest, amplitude);
+		const size_t from = mono.size();
+		for (size_t i = 0; i < size_t(part.second * rate); ++i)
+			mono.push_back(float(amplitude * std::sin(2 * M_PI * 1000 * double(from + i) / rate)));
+	}
+	memory_source source(mono);
+	const snurra_beat_grid grid = snurra_find_beats(source, rate);
+	QVERIFY(grid.loudness_known);
+	QVERIFY2(std::abs(grid.loudness - lufs) <= 0.1, qPrintable(QStringLiteral("%1 LUFS, not %2").arg(grid.loudness).arg(lufs)));
+	QVERIFY(std::abs(grid.peak - highest) < 0.001);
+
+	/* Silence has none. */
+	memory_source quiet(std::vector<float>(size_t(rate) * 5, 0.0f));
+	QVERIFY(!snurra_find_beats(quiet, rate).loudness_known);
+}
+
+void beats_test::a_loud_tune_is_cut_and_a_quiet_one_boosted_to_its_peak() {
+	snurra_beat_grid loud;
+	loud.loudness_known = true;
+	loud.loudness = -8;
+	loud.peak = 1;
+	QVERIFY(std::abs(20 * std::log10(snurra_loudness_gain(loud, -14)) + 6) < 0.01);
+	/* -20 LUFS with its peak at -4 dBFS: 6 dB wanted, 4 dB of room. */
+	snurra_beat_grid quiet;
+	quiet.loudness_known = true;
+	quiet.loudness = -20;
+	quiet.peak = std::pow(10.0, -4.0 / 20);
+	QVERIFY(std::abs(20 * std::log10(snurra_loudness_gain(quiet, -14)) - 4) < 0.01);
+	/* No more than 12 dB, however much room. */
+	quiet.loudness = -40;
+	quiet.peak = 0.01;
+	QVERIFY(std::abs(20 * std::log10(snurra_loudness_gain(quiet, -14)) - 12) < 0.01);
+	QCOMPARE(snurra_loudness_gain(snurra_beat_grid{}, -14), 1.0f);
 }
 
 void beats_test::keys_are_named_on_the_camelot_wheel() {

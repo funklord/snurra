@@ -692,6 +692,37 @@ to the whole track, Mixxx's default -- so it stays, and measuring it on
 real music with published annotations waits. Not done: downbeats (a bar
 is counted from any beat), tempo that changes.
 
+**Loudness is snurra's own too** (2026-11-14, a gap: Mixxx brings every
+tune to one level with ReplayGain, on from the start, and snurra played
+each at whatever level it was mastered to, so a mix's next tune could
+come in several dB off the one playing). ITU-R BS.1770-4 integrated
+loudness, gated as EBU R128 says, measured in the beat reading's own pass
+and kept beside the grid (analysis 5) with the highest sample:
+`snurra_beat_grid::loudness`, `peak`. The K-weighting's two biquads are
+designed at the track's rate from their analogue prototypes. Held to EBU
+Tech 3341's cases 1 to 4 within 0.1 LU, at 48 and 44.1 kHz; failing with
+the relative gate taken out (-24.2 for -23) or the shelf (-23.7). On 40
+of the holder's tracks Mixxx holds a ReplayGain for (a ratio against its
+-18 LUFS), 9 agree within 0.05 LU and the median difference is 0.00;
+the rest differ by 0.6 to 3.2 either way, and those figures are not
+Mixxx's measurement but the files' own REPLAYGAIN_TRACK_GAIN tags, which
+it took as found -- written by older ReplayGain 1 tools, whose loudness
+model is not R128's (`12 One Take.flac`: tag -7.65 dB, so -10.35 by
+Mixxx's reckoning; -7.63 here). So a tag is not read: the measurement is
+the one a tag would have to agree with. A tile
+
+that learns its tune's loudness sets a trim on its deck,
+`snurra_loudness_gain`: to **-14 LUFS**, where YouTube and Spotify bring
+theirs -- most of what is played here moves by little -- cut as far as
+it takes, boosted only as far as the highest sample has room and 12 dB
+at most. The trim is under the level slider and moves at one unit of gain
+a second, so one that arrives mid-play (a tune not yet analysed) is a
+half-second fade, never a step; before the first sound it is there at
+once. **On unless the setting `loudness/match` is false**: a level match
+is what a mixing player does by default, and snurra has no settings page
+yet to say it -- an assumption to check with the holder, since it makes
+a loud master quieter than mplayer played it.
+
 **The licence question this raises:** snurra has none yet, which is
 right; but linking qm-dsp or Rubber Band makes the whole program
 distributable only on GPL-compatible terms, so that choice is the

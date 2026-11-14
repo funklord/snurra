@@ -28,6 +28,14 @@ struct snurra_beat_grid {
 	 * profile fits, a correlation. */
 	int key = -1;
 	double key_fit = 0;
+	/* And how loud it is, in the same reading: the integrated loudness of
+	 * EBU R128 / ITU-R BS.1770-4 in LUFS -- K-weighted, over 400 ms blocks
+	 * a tenth of a second apart, gated at -70 LUFS and then 10 LU under
+	 * the blocks' mean -- `loudness_known` false for silence; and the
+	 * highest sample, 0 to 1 or over, so a boost can stop short of it. */
+	double loudness = 0;
+	bool loudness_known = false;
+	double peak = 0;
 
 	bool valid() const { return period > 0; }
 	double bpm() const { return valid() ? 60.0 * rate / period : 0; }
@@ -44,6 +52,17 @@ struct snurra_beat_grid {
  * `stop` returning true gives up, returning no grid.
  */
 snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::function<bool()> &stop = {});
+
+/*
+ * The gain that brings `grid`'s tune to `reference` LUFS (snurra_tile, the
+ * level match): cut as far as it takes, boosted only while the highest
+ * sample stays under full scale and by 12 dB at most; 1 where its loudness
+ * is not known.
+ */
+float snurra_loudness_gain(const snurra_beat_grid &grid, double reference);
+/* Where tunes are brought to: -14 LUFS, as YouTube and Spotify bring theirs,
+ * so most of what is played moves by little. */
+constexpr double SNURRA_LOUDNESS_REFERENCE = -14;
 
 /*
  * A key as a DJ reads it: the Camelot wheel's number and letter, where

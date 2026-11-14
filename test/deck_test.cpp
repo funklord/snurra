@@ -141,6 +141,7 @@ private slots:
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
 	void the_eq_cuts_its_band_and_leaves_the_rest();
+	void a_trim_is_there_from_the_start_and_eased_into_later();
 	void a_nudge_bends_without_a_gap();
 	void a_jump_while_playing_has_no_gap();
 	void an_anchored_deck_keeps_step_at_its_tempo();
@@ -500,6 +501,49 @@ static double frequency(const std::vector<float> &mono) {
  * the level is the tone's; a band cut takes its own frequencies down and
  * leaves the far ones as they were.
  */
+/*
+ * The level match's trim (beats.h snurra_loudness_gain): set before the
+ * first sound it is there from the first; set while playing it is eased
+ * into at a unit of gain a second, never a step a period can hear.
+ */
+void deck_test::a_trim_is_there_from_the_start_and_eased_into_later() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:1000"));
+	start.fallback_length = RATE * 20;
+	snurra_deck deck(start);
+	const float half = std::pow(10.0f, -6.0f / 20);
+	deck.set_trim(half);
+	auto peak_of = [](const rendered_t &block) {
+		float most = 0;
+		for (int64_t i = 0; i < block.advanced; ++i) most = std::max(most, std::abs(block.samples[size_t(2 * i)]));
+		return most;
+	};
+	int64_t present = snurra_clock_us();
+	const std::vector<rendered_t> first = play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 5; });
+	float full = 0;
+	for (const rendered_t &block : first) full = std::max(full, peak_of(block));
+	QVERIFY2(std::abs(full - 0.2f * half) < 0.01f, qPrintable(QStringLiteral("first heard at %1, not %2").arg(full).arg(0.2f * half)));
+
+	/* Back to 1 while playing: half a second to get there from 0.5, in
+	 * small steps. */
+	deck.set_trim(1);
+	const std::vector<rendered_t> after = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE * 3 / 2; });
+	float last = full;
+	float biggest_step = 0;
+	int64_t reached = -1;
+	int64_t frames = 0;
+	for (const rendered_t &block : after) {
+		if (block.advanced < PERIOD) continue;
+		const float now = peak_of(block);
+		biggest_step = std::max(biggest_step, std::abs(now - last));
+		if (reached < 0 && now > 0.199f) reached = frames;
+		last = now;
+		frames += block.advanced;
+	}
+	qInfo("trim eased in over %lld frames, biggest step a period %.4f", qlonglong(reached), double(biggest_step));
+	QVERIFY2(reached > RATE * 2 / 5 && reached < RATE * 3 / 5, qPrintable(QStringLiteral("reached 1 after %1 frames").arg(reached)));
+	QVERIFY(biggest_step < 0.01f);
+}
+
 void deck_test::the_eq_cuts_its_band_and_leaves_the_rest() {
 	auto level = [this](int hz, float low, float mid, float high) {
 		snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:%1").arg(hz));

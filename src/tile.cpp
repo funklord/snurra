@@ -17,6 +17,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPointer>
+#include <QSettings>
 #include <QPainter>
 #include <QRandomGenerator>
 #include <QSlider>
@@ -1021,8 +1022,19 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 	else m_beats = std::make_unique<snurra_beats>(m_state.source, m_deck->rate(), done, m_state.audio_track);
 }
 
+/*
+ * Whether tunes are brought to one loudness (snurra_loudness_gain): the
+ * setting loudness/match, on unless set false -- as Mixxx's ReplayGain is
+ * on from the start, so a mix's next tune comes in at the level of the
+ * one playing rather than at whatever level it was mastered to.
+ */
+static bool loudness_matched() {
+	return QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("loudness/match"), true).toBool();
+}
+
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
+	m_deck->set_trim(loudness_matched() ? snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE) : 1.0f);
 	show_beat();
 	if (m_sync) m_sync->setEnabled(grid.valid() && (m_grouped || m_sync_available));
 	if (m_key_sync) m_key_sync->setEnabled(grid.key >= 0 && (m_grouped || m_sync_available));

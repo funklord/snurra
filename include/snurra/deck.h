@@ -66,6 +66,12 @@ public:
 	 * it, and the deck never sounds a block from where it was. */
 	void set_playing(bool playing) { m_playing.store(playing, std::memory_order_release); }
 	void set_level(float level) { m_level.store(level, std::memory_order_relaxed); }
+	/* A gain under the level, the tune's own (the level match): moved
+	 * toward at one unit of gain a second -- half a second from -6 dB to
+	 * none -- so one that arrives while it plays is heard as a short fade
+	 * rather than a jump; at once while nothing has sounded. */
+	void set_trim(float trim) { m_trim.store(trim, std::memory_order_relaxed); }
+	float trim() const { return m_trim.load(std::memory_order_relaxed); }
 
 	/* Track frames a frame out (1: as recorded), and whether the pitch
 	 * stays as the tempo moves -- key lock -- or moves with it, as a
@@ -224,6 +230,8 @@ private:
 	/* Controls. */
 	std::atomic<bool> m_playing;
 	std::atomic<float> m_level;
+	std::atomic<float> m_trim{ 1 };
+	float m_trim_now = -1;   /* the callback's: where the trim has got to; -1 before the first */
 	std::atomic<float> m_eq_db[3] = { 0, 0, 0 };   /* asked: low, mid, high */
 	/* The callback's own: the isolator's fixed crossovers (make_eq), each
 	 * section with its two channels' state; the bands' gains as heard,

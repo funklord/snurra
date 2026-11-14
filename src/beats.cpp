@@ -107,6 +107,100 @@ struct onsets_t {
 	std::vector<float> all;
 	std::vector<float> body;
 	double notes[12] = {};   /* chroma_t's, C first */
+	double loudness = 0;     /* loudness_t's */
+	bool loudness_known = false;
+	double peak = 0;
+};
+
+/*
+ * Loudness as ITU-R BS.1770-4 measures it, read in the same pass. Each
+ * channel K-weighted -- a high shelf of about +4 dB above 1.5 kHz, as a
+ * head shapes what it hears, then a high-pass at 38 Hz -- its two biquads
+ * designed at the track's rate from their analogue prototypes, which at
+ * 48 kHz gives the standard's own coefficients; the squares summed over
+ * both channels a tenth of a second at a time, four of those a 400 ms
+ * block. Integrated as EBU R128 says: the blocks over -70 LUFS, then of
+ * those the ones within 10 LU of their mean, averaged as energy.
+ */
+struct loudness_t {
+	struct biquad_t {
+		double b0, b1, b2, a1, a2;
+		double z1[2] = {}, z2[2] = {};
+		double run(int channel, double x) {
+			const double y = b0 * x + z1[channel];
+			z1[channel] = b1 * x - a1 * y + z2[channel];
+			z2[channel] = b2 * x - a2 * y;
+			return y;
+		}
+	};
+	biquad_t shelf{}, high_pass{};
+	int step;               /* frames a tenth of a second */
+	int in_step = 0;
+	double sum = 0;         /* this tenth's squares, both channels */
+	std::vector<double> tenths;
+	double peak = 0;
+
+	explicit loudness_t(int rate) : step(std::max(1, rate / 10)) {
+		{
+			const double f0 = 1681.974450955533, gain_db = 3.999843853973347, q = 0.7071752369554196;
+			const double k = std::tan(M_PI * f0 / rate);
+			const double vh = std::pow(10.0, gain_db / 20);
+			const double vb = std::pow(vh, 0.4996667741545416);
+			const double a0 = 1 + k / q + k * k;
+			shelf.b0 = (vh + vb * k / q + k * k) / a0;
+			shelf.b1 = 2 * (k * k - vh) / a0;
+			shelf.b2 = (vh - vb * k / q + k * k) / a0;
+			shelf.a1 = 2 * (k * k - 1) / a0;
+			shelf.a2 = (1 - k / q + k * k) / a0;
+		}
+		{
+			const double f0 = 38.13547087602444, q = 0.5003270373238773;
+			const double k = std::tan(M_PI * f0 / rate);
+			const double a0 = 1 + k / q + k * k;
+			high_pass.b0 = 1;
+			high_pass.b1 = -2;
+			high_pass.b2 = 1;
+			high_pass.a1 = 2 * (k * k - 1) / a0;
+			high_pass.a2 = (1 - k / q + k * k) / a0;
+		}
+	}
+	void add(float left, float right) {
+		peak = std::max({ peak, double(std::abs(left)), double(std::abs(right)) });
+		const double l = high_pass.run(0, shelf.run(0, double(left)));
+		const double r = high_pass.run(1, shelf.run(1, double(right)));
+		sum += l * l + r * r;
+		if (++in_step == step) {
+			tenths.push_back(sum / step);
+			sum = 0;
+			in_step = 0;
+		}
+	}
+	static double lufs(double energy) { return -0.691 + 10 * std::log10(energy); }
+	/* False where no block is over the absolute gate. */
+	bool integrated(double &out) const {
+		std::vector<double> blocks;
+		for (size_t i = 3; i < tenths.size(); ++i)
+			blocks.push_back((tenths[i - 3] + tenths[i - 2] + tenths[i - 1] + tenths[i]) / 4);
+		const double absolute = std::pow(10.0, (-70 + 0.691) / 10);
+		double total = 0;
+		size_t count = 0;
+		for (double block : blocks)
+			if (block > absolute) {
+				total += block;
+				++count;
+			}
+		if (count == 0) return false;
+		const double relative = total / double(count) * std::pow(10.0, -10.0 / 10);
+		total = 0;
+		count = 0;
+		for (double block : blocks)
+			if (block > absolute && block > relative) {
+				total += block;
+				++count;
+			}
+		out = lufs(total / double(count));
+		return true;
+	}
 };
 
 /*
@@ -208,6 +302,7 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 	std::vector<float> flux;
 	std::vector<float> body;
 	chroma_t chroma(rate);
+	loudness_t loud(rate);
 	source.seek(0);
 	bool first = true;
 	for (;;) {
@@ -217,6 +312,7 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 		for (int i = 0; i < n; ++i) {
 			mono.push_back(0.5f * (block[2 * size_t(i)] + block[2 * size_t(i) + 1]));
 			chroma.add(mono.back());
+			loud.add(block[2 * size_t(i)], block[2 * size_t(i) + 1]);
 		}
 		size_t at = 0;
 		while (mono.size() - at >= size_t(WINDOW)) {
@@ -243,6 +339,8 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 	}
 	onsets_t found{ standing_out(flux), standing_out(body) };
 	std::copy(chroma.notes, chroma.notes + 12, found.notes);
+	found.loudness_known = loud.integrated(found.loudness);
+	found.peak = loud.peak;
 	return found;
 }
 
@@ -483,6 +581,9 @@ snurra_beat_grid snurra_find_beats(snurra_source &source, int rate, const std::f
 	snurra_beat_grid grid = find_grid(found, rate, stop);
 	grid.key = key;
 	grid.key_fit = fit;
+	grid.loudness = found.loudness;
+	grid.loudness_known = found.loudness_known;
+	grid.peak = found.peak;
 	return grid;
 }
 
@@ -561,7 +662,7 @@ namespace {
  * differently, so what an older one kept is found again rather than
  * given -- the dotted check (2026-11-13) turned 88 into 132 for tracks
  * an older snurra had kept at 88. */
-constexpr int ANALYSIS = 4;   /* 4: keys from a fit of 0.45, not 0.5 */
+constexpr int ANALYSIS = 5;   /* 4: keys from a fit of 0.45, not 0.5; 5: loudness */
 
 /* The file as it is now, and the analysis: its size and time, which a
  * kept grid must match. */
@@ -570,6 +671,17 @@ QString beats_stamp(const QString &path) {
 }
 
 }   // namespace
+
+float snurra_loudness_gain(const snurra_beat_grid &grid, double reference) {
+	if (!grid.loudness_known) return 1;
+	double db = reference - grid.loudness;
+	if (db > 0) {
+		/* A boost only as far as the highest sample has room, 12 dB at most. */
+		const double room = grid.peak > 0 ? -20 * std::log10(grid.peak) : 12;
+		db = std::min({ db, std::max(0.0, room), 12.0 });
+	}
+	return float(std::pow(10.0, db / 20));
+}
 
 int snurra_key_shifted(int key, int semitones) {
 	if (key < 0 || key > 23) return -1;
@@ -603,8 +715,9 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 	if (!QFileInfo(path).isFile() && !snurra_name_lasts(path)) return false;
 	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
 	const QStringList value = kept.value(snurra_kept_key(path, audio_track)).toString().split(QLatin1Char(' '));
-	/* size time analysis period first confidence rate key fit */
-	if (value.size() != 9 || QStringList(value.mid(0, 3)).join(QLatin1Char(' ')) != beats_stamp(path)) return false;
+	/* size time analysis period first confidence rate key fit loudness peak;
+	 * loudness "-" for none */
+	if (value.size() != 11 || QStringList(value.mid(0, 3)).join(QLatin1Char(' ')) != beats_stamp(path)) return false;
 	const int found_at = value.at(6).toInt();
 	if (found_at <= 0) return false;
 	const double scale = double(rate) / found_at;
@@ -614,20 +727,24 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 	grid.rate = rate;
 	grid.key = std::clamp(value.at(7).toInt(), -1, 23);
 	grid.key_fit = value.at(8).toDouble();
+	grid.loudness = value.at(9).toDouble(&grid.loudness_known);
+	grid.peak = value.at(10).toDouble();
 	return true;
 }
 
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid) {
 	if ((!QFileInfo(path).isFile() && !snurra_name_lasts(path)) || grid.rate <= 0) return;
 	QSettings kept(snurra_kept_file(), QSettings::IniFormat);
-	kept.setValue(snurra_kept_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
+	kept.setValue(snurra_kept_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7 %8 %9")
 	                                                     .arg(beats_stamp(path))
 	                                                     .arg(grid.period, 0, 'g', 17)
 	                                                     .arg(grid.first, 0, 'g', 17)
 	                                                     .arg(grid.confidence, 0, 'g', 6)
 	                                                     .arg(grid.rate)
 	                                                     .arg(grid.key)
-	                                                     .arg(grid.key_fit, 0, 'g', 4));
+	                                                     .arg(grid.key_fit, 0, 'g', 4)
+	                                                     .arg(grid.loudness_known ? QString::number(grid.loudness, 'f', 2) : QStringLiteral("-"))
+	                                                     .arg(grid.peak, 0, 'g', 4));
 }
 
 snurra_beats::snurra_beats(const QString &source, int rate, std::function<void(const snurra_beat_grid &)> done,

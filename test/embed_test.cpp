@@ -1124,6 +1124,9 @@ void embed_test::a_beat_found_once_is_kept_and_shown() {
 	QVERIFY(snurra_cached_beats(path, -1, 48000, kept));
 	QCOMPARE(kept.period, first.period);
 	QCOMPARE(kept.first, first.first);
+	QVERIFY(first.loudness_known && kept.loudness_known);
+	QVERIFY(std::abs(kept.loudness - first.loudness) < 0.01);
+	QVERIFY(std::abs(kept.peak - first.peak) < 0.001);
 	/* Kept, it is what is given, not found again: a grid kept on purpose
 	 * unlike the file's own comes back as it was kept. */
 	snurra_beat_grid planted = first;
@@ -1223,6 +1226,26 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	grid.key = 21;
 	tile->set_beats(grid);
 	QCOMPARE(said->text(), QStringLiteral("120.0 BPM 8A"));
+	QCOMPARE(tile->deck()->trim(), 1.0f);   /* no loudness known: untouched */
+	/* A tune mastered at -8 LUFS is cut 6 dB to -14 -- on by default, the
+	 * key absent; with the match set off (as the test main sets it for the
+	 * rest), left as it is. */
+	{
+		snurra_beat_grid loud = grid;
+		loud.loudness_known = true;
+		loud.loudness = -8;
+		loud.peak = 1;
+		QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+		const QVariant was = settings.value(QStringLiteral("loudness/match"));
+		settings.remove(QStringLiteral("loudness/match"));
+		tile->set_beats(loud);
+		QVERIFY(std::abs(20 * std::log10(tile->deck()->trim()) + 6) < 0.01);
+		settings.setValue(QStringLiteral("loudness/match"), false);
+		tile->set_beats(loud);
+		QCOMPARE(tile->deck()->trim(), 1.0f);
+		if (was.isValid()) settings.setValue(QStringLiteral("loudness/match"), was);
+		tile->set_beats(grid);
+	}
 	tile->set_tempo(1.06f);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 3A"));
 	QCOMPARE(said->toolTip(), QStringLiteral("Key 3A Bbm as heard"));

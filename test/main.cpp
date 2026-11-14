@@ -1,5 +1,6 @@
 /* Every suite in one binary, so `make test` builds and runs one thing. */
 #include <QApplication>
+#include <QSettings>
 #include <QDir>
 #include <QTemporaryDir>
 
@@ -53,6 +54,10 @@ int main(int argc, char **argv) {
 	QDir().mkpath(settings);
 	qputenv("XDG_CONFIG_HOME", settings.toLocal8Bit());
 	QApplication app(argc, argv);
+	/* Tunes left at their own levels: the trains' and stacks' tests
+	 * measure exact levels on files that would otherwise be trimmed to
+	 * -14 LUFS once analysed. The level match's own test turns it on. */
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).setValue(QStringLiteral("loudness/match"), false);
 	/*
 	 * And no crash handler at all: a crash ends the run there. A double
 	 * free in a reader thread (2026-11-14) set QtTest's handler printing
