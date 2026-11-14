@@ -834,18 +834,33 @@ trade exactness for time; not built, and the DJ requirement argues
 against it as a default. The length of bytes not all here is the
 duration's estimate, not the last packets'.
 
-**-O2 faster than -Os, 2026-11-14 -- an exception taken back, being
-researched.** Measured under load: a 4K film at 60 played in a tile showed
-6 pictures a second at -Os where the same code at -O2 showed 44; forcing
-the conversion's per-sample helpers inline gave 13 at -Os, and splitting a
-frame's rows across up to four threads (`in_bands`, kept) 20. The beat and
-key analysis took 0.93 s a minute at -Os and 0.47 s at -O2. An -O2
-exception for `video.cpp` and then `beats.cpp` (8f81351, 42c6cea) was
-taken back at the holder's word the same day: "-O2 being faster than -Os
-is a code smell, please research this deeper before deciding on an
-exception". What -Os leaves undone in those loops is the question; the
-answer goes here. (42c6cea was also pushed on a suite that had failed --
-on the crash below, not on the flag -- which should not have happened.)
+**-O2 faster than -Os, 2026-11-14: a code smell, and it was the code.**
+The holder, on an -O2 exception made for the picture and the analysis:
+"-O2 being faster than -Os is a code smell, please research this deeper
+before deciding on an exception". The exception was taken back, and perf
+on each, built both ways, found what -Os left undone -- each a habit of
+code leaning on -O2, not a reason to change flags:
+- **The picture's conversion** (`to_rgb`, a 4K frame shown 1280 wide,
+  benchmarked alone): the `wide` and `interleaved` tests read each
+  sample inside its loop, which -O2 hoists and -Os does not (a sixth of
+  the time); a row-sum array written a sample, which -O2 vectorises; a
+  float divide a pixel; `qRgb` left a call. With 8-bit planar loops that
+  test nothing a sample, each 8-bit pixel summed straight from the
+  film's rows, a reciprocal a column and the pixel packed in place: -Os
+  24 ms a frame to 12 to 14 (-O2 15 to 9), under the 16.7 a picture at
+  60 allows; images identical, hash for hash, at four widths and both
+  branches. Earlier, under load and before the helpers were forced
+  inline, the tile had shown 6 pictures a second at -Os against 44 at
+  -O2.
+- **The analysis** (`beats.cpp`): 44 % of its time in libgcc's
+  `__mulsc3`, `std::complex`'s C99 multiply with its infinity and NaN
+  handling, which -Os calls for every FFT product where -O2 inlines a
+  fast path; and `std::abs` on a complex is `hypotf`. Written out in real
+  arithmetic, with a square root for the magnitude: a minute 0.93 s to
+  0.42-0.48 at -Os, the same as -O2; the holder's 48 Mixxx-analysed
+  tracks 320 s to 149 s, every key, BPM and fit the same.
+The player stays -Os throughout. What the forced inlining and the row
+bands kept cost: 29 KB of code (538369 to 567498 bytes).
 
 **A double free playing DASH in a tile, 2026-11-14, found and closed.**
 Once in a full suite, `an_hls_stream_plays_and_seeks(DASH)`'s tile aborted

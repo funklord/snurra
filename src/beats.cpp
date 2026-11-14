@@ -43,6 +43,12 @@ constexpr double ALTERNATING = 0.5;
  * 0.5 agreeing as often as those over it, half. */
 constexpr double KEY_FIT = 0.45;
 
+/* |c|: a square root, where std::abs is hypotf, guarding against an
+ * overflow no sample of sound can reach. */
+inline float magnitude(const std::complex<float> &c) {
+	return std::sqrt(c.real() * c.real() + c.imag() * c.imag());
+}
+
 /* In place, radix 2; `data` a power of two long. */
 void fft(std::vector<std::complex<float>> &data) {
 	const size_t n = data.size();
@@ -59,10 +65,17 @@ void fft(std::vector<std::complex<float>> &data) {
 			std::complex<float> turn(1, 0);
 			for (size_t k = 0; k < length / 2; ++k) {
 				const std::complex<float> even = data[i + k];
-				const std::complex<float> odd = data[i + k + length / 2] * turn;
+				/* The product written out: std::complex's operator* is
+				 * C99's, which -Os leaves a call to libgcc's __mulsc3 for
+				 * its infinities and NaNs -- 44 % of an analysis's time
+				 * (perf, 2026-11-14), where none can arise. */
+				const std::complex<float> b = data[i + k + length / 2];
+				const std::complex<float> odd(b.real() * turn.real() - b.imag() * turn.imag(),
+				                              b.real() * turn.imag() + b.imag() * turn.real());
 				data[i + k] = even + odd;
 				data[i + k + length / 2] = even - odd;
-				turn *= step;
+				turn = std::complex<float>(turn.real() * step.real() - turn.imag() * step.imag(),
+				                           turn.real() * step.imag() + turn.imag() * step.real());
 			}
 		}
 	}
@@ -151,7 +164,7 @@ public:
 		m_block.clear();
 		fft(m_spectrum);
 		double block[12] = {};
-		for (const bin_t &bin : m_bins) block[bin.note] += std::abs(m_spectrum[size_t(bin.k)]);
+		for (const bin_t &bin : m_bins) block[bin.note] += magnitude(m_spectrum[size_t(bin.k)]);
 		const double loudest = *std::max_element(block, block + 12);
 		if (loudest < 1e-3 * m_size / KEY_WINDOW) return;   /* silence, or near it */
 		for (int note = 0; note < 12; ++note) notes[note] += block[note] / loudest;
@@ -212,7 +225,7 @@ onsets_t onsets(snurra_source &source, int rate, const std::function<bool()> &st
 			float rise = 0;
 			float body_rise = 0;
 			for (int k = 1; k <= WINDOW / 2; ++k) {
-				const float linear = std::abs(spectrum[size_t(k)]);
+				const float linear = magnitude(spectrum[size_t(k)]);
 				const float magnitude = std::log1p(100.0f * linear);
 				if (!first) {
 					rise += std::max(0.0f, magnitude - previous[size_t(k)]);
