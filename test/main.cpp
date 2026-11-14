@@ -1,5 +1,6 @@
 /* Every suite in one binary, so `make test` builds and runs one thing. */
 #include <QApplication>
+#include <QDir>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -44,6 +45,13 @@ int main(int argc, char **argv) {
 	 * the processes the tests start inherit it. */
 	QTemporaryDir cache;
 	qputenv("SNURRA_CACHE", cache.path().toLocal8Bit());
+	/* And its own settings, for the same reason: a test that sets or clears
+	 * one -- the AcoustID key's absence, a library folder remembered --
+	 * would otherwise write the person's ~/.config/snurra/snurra.conf.
+	 * Through XDG_CONFIG_HOME, which the processes the tests start take too. */
+	const QString settings = cache.path() + QStringLiteral("/config");
+	QDir().mkpath(settings);
+	qputenv("XDG_CONFIG_HOME", settings.toLocal8Bit());
 	QApplication app(argc, argv);
 	/*
 	 * And no crash handler at all: a crash ends the run there. A double
