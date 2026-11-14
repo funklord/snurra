@@ -67,17 +67,19 @@ snurra_estate_bytes::snurra_estate_bytes(const uint8_t root[FZN_RPC_BLOB_HASH_LE
 	/* The size, and how much is here, from a one-byte read: the status
 	 * probe the node's own description names. */
 	std::lock_guard<std::mutex> hold(m_lock);
-	if (fzn_rpc_library_play(&m_call, m_root, 0, 1, m_reply.get()) == FZN_RPC_OK) {
+	const int probed = fzn_rpc_library_play(&m_call, m_root, 0, 1, m_reply.get());
+	if (probed == FZN_RPC_OK) {
 		took(*m_reply);
 		return;
 	}
-	/* Not known here: a file another host holds, which this node reads only
-	 * once a fetch has begun -- "never heard of it" and "none of it yet" are
-	 * fuzznet's two answers. Opened to be played, it is begun, from the
-	 * start; the reader moves it where it seeks (want). Measured
-	 * 2026-11-14 with two hosts: a node holding the file's reference and
-	 * its name answered "not in the library" until then. */
+	/* None of it here yet: a file another host holds, which this node reads
+	 * only once a fetch has begun. fuzznet says so with its own code since
+	 * bbe14fc (it said "not in the library" before, 2026-11-14), and leaves
+	 * beginning it to the player, a probe being what a listing makes of
+	 * every row. Opened to be played, it is begun, from the start; the
+	 * reader moves it where it seeks (want). Any other failure is left. */
 	m_error = QString::fromUtf8(m_call.error);
+	if (probed != FZN_RPC_ERR_NOT_FETCHED) return;
 	if (fzn_rpc_blob_fetch_at(&m_call, m_root, 0) != FZN_RPC_OK) {
 		m_error = QString::fromUtf8(m_call.error);
 		return;

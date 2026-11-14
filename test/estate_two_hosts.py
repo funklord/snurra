@@ -132,6 +132,7 @@ def main(argv):
 			env.update({"SNURRA_TEST_CLASS": "estate", "SNURRA_FUZZNET_SOCKET": socks["b"],
 			            "SNURRA_ESTATE_ROOT": root, "SNURRA_ESTATE_FILE": payload,
 			            "QT_QPA_PLATFORM": "offscreen"})
+			began = time.strftime("%H:%M:%S", time.gmtime())
 			left = max(10.0, live_trim.DEADLINE - time.monotonic())
 			r = subprocess.run([tests, "a_file_on_another_host_plays_as_it_arrives"], env=env,
 			                   timeout=left, capture_output=True, text=True)
@@ -139,6 +140,14 @@ def main(argv):
 			sys.stderr.write(r.stderr)
 			if r.returncode != 0 or "PASS   : estate_test::a_file_on_another_host" not in r.stdout:
 				raise failed("snurra did not play A's file through B")
+			if os.environ.get("FZN_FAULT_LOSS"):
+				# WHICH PEERS B'S FETCH ASKED, from its own log at level D: fuzznet
+				# (inbox 20261114T1044Z) reads "asking 0 peer(s)" before the fetch
+				# that finally runs as A marked silent at its rounds.
+				print("estate-2h: the play ran %s to %s UTC" % (began, time.strftime("%H:%M:%S", time.gmtime())))
+				for line in started["b"].log().splitlines():
+					if root[:8] in line or ("asking" in line and "peer(s)" in line):
+						print("estate-2h: B: " + line.strip()[:220])
 			print("estate-2h: pass")
 			return 0
 		except failed as e:

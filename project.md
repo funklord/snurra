@@ -185,6 +185,18 @@ and everything above it knows nothing of SFTP or fuzznet.
       with it (the whole 13.2, 47.9), 50.0 and 35.7 s without (51.2,
       35.9). The spread swamps any gain. That is fuzznet's playhead
       fetch (its sec 998), reported to it (inbox 20261113T2344Z).
+      **fuzznet answered (inbox 20261114T1044Z):** "not in the library"
+      is its own code now, `FZN_RPC_ERR_NOT_FETCHED` (bbe14fc), and the
+      play still leaves beginning a fetch to the player, a probe being
+      what a listing makes of every row -- so snurra, pinned at bbe14fc,
+      begins one on that code alone; the qsort of an empty catalogue is
+      guarded (2400a7b). On the loss it read a sibling marked silent at
+      its rounds, and asked for B's log: the scenario prints it under
+      `--loss` now, and it said otherwise -- `asking 1 peer(s)` a second
+      after the play began, then nothing on the file for 24 s, then 768
+      of its 938 leaves in one batch. Sent back (inbox 20261114T1109Z):
+      a lost request or answer waiting out a long retry, more like, and
+      fuzznet's to say.
     - **Titled by its catalogued name**: a tile, the window, the picture's
       full screen and a DJ deck called an estate file by its 64 hex
       digits, each making a title of the name's file name. They ask
