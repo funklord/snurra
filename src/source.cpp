@@ -293,6 +293,7 @@ public:
 		m_skip = 0;
 		m_front_pts = AV_NOPTS_VALUE;
 		m_place_next = true;
+		m_untimed = 0;
 	}
 
 	int64_t position() const override { return m_position; }
@@ -435,6 +436,19 @@ private:
 		if (frame)
 			for (int i = 0; i < AV_NUM_DATA_POINTERS && i < frame->ch_layout.nb_channels; ++i)
 				planes[i] = frame->extended_data[i];
+		/*
+		 * A frame with no time cannot be placed: after an HLS seek the first
+		 * AAC frame of the segment has none (2026-11-14), and placed as it
+		 * was it played from the segment's start, 2 s before the target.
+		 * So it is dropped, and the next frame with a time is placed --
+		 * after a seek past the start only, and sixteen at most, so a
+		 * stream with no times at all still plays as it did.
+		 */
+		if (m_place_next && frame && m_trim_to > 0 && frame->pts == AV_NOPTS_VALUE
+		    && frame->best_effort_timestamp == AV_NOPTS_VALUE && m_untimed < 16) {
+			++m_untimed;
+			return;
+		}
 		if (m_place_next && frame) {
 			m_place_next = false;
 			const int skip = place(frame);
@@ -562,6 +576,7 @@ private:
 	bool m_ended = false;
 	bool m_draining = false;
 	bool m_place_next = false;
+	int m_untimed = 0;   /* frames with no time dropped before placing, since the seek */
 	int64_t m_trim_to = 0;
 	int64_t m_skip = 0;   /* frames still to drop to reach m_trim_to */
 	int64_t m_preroll = 0;   /* frames decoded and dropped before a seek's target */

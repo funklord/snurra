@@ -1173,8 +1173,18 @@ controls; each tile very compact but resizeable).
   mplayer when `snurra` is on PATH, called `snurra <url>` and nothing
   else -- the URL hydra's local proxy, which adds the CDN's Referer,
   cookies and User-Agent and answers ranges; an HLS or DASH stream is
-  assembled first (whether snurra's FFmpeg plays a manifest through the
-  proxy is unmeasured). Seen playing such a URL at 12 s. Its saved mixes
+  assembled first. **Measured 2026-11-14** (`an_hls_stream_plays_and_seeks`,
+  a 6 s film cut by ffmpeg, served over HTTP): an HLS playlist plays
+  through every segment, unbroken across the joins, and seeks exactly
+  -- once fixed: the first AAC frame of a segment sought into has no
+  timestamp, and placed anyway it played from the segment's start,
+  2 s before a 4 s target; such a frame is dropped now and the next
+  timed one placed (after a seek past the start, sixteen at most). A
+  DASH manifest plays too, but FFmpeg 7.1's DASH demuxer loses some 70
+  ms at a segment join: the ffmpeg program jumps at the same place and
+  gives the same 285327 frames, while the audio's segments joined by
+  hand are whole (288671). Upstream's; the test expects it and will say
+  when it is mended. So hydra's assembling of DASH is still worth it. Seen playing such a URL at 12 s. Its saved mixes
   carry their tracklist as chapters in the file (Matroska for Opus, MP4
   for AAC, titles "Artist - Title"), a .cue beside it, or an .m3u with
   VLC's start- and stop-times, with title, artist, date, source and

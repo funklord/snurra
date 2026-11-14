@@ -10,6 +10,10 @@
  */
 #include <QElapsedTimer>
 #include <QTcpServer>
+
+#include <atomic>
+#include <functional>
+#include <thread>
 #include <QTcpSocket>
 #include <QSignalSpy>
 #include <QDataStream>
@@ -66,6 +70,8 @@ private slots:
 	void the_full_screen_picture_takes_the_players_keys();
 	void a_url_plays_with_its_picture();
 	void a_url_that_never_answers_lets_the_window_close();
+	void an_hls_stream_plays_and_seeks_data();
+	void an_hls_stream_plays_and_seeks();
 	void a_picture_from_bytes_is_the_files_picture();
 	void a_picture_without_sound_is_not_a_failure();
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
@@ -624,6 +630,171 @@ void video_test::a_url_plays_with_its_picture() {
 	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
 	QTRY_VERIFY_WITH_TIMEOUT(tile->state().duration_us < 4000000, 5000);   /* the film's own length */
 	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 1000000, 5000);
+	QVERIFY(!tile->deck()->failed());
+}
+
+/*
+ * An HTTP server for a folder, on this thread: GET /name answered with that
+ * file whole and closed, 404 for any other -- an HLS rendition, a playlist
+ * and its segments, as a site or hydra's proxy serves one.
+ */
+class folder_server : public QTcpServer {
+public:
+	explicit folder_server(const QString &folder) : m_folder(folder) {
+		connect(this, &QTcpServer::newConnection, this, [this] {
+			while (QTcpSocket *socket = nextPendingConnection()) {
+				m_held << socket;
+				connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+					m_request[socket] += socket->readAll();
+					if (!m_request[socket].contains("\r\n\r\n")) return;
+					const QByteArray line = m_request[socket].left(m_request[socket].indexOf("\r\n"));
+					const QString path = QString::fromLatin1(line.split(' ').value(1)).section(QLatin1Char('?'), 0, 0).mid(1);
+					QFile file(QDir(m_folder).filePath(path));
+					if (path.contains(QLatin1String("..")) || !file.open(QIODevice::ReadOnly)) {
+						socket->write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+					} else {
+						const QByteArray body = file.readAll();
+						++m_served;
+						socket->write("HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(body.size())
+						              + "\r\nConnection: close\r\n\r\n");
+						socket->write(body);
+					}
+					socket->disconnectFromHost();
+				});
+			}
+		});
+	}
+	QString url(const QString &name) const { return QStringLiteral("http://127.0.0.1:%1/%2").arg(serverPort()).arg(name); }
+	int served() const { return m_served; }
+
+private:
+	QString m_folder;
+	int m_served = 0;
+	QList<QTcpSocket *> m_held;
+	QHash<QTcpSocket *, QByteArray> m_request;
+};
+
+/*
+ * An HLS stream, and a DASH one (hydra hands snurra such URLs; project.md
+ * said whether one plays was unmeasured): a 6 s film -- a 440 Hz tone under a test picture --
+ * cut by ffmpeg into 2 s segments and a playlist, served over HTTP. Opened
+ * by its playlist's URL, the sound is 6 s of 440 Hz through every segment;
+ * sought to 4 s it goes on from there; and a tile shows its picture.
+ */
+void video_test::an_hls_stream_plays_and_seeks_data() {
+	QTest::addColumn<QString>("format");
+	QTest::newRow("HLS") << QStringLiteral("hls");
+	QTest::newRow("DASH") << QStringLiteral("dash");
+}
+
+void video_test::an_hls_stream_plays_and_seeks() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QFETCH(QString, format);
+	const bool hls = format == QLatin1String("hls");
+	const QString folder = m_dir.filePath(format);
+	QVERIFY(QDir().mkpath(folder));
+	const QStringList cut = hls ? QStringList{ QStringLiteral("-f"), QStringLiteral("hls"), QStringLiteral("-hls_time"), QStringLiteral("2"),
+		                                   QStringLiteral("-hls_playlist_type"), QStringLiteral("vod"),
+		                                   QDir(folder).filePath(QStringLiteral("index.m3u8")) }
+	                            : QStringList{ QStringLiteral("-f"), QStringLiteral("dash"), QStringLiteral("-seg_duration"), QStringLiteral("2"),
+		                                   QDir(folder).filePath(QStringLiteral("index.mpd")) };
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, QStringList{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                                    QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:r=25:d=6"),
+	                                    QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=f=440:d=6"),
+	                                    QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-g"), QStringLiteral("50"),
+	                                    QStringLiteral("-c:a"), QStringLiteral("aac") }
+	                           + cut);
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+	const int segments = QDir(folder).entryList({ hls ? QStringLiteral("*.ts") : QStringLiteral("chunk-*") }).size();
+	QVERIFY(segments >= 3);
+	folder_server server(folder);
+	QVERIFY(server.listen(QHostAddress::LocalHost));
+	const QString url = server.url(hls ? QStringLiteral("index.m3u8") : QStringLiteral("index.mpd"));
+
+	constexpr int RATE = 48000;
+	/* Off this thread, which serves the requests: opening and reading block. */
+	auto off_thread = [](const std::function<void()> &work) {
+		std::atomic<bool> done{ false };
+		std::thread worker([&] {
+			work();
+			done = true;
+		});
+		QElapsedTimer waited;
+		waited.start();
+		while (!done && waited.elapsed() < 30000) QTest::qWait(10);
+		const bool finished = done;
+		worker.join();   /* a hung read is bounded by the test's own timeout */
+		return finished;
+	};
+	std::unique_ptr<snurra_source> source;
+	QVERIFY(off_thread([&] { source = snurra_open_source(url, RATE, RATE); }));
+	QVERIFY(source);
+	qInfo("%s: %d segments, length %lld frames", qPrintable(format), segments, (long long)source->length());
+	QVERIFY2(std::abs(source->length() - 6 * RATE) < RATE / 5, qPrintable(QString::number(source->length())));
+	std::vector<float> left;
+	std::vector<float> block(2 * 4096);
+	QVERIFY(off_thread([&] {
+		for (int n; (n = source->read(block.data(), 4096)) > 0;)
+			for (int i = 0; i < n; ++i) left.push_back(block[size_t(2 * i)]);
+	}));
+	int crossings = 0;
+	for (size_t i = 1; i < left.size(); ++i)
+		if (left[i - 1] < 0 && left[i] >= 0) ++crossings;
+	const double hz = left.empty() ? 0 : crossings * double(RATE) / double(left.size());
+	qInfo("%s: read %zu frames, %.1f Hz, %d requests served", qPrintable(format), left.size(), hz, server.served());
+	QVERIFY2(std::abs(double(left.size()) - 6 * RATE) < RATE / 5, qPrintable(QString::number(left.size())));
+	QVERIFY2(std::abs(hz - 440) < 3, qPrintable(QString::number(hz)));
+	/* FFmpeg 7.1's DASH demuxer loses some 70 ms at a segment's join
+	 * (2026-11-14): the same rendition decoded by the ffmpeg program jumps
+	 * at the same place and is the same 285327 frames, while its audio
+	 * segments joined by hand are whole, 288671. Upstream's, so expected
+	 * here -- and reported as passing the day it is mended. */
+	if (!hls) QEXPECT_FAIL("DASH", "FFmpeg 7.1's DASH demuxer loses audio at a segment join", Continue);
+	/* And unbroken across the segments' joins: no step between two
+	 * samples steeper than the tone's own, but for the fade in at the
+	 * start. */
+	float amplitude = 0;
+	for (float v : left) amplitude = std::max(amplitude, std::abs(v));
+	const double steepest = 2 * M_PI * 440 / RATE * amplitude;
+	double worst = 0;
+	size_t worst_at = 0;
+	for (size_t i = size_t(RATE / 10); i + 1 < size_t(6 * RATE) && i + 1 < left.size(); ++i)
+		if (std::abs(double(left[i + 1] - left[i])) > worst) {
+			worst = std::abs(double(left[i + 1] - left[i]));
+			worst_at = i;
+		}
+	qInfo("%s: steepest step %.4f at frame %zu, the tone's own %.4f", qPrintable(format), worst, worst_at, steepest);
+	QVERIFY2(worst < 1.2 * steepest, qPrintable(QStringLiteral("a jump of %1 at frame %2").arg(worst).arg(worst_at)));
+
+	/* Sought to 4 s, into the last segment: some 2 s are left. */
+	size_t rest = 0;
+	QVERIFY(off_thread([&] {
+		source->seek(4 * RATE);
+		for (int n; (n = source->read(block.data(), 4096)) > 0;) rest += size_t(n);
+	}));
+	/* Exactly: what is left after 4 s, as reading through gave it. The
+	 * first frame of the segment sought into has no time; placed anyway,
+	 * it played from the segment's start, 2 s early (195048 left). */
+	qInfo("%s: sought to 4 s, %zu frames left, %zu read through past 4 s", qPrintable(format), rest, left.size() - size_t(4 * RATE));
+	/* Against a read-through that lost frames at the join too: no exact
+	 * reference while the demuxer loses them. */
+	if (!hls) QEXPECT_FAIL("DASH", "FFmpeg 7.1's DASH demuxer loses audio at a segment join", Continue);
+	QVERIFY2(std::abs(double(rest) - double(left.size() - size_t(4 * RATE))) <= 2, qPrintable(QString::number(rest)));
+
+	/* And as a tile, its picture with it. */
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = url;
+	state.duration_us = 180000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 10000);
+	QTRY_VERIFY_WITH_TIMEOUT(std::abs(tile->state().duration_us - 6000000) < 200000, 10000);
+	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 1000000, 10000);
 	QVERIFY(!tile->deck()->failed());
 }
 
