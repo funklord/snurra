@@ -528,9 +528,12 @@ QString beats_file() {
 	return dir + QStringLiteral("/beats.ini");
 }
 
-/* The key: a hash of the path and the track, so any path is a plain key. */
+/* The key: a hash of the path and the track, so any path is a plain key --
+ * a lasting name as it is, which made absolute would change with the
+ * folder snurra was started in. */
 QString beats_key(const QString &path, int audio_track) {
-	const QByteArray what = (QFileInfo(path).absoluteFilePath() + QLatin1Char('|') + QString::number(audio_track)).toUtf8();
+	const QString who = snurra_name_lasts(path) ? path : QFileInfo(path).absoluteFilePath();
+	const QByteArray what = (who + QLatin1Char('|') + QString::number(audio_track)).toUtf8();
 	return QString::fromLatin1(QCryptographicHash::hash(what, QCryptographicHash::Sha1).toHex());
 }
 
@@ -543,6 +546,9 @@ constexpr int ANALYSIS = 4;   /* 4: keys from a fit of 0.45, not 0.5 */
 /* The file as it is now, and the analysis: its size and time, which a
  * kept grid must match. */
 QString beats_stamp(const QString &path) {
+	/* A lasting name's content is its name: nothing to compare but the
+	 * analysis (snurra_name_lasts). */
+	if (snurra_name_lasts(path)) return QStringLiteral("0 0 a%1").arg(ANALYSIS);
 	const QFileInfo info(path);
 	return QStringLiteral("%1 %2 a%3").arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch()).arg(ANALYSIS);
 }
@@ -578,7 +584,7 @@ QString snurra_key_name(int key, int semitones) {
 }
 
 bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_beat_grid &grid) {
-	if (!QFileInfo(path).isFile()) return false;
+	if (!QFileInfo(path).isFile() && !snurra_name_lasts(path)) return false;
 	QSettings kept(beats_file(), QSettings::IniFormat);
 	const QStringList value = kept.value(beats_key(path, audio_track)).toString().split(QLatin1Char(' '));
 	/* size time analysis period first confidence rate key fit */
@@ -596,7 +602,7 @@ bool snurra_cached_beats(const QString &path, int audio_track, int rate, snurra_
 }
 
 void snurra_cache_beats(const QString &path, int audio_track, const snurra_beat_grid &grid) {
-	if (!QFileInfo(path).isFile() || grid.rate <= 0) return;
+	if ((!QFileInfo(path).isFile() && !snurra_name_lasts(path)) || grid.rate <= 0) return;
 	QSettings kept(beats_file(), QSettings::IniFormat);
 	kept.setValue(beats_key(path, audio_track), QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
 	                                                     .arg(beats_stamp(path))

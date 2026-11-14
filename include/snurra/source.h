@@ -145,6 +145,15 @@ using snurra_title_resolver = std::function<QString(const QString &name)>;
 void snurra_set_title_resolver(snurra_title_resolver resolver);
 QString snurra_title_of(const QString &name);
 
+/*
+ * Names whose content never changes -- named by its hash, as an estate's
+ * "fuzznet:ROOT" is -- which a cache may keep by the name alone: the beat
+ * cache keys a file by its size and time, which such a name has none of.
+ * A host says which (snurra_set_lasting_names); none by default.
+ */
+void snurra_set_lasting_names(std::function<bool(const QString &name)> lasting);
+bool snurra_name_lasts(const QString &name);
+
 /* What a tile is given for `name`: a path made absolute, so another
  * process finds it; a URL, or a name with a scheme of its own --
  * "fuzznet:ROOT", "tone:440" -- as it is, which a path made absolute

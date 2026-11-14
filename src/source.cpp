@@ -819,7 +819,22 @@ QString snurra_source_of(const QString &name) {
 
 namespace {
 snurra_title_resolver titler_set;
+std::function<bool(const QString &)> lasting_set;
 }   // namespace
+
+void snurra_set_lasting_names(std::function<bool(const QString &name)> lasting) {
+	std::lock_guard<std::mutex> hold(resolver_lock);
+	lasting_set = std::move(lasting);
+}
+
+bool snurra_name_lasts(const QString &name) {
+	std::function<bool(const QString &)> lasting;
+	{
+		std::lock_guard<std::mutex> hold(resolver_lock);
+		lasting = lasting_set;
+	}
+	return lasting && lasting(name);
+}
 
 void snurra_set_title_resolver(snurra_title_resolver resolver) {
 	std::lock_guard<std::mutex> hold(resolver_lock);

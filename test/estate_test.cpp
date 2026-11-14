@@ -15,6 +15,7 @@
 #include <sys/prctl.h>
 
 #include "estate.h"
+#include "snurra/beats.h"
 #include "snurra/library.h"
 #include "snurra/source.h"
 
@@ -279,6 +280,21 @@ void estate_test::the_library_lists_the_estate_beside_the_folder() {
 	local.close();
 	QVERIFY(!catalogue(QStringLiteral("Tone L"), wav_of(RATE, [](int i) { return int(8000 * std::sin(2 * M_PI * 330 * i / double(RATE))); }))
 	             .isEmpty());
+	/* Its beat kept before, by its lasting name: the row shows it, as a
+	 * folder's file kept shows its BPM and key. */
+	snurra_estate_install();
+	std::vector<snurra_estate_file> listed = snurra_estate_list(nullptr);
+	const auto tone_l = std::find_if(listed.begin(), listed.end(), [](const snurra_estate_file &f) { return f.name == QLatin1String("Tone L"); });
+	QVERIFY(tone_l != listed.end());
+	const QString tone_l_name = snurra_estate_name(reinterpret_cast<const uint8_t *>(tone_l->root.constData()));
+	snurra_beat_grid kept;
+	kept.rate = RATE;
+	kept.period = 24000;
+	kept.key = 21;
+	snurra_cache_beats(tone_l_name, -1, kept);
+	snurra_beat_grid back;
+	QVERIFY2(snurra_cached_beats(tone_l_name, -1, RATE, back), "a lasting name's grid was not kept");
+	QCOMPARE(back.period, 24000.0);
 	snurra_library library(folder.path());
 	snurra_estate_offer(&library);
 	QAbstractItemModel *model = library.findChild<QTreeView *>()->model();
@@ -291,6 +307,8 @@ void estate_test::the_library_lists_the_estate_beside_the_folder() {
 	QTRY_VERIFY_WITH_TIMEOUT(row_of(QStringLiteral("local")) >= 0, 5000);
 	const int tone = row_of(QStringLiteral("Tone L"));
 	QCOMPARE(model->index(tone, 4).data().toString(), QStringLiteral("on this host"));
+	QCOMPARE(model->index(tone, 2).data().toString(), QStringLiteral("120.0"));
+	QCOMPARE(model->index(tone, 3).data().toString(), QStringLiteral("8A Am"));
 	const QString name = library.shown().at(tone);
 	uint8_t root[32];
 	QVERIFY2(snurra_estate_root(name, root), qPrintable(name));

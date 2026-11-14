@@ -192,6 +192,23 @@ and everything above it knows nothing of SFTP or fuzznet.
       (`snurra_set_title_resolver`; the estate asks the node once a
       name) and the file's name otherwise; without the estate's, the
       test sees the hex and fails.
+    - **Kept by its lasting name**: the beat cache keyed a file by its
+      size and time, which a `fuzznet:ROOT` has none of, so its beat and
+      key were never kept and Find tempos fetched and analysed it again
+      each time. A host now says which names last
+      (`snurra_set_lasting_names`; a root names its bytes by their hash)
+      and the cache keeps those by the name alone, and the library fills
+      a host's rows from it as it does a folder's. Without the estate's
+      word the grid is not kept and the test fails.
+    - **Open, an intermittent crossfade, 2026-11-14**:
+      `a_tile_pulled_out_crosses_over_in_step_without_a_gap` measured the
+      gains summing to 0.56 once in a full suite and 0.94 once alone, at
+      load 34 to 38 (other sessions' gates), on the build with the
+      estate; 2 in 16 runs of it, none in 15 of the build before
+      (3865735, from a worktree), then ten of each alternated, all clean
+      (worst 0.0004 and 0.0003 off). Too few to blame the change or
+      clear it; the change adds nothing to the crossfade's path that is
+      seen. Kept open, not explained.
     - **Android: not built, and why.** On a phone the node runs inside
       fuzzypickles' own app, and Android keeps apps' local sockets apart
       (SELinux puts each app in its own category; that it refuses one

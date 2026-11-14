@@ -163,6 +163,12 @@ void snurra_estate_install() {
 		return std::make_shared<snurra_estate_bytes>(root);
 	});
 	snurra_set_title_resolver(snurra_estate_title);
+	/* A root names the file's bytes by their hash: what is kept of it,
+	 * its beat and key, holds while the name does. */
+	snurra_set_lasting_names([](const QString &name) {
+		uint8_t root[FZN_RPC_BLOB_HASH_LEN];
+		return snurra_estate_root(name, root);
+	});
 }
 
 void snurra_estate_offer(snurra_library *library) {

@@ -258,6 +258,18 @@ void snurra_library::add_entries(const std::vector<snurra_library_entry> &entrie
 		m_items.insert(entry.name, name);
 		m_model->appendRow({ name, new QStandardItem(entry.artist), new QStandardItem(), new QStandardItem(), new QStandardItem(entry.where) });
 	}
+	/* Their tempo and key where kept (beats.h) -- a host's lasting names
+	 * are kept by the name -- as the folder's are: nothing is analysed. */
+	std::vector<std::pair<QString, snurra_tags>> told;
+	for (const snurra_library_entry &entry : entries) {
+		snurra_beat_grid grid;
+		if (!snurra_cached_beats(entry.name, -1, 48000, grid)) continue;
+		snurra_tags tags;
+		tags.bpm = grid.bpm();
+		tags.key = grid.key;
+		told.emplace_back(entry.name, tags);
+	}
+	if (!told.empty()) tagged(told);
 	m_filter->sort(m_filter->sortColumn() < 0 ? FOLDER : m_filter->sortColumn(), m_filter->sortOrder());
 	m_filter->setDynamicSortFilter(true);
 }
