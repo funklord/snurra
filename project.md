@@ -834,6 +834,21 @@ trade exactness for time; not built, and the DJ requirement argues
 against it as a default. The length of bytes not all here is the
 duration's estimate, not the last packets'.
 
+**But the picture's pixel loops at -O2, 2026-11-14**: a 4K film at
+60, played in a tile, showed 6 pictures a second with the player at
+-Os, where the same code at -O2 showed 44 -- the build-for-size change
+below had made every per-sample helper of the conversion
+(`src/video.cpp`'s `to_rgb`) a call. Forcing those inline gave 13;
+splitting the frame's rows across up to four threads gave 20 at -Os
+and all 60 at -O2 (measured under load 25 to 36, which is why figures
+from different moments differ). FFmpeg alone decodes that film at 2.7
+times real time, so decoding was never the limit. `video.cpp` is
+compiled at -O2 in the player (`app/speed.pri`, a compiler of its own,
+since qmake has no flags a file; clang ignores GCC's optimize pragma,
+so the phone needs it this way), the rest at -Os: 44 KB more code
+(538369 to 582313 bytes). 1080p at 60 shows 60 either way. Not in
+`snurra.pri`, whose consumers keep their own flags.
+
 **Built for size, 2026-11-13** (sec 1: tiny, held deliberately):
 `-Os` with sections collected (`--gc-sections`). The `-Os` stood in
 `QMAKE_CXXFLAGS`, where qmake's release `-O2` follows it and wins, so

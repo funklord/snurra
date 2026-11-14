@@ -11,6 +11,7 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 extern "C" {
@@ -101,6 +102,27 @@ QImage packed_to_rgb(const AVFrame *from, int widest) {
 	return image;
 }
 
+/*
+ * Rows [0, height) converted in bands, one a thread, at most four and no
+ * more than half the cores, each band at least 64 rows: a frame's rows
+ * are each the image's own, so they need no lock. One thread converted a
+ * 4K film at 60 to 13 pictures a second, even with its helpers inlined
+ * (2026-11-14); a phone has the cores too.
+ */
+template <typename rows_t> void in_bands(int height, const rows_t &rows) {
+	const int cores = int(std::max(1u, std::thread::hardware_concurrency()));
+	const int bands = std::clamp(std::min(4, cores / 2), 1, std::max(1, height / 64));
+	if (bands <= 1) {
+		rows(0, height);
+		return;
+	}
+	std::vector<std::thread> others;
+	for (int band = 1; band < bands; ++band)
+		others.emplace_back([&rows, band, bands, height] { rows(height * band / bands, height * (band + 1) / bands); });
+	rows(0, height / bands);
+	for (std::thread &other : others) other.join();
+}
+
 QImage to_rgb(const AVFrame *from, int widest) {
 	if (QImage packed = packed_to_rgb(from, widest); !packed.isNull()) return packed;
 	const AVPixelFormat format = AVPixelFormat(from->format);
@@ -170,9 +192,15 @@ QImage to_rgb(const AVFrame *from, int widest) {
 		g_from_v[i] = int(std::lround(-kr * 2 * (1 - kr) * c / kg * 255 * ONE));
 		g_from_u[i] = int(std::lround(-kb * 2 * (1 - kb) * c / kg * 255 * ONE));
 	}
-	auto to_byte = [](int v) { return std::clamp((v + ONE / 2) >> 16, 0, 255); };
+	/* Inlined by force: this runs for every sample of every frame, and the
+	 * player is built -Os, which made each a call -- a 4K film at 60 fell
+	 * from 44 pictures a second to 6 (2026-11-14). */
+	auto to_byte = [](int v) __attribute__((always_inline)) {
+		const int byte = (v + ONE / 2) >> 16;
+		return byte < 0 ? 0 : byte > 255 ? 255 : byte;
+	};
 	const int shift = divisor == 256 ? 8 : divisor == 4 ? 2 : 0;
-	auto sample = [wide, shift](const uint8_t *row, int i) -> int {
+	auto sample = [wide, shift](const uint8_t *row, int i) __attribute__((always_inline)) -> int {
 		if (!wide) return row[i];
 		uint16_t value = 0;
 		std::memcpy(&value, row + 2 * i, 2);
@@ -193,9 +221,6 @@ QImage to_rgb(const AVFrame *from, int widest) {
 	 */
 	if (from->width >= 2 * width && from->height >= 2 * height) {
 		const int chroma_width = (from->width + (1 << x_shift) - 1) >> x_shift;
-		std::vector<int> luma_sum(static_cast<size_t>(from->width));
-		std::vector<int> cb_sum(static_cast<size_t>(chroma_width));
-		std::vector<int> cr_sum(static_cast<size_t>(chroma_width));
 		/* Each column's span, luma and chroma, once: a divide a pixel --
 		 * three, luma and both chroma -- kept a 4K film shown 1280 wide to
 		 * 16 frames a second of 25 (2026-11-13). */
@@ -211,72 +236,79 @@ QImage to_rgb(const AVFrame *from, int widest) {
 			chroma_from[size_t(x)] = x0 >> x_shift;
 			chroma_to[size_t(x)] = std::min(chroma_width, std::max((x0 >> x_shift) + 1, ((x1 - 1) >> x_shift) + 1));
 		}
-		for (int y = 0; y < height; ++y) {
-			const int y0 = int(int64_t(y) * from->height / height);
-			const int y1 = std::max(y0 + 1, int(int64_t(y + 1) * from->height / height));
-			std::fill(luma_sum.begin(), luma_sum.end(), 0);
-			std::fill(cb_sum.begin(), cb_sum.end(), 0);
-			std::fill(cr_sum.begin(), cr_sum.end(), 0);
-			for (int sy = y0; sy < y1; ++sy) {
-				const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
-				for (int sx = 0; sx < from->width; ++sx) luma_sum[size_t(sx)] += sample(luma, sx);
-			}
-			const int c0 = y0 >> y_shift;
-			const int c1 = std::max(c0 + 1, ((y1 - 1) >> y_shift) + 1);
-			for (int cy = c0; cy < c1; ++cy) {
-				const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
-				const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
-				for (int cx = 0; cx < chroma_width; ++cx) {
-					int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
-					int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
-					if (swapped) std::swap(cb, cr);
-					cb_sum[size_t(cx)] += cb;
-					cr_sum[size_t(cx)] += cr;
+		in_bands(height, [&](int band_from, int band_to) {
+			std::vector<int> luma_sum(static_cast<size_t>(from->width));
+			std::vector<int> cb_sum(static_cast<size_t>(chroma_width));
+			std::vector<int> cr_sum(static_cast<size_t>(chroma_width));
+			for (int y = band_from; y < band_to; ++y) {
+				const int y0 = int(int64_t(y) * from->height / height);
+				const int y1 = std::max(y0 + 1, int(int64_t(y + 1) * from->height / height));
+				std::fill(luma_sum.begin(), luma_sum.end(), 0);
+				std::fill(cb_sum.begin(), cb_sum.end(), 0);
+				std::fill(cr_sum.begin(), cr_sum.end(), 0);
+				for (int sy = y0; sy < y1; ++sy) {
+					const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
+					for (int sx = 0; sx < from->width; ++sx) luma_sum[size_t(sx)] += sample(luma, sx);
+				}
+				const int c0 = y0 >> y_shift;
+				const int c1 = std::max(c0 + 1, ((y1 - 1) >> y_shift) + 1);
+				for (int cy = c0; cy < c1; ++cy) {
+					const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
+					const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
+					for (int cx = 0; cx < chroma_width; ++cx) {
+						int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
+						int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
+						if (swapped) std::swap(cb, cr);
+						cb_sum[size_t(cx)] += cb;
+						cr_sum[size_t(cx)] += cr;
+					}
+				}
+				QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+				const float luma_rows = 1.0f / float(y1 - y0);
+				const float chroma_rows = 1.0f / float(c1 - c0);
+				for (int x = 0; x < width; ++x) {
+					const int x0 = luma_from[size_t(x)];
+					const int x1 = luma_to[size_t(x)];
+					int l = 0;
+					for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
+					const int cx0 = chroma_from[size_t(x)];
+					const int cx1 = chroma_to[size_t(x)];
+					int cb = 0;
+					int cr = 0;
+					for (int cx = cx0; cx < cx1; ++cx) {
+						cb += cb_sum[size_t(cx)];
+						cr += cr_sum[size_t(cx)];
+					}
+					const float luma_each = luma_rows / float(x1 - x0);
+					const float chroma_each = chroma_rows / float(cx1 - cx0);
+					const int lv = luma_part[std::min(255, int(float(l) * luma_each + 0.5f))];
+					const int cbv = std::min(255, int(float(cb) * chroma_each + 0.5f));
+					const int crv = std::min(255, int(float(cr) * chroma_each + 0.5f));
+					out[x] = qRgb(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
 				}
 			}
-			QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
-			const float luma_rows = 1.0f / float(y1 - y0);
-			const float chroma_rows = 1.0f / float(c1 - c0);
-			for (int x = 0; x < width; ++x) {
-				const int x0 = luma_from[size_t(x)];
-				const int x1 = luma_to[size_t(x)];
-				int l = 0;
-				for (int sx = x0; sx < x1; ++sx) l += luma_sum[size_t(sx)];
-				const int cx0 = chroma_from[size_t(x)];
-				const int cx1 = chroma_to[size_t(x)];
-				int cb = 0;
-				int cr = 0;
-				for (int cx = cx0; cx < cx1; ++cx) {
-					cb += cb_sum[size_t(cx)];
-					cr += cr_sum[size_t(cx)];
-				}
-				const float luma_each = luma_rows / float(x1 - x0);
-				const float chroma_each = chroma_rows / float(cx1 - cx0);
-				const int lv = luma_part[std::min(255, int(float(l) * luma_each + 0.5f))];
-				const int cbv = std::min(255, int(float(cb) * chroma_each + 0.5f));
-				const int crv = std::min(255, int(float(cr) * chroma_each + 0.5f));
-				out[x] = qRgb(to_byte(lv + r_from_v[crv]), to_byte(lv + g_from_u[cbv] + g_from_v[crv]), to_byte(lv + b_from_u[cbv]));
-			}
-		}
+		});
 		return image;
 	}
-	for (int y = 0; y < height; ++y) {
-		const int sy = int(int64_t(y) * from->height / height);
-		const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
-		const int cy = sy >> y_shift;
-		const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
-		const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
-		QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
-		for (int x = 0; x < width; ++x) {
-			const int sx = columns[size_t(x)];
-			const int cx = sx >> x_shift;
-			int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
-			int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
-			if (swapped) std::swap(cb, cr);
-			const int l = luma_part[sample(luma, sx)];
-			out[x] = qRgb(to_byte(l + r_from_v[cr]), to_byte(l + g_from_u[cb] + g_from_v[cr]), to_byte(l + b_from_u[cb]));
+	in_bands(height, [&](int band_from, int band_to) {
+		for (int y = band_from; y < band_to; ++y) {
+			const int sy = int(int64_t(y) * from->height / height);
+			const uint8_t *luma = from->data[0] + int64_t(sy) * from->linesize[0];
+			const int cy = sy >> y_shift;
+			const uint8_t *cb_row = from->data[1] + int64_t(cy) * from->linesize[1];
+			const uint8_t *cr_row = interleaved ? cb_row : from->data[2] + int64_t(cy) * from->linesize[2];
+			QRgb *out = reinterpret_cast<QRgb *>(image.scanLine(y));
+			for (int x = 0; x < width; ++x) {
+				const int sx = columns[size_t(x)];
+				const int cx = sx >> x_shift;
+				int cb = interleaved ? sample(cb_row, 2 * cx) : sample(cb_row, cx);
+				int cr = interleaved ? sample(cr_row, 2 * cx + 1) : sample(cr_row, cx);
+				if (swapped) std::swap(cb, cr);
+				const int l = luma_part[sample(luma, sx)];
+				out[x] = qRgb(to_byte(l + r_from_v[cr]), to_byte(l + g_from_u[cb] + g_from_v[cr]), to_byte(l + b_from_u[cb]));
+			}
 		}
-	}
+	});
 	return image;
 }
 
