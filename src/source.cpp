@@ -137,7 +137,7 @@ public:
 			const ffmpeg_source *self = static_cast<const ffmpeg_source *>(opaque);
 			return self->m_interrupted && self->m_interrupted() ? 1 : 0;
 		};
-		if (avformat_open_input(&m_format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
+		if (snurra_avformat_open(&m_format, path) < 0) return false;
 		return open_streams(true);
 	}
 
@@ -710,7 +710,7 @@ QStringList snurra_stem_names(const QString &path) {
 snurra_tags snurra_read_tags(const QString &path) {
 	snurra_tags tags;
 	AVFormatContext *format = nullptr;
-	if (avformat_open_input(&format, path.toUtf8().constData(), nullptr, nullptr) < 0) return tags;
+	if (snurra_avformat_open(&format, path) < 0) return tags;
 	auto take = [](const AVDictionary *from, const char *key) {
 		const AVDictionaryEntry *entry = av_dict_get(from, key, nullptr, 0);
 		return entry && entry->value ? QString::fromUtf8(entry->value).trimmed() : QString();
@@ -729,7 +729,7 @@ snurra_tags snurra_read_tags(const QString &path) {
 std::vector<snurra_chapter> snurra_read_chapters(const QString &path) {
 	std::vector<snurra_chapter> chapters;
 	AVFormatContext *format = nullptr;
-	if (avformat_open_input(&format, path.toUtf8().constData(), nullptr, nullptr) < 0) return chapters;
+	if (snurra_avformat_open(&format, path) < 0) return chapters;
 	/* The sound's zero, which a deck counts from. */
 	int64_t origin_us = 0;
 	for (unsigned i = 0; i < format->nb_streams; ++i) {

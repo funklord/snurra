@@ -496,7 +496,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 				std::lock_guard<std::mutex> lock(self->m_mutex);
 				return self->m_stop ? 1 : 0;
 			};
-			if (avformat_open_input(&format, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return false;
+			if (snurra_avformat_open(&format, path) < 0) return false;
 			if (avformat_find_stream_info(format, nullptr) < 0) return false;
 		}
 		const AVCodec *decoder = nullptr;
@@ -624,7 +624,7 @@ void snurra_video::run(const QString &path, std::shared_ptr<snurra_bytes> bytes)
 				std::lock_guard<std::mutex> lock(at->video->m_mutex);
 				return at->video->m_stop ? 1 : 0;
 			};
-			if (avformat_open_input(&preroll, QFile::encodeName(path).constData(), nullptr, nullptr) < 0) return;
+			if (snurra_avformat_open(&preroll, path) < 0) return;
 			if (avformat_find_stream_info(preroll, nullptr) < 0 || preroll->nb_streams != format->nb_streams) return;
 			for (unsigned i = 0; i < preroll->nb_streams; ++i) preroll->streams[i]->discard = AVDISCARD_ALL;
 			for (const subtitle_reader &reader : subtitles) {

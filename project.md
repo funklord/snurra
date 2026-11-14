@@ -847,12 +847,21 @@ exception". What -Os leaves undone in those loops is the question; the
 answer goes here. (42c6cea was also pushed on a suite that had failed --
 on the crash below, not on the flag -- which should not have happened.)
 
-**Open: a double free playing DASH in a tile, 2026-11-14.** Once, in a
-full suite, `an_hls_stream_plays_and_seeks(DASH)`'s tile aborted with
-"double free or corruption (fasttop)" while FFmpeg's DASH demuxer opened
-a segment; the row had passed alone before. QtTest's handler then printed
-"Received signal 6" some 2.4 million times, until the suite's own 256 MB
-file-size cap stopped it. Being found under AddressSanitizer.
+**A double free playing DASH in a tile, 2026-11-14, found and closed.**
+Once in a full suite, `an_hls_stream_plays_and_seeks(DASH)`'s tile aborted
+with "double free or corruption"; under AddressSanitizer, 3 runs of 10.
+FFmpeg's DASH demuxer calls libxml2's `xmlCleanupParser` after each
+manifest, which frees process-wide state, and a tile's sound and picture
+readers open one DASH URL at once: both cleaned up, one freed what the
+other had. Every `avformat_open_input` now goes through
+`snurra_avformat_open`, which lets one thread at a time open a URL or a
+`.mpd` (a local file as before); under ASan, 0 in 20 since. QtTest's
+crash handler then printed "Received signal 6" 2.4 million times until
+the suite's 256 MB file cap ended it, so the test binary now gives every
+class `-nocrashhandler` (and allows no core file): a crash ends the run
+there. That rests on QtTest's documented option -- an abort sent from
+outside was tried to show the difference and did not reach the handler
+either way, so the loop itself was not reproduced.
 
 **Built for size, 2026-11-13** (sec 1: tiny, held deliberately):
 `-Os` with sections collected (`--gc-sections`). The `-Os` stood in

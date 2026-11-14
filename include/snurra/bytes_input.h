@@ -13,6 +13,16 @@ struct AVFormatContext;
 struct AVIOContext;
 
 /*
+ * avformat_open_input for `name`, one thread at a time where it may be a
+ * DASH manifest -- a URL, or a name ending .mpd. FFmpeg's DASH demuxer
+ * calls libxml2's xmlCleanupParser after each manifest, which frees
+ * process-wide state: a tile's sound and picture readers opening one DASH
+ * URL at once freed it twice (AddressSanitizer, 2026-11-14, 3 runs in 10;
+ * once a crash in the suite). A local file opens as before, unserialised.
+ */
+int snurra_avformat_open(AVFormatContext **format, const QString &name);
+
+/*
  * FFmpeg reading a snurra_bytes (source.h): the input a sound's reader and a
  * picture's reader both open the host's bytes through. A read of bytes not
  * here yet waits for them, telling the transport where (want), and gives

@@ -1,5 +1,7 @@
 #include "snurra/bytes_input.h"
 
+#include <mutex>
+
 #include <QFile>
 
 extern "C" {
@@ -51,7 +53,7 @@ AVFormatContext *snurra_bytes_input::open(std::shared_ptr<snurra_bytes> bytes, c
 			format->max_analyze_duration = AV_TIME_BASE / 5;
 			format->probesize = 65536;
 		}
-		if (avformat_open_input(&format, QFile::encodeName(name).constData(), nullptr, nullptr) == 0
+		if (snurra_avformat_open(&format, name) == 0
 		    && avformat_find_stream_info(format, nullptr) >= 0) {
 			m_io->seekable = AVIO_SEEKABLE_NORMAL;
 			return format;
@@ -100,4 +102,13 @@ int64_t snurra_bytes_input::seek(void *opaque, int64_t offset, int whence) {
 	self->m_wanted = to;
 	self->m_bytes->want(to);
 	return to;
+}
+
+int snurra_avformat_open(AVFormatContext **format, const QString &name) {
+	static std::mutex manifests;
+	const QByteArray encoded = QFile::encodeName(name);
+	if (!snurra_is_url(name) && !name.endsWith(QLatin1String(".mpd"), Qt::CaseInsensitive))
+		return avformat_open_input(format, encoded.constData(), nullptr, nullptr);
+	std::lock_guard<std::mutex> hold(manifests);
+	return avformat_open_input(format, encoded.constData(), nullptr, nullptr);
 }
