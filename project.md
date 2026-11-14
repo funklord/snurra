@@ -874,7 +874,8 @@ code leaning on -O2, not a reason to change flags:
   (`local/rpc.c` 2822, 2823) -- reported to it (inbox 20261114T0146Z).
 - **The deck's callback as a whole** (a tone, EQ in with a band killed,
   varispeed at 1.03): 1.35 % of real time at -Os, 1.27 % at -O2 -- no
-  smell there, so the lens stopped.
+  smell there; nor in the waveform's peaks, a minute's file in 77 ms at
+  -Os and 80 at -O2. So the lens stopped.
 The player stays -Os throughout. What the forced inlining and the row
 bands kept cost: 29 KB of code (538369 to 567498 bytes).
 
