@@ -220,7 +220,14 @@ and everything above it knows nothing of SFTP or fuzznet.
       (3865735, from a worktree), then ten of each alternated, all clean
       (worst 0.0004 and 0.0003 off). Too few to blame the change or
       clear it; the change adds nothing to the crossfade's path that is
-      seen. Kept open, not explained.
+      seen. Kept open, not explained. **Since (2026-11-14):** 40 runs
+      more at load 20 (8 busy loops added), none over. One explanation
+      tried and disproved: the taker says READY after 500 ms whether its
+      decks are in step or not, and a slow new process might fade in
+      unready -- but with READY sent at once, six runs all summed to
+      1.0000 within 0.0002, the COMMIT's moment being a latency and a
+      period ahead, by which the decks have locked. Not the cause; still
+      open.
     - **Android: not built, and why.** On a phone the node runs inside
       fuzzypickles' own app, and Android keeps apps' local sockets apart
       (SELinux puts each app in its own category; that it refuses one
