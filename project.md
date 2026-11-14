@@ -411,7 +411,15 @@ does the same with a tile's playback:
   Tested end to end against the stand-in
   (`the_library_identifies_a_tune_and_keeps_its_id`; not reading what was
   kept fails it). The suite's settings are its own since: it had read
-  and written the person's `~/.config/snurra`. **A file's own tags are shown**
+  and written the person's `~/.config/snurra`. **Not built: finding the
+  library's tunes inside a DJ set** by fingerprint, measured first
+  (2026-11-14): a real tune (the holder's "Impulse") sped up by 1 % came
+  out 0.247 of bits from itself, 2 % 0.342, 3 % 0.390, 6 % 0.413 --
+  chance is about 0.41 -- since Chromaprint compares pitch bands and a
+  DJ's tempo moves them. Doing it would take the set fingerprinted again
+  at some 25 trial speeds (25 times the decoding) and an index over the
+  library's whole tunes, for what a saved mix's tracklist (hydra's)
+  already gives; left until a set without one needs it. **A file's own tags are shown**
   (2026-11-13): Name is its title where it has one, beside an Artist
   column -- ID3, Vorbis comments, MP4 and Matroska tags through FFmpeg,
   the container's or else the first stream's (Ogg keeps them there) --
