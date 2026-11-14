@@ -1844,7 +1844,10 @@ void snurra_tile::tick() {
 			m_title->setText(title.isEmpty() ? m_title_base : m_title_base + QStringLiteral(" -- ") + title);
 		}
 	}
-	if (m_state.playing && m_deck->ended()) set_playing(false);
+	if (m_state.playing && m_deck->ended()) {
+		set_playing(false);
+		emit ended(this);
+	}
 	keep_loop();
 	/* No sound, and only then a failure if no picture either: a GIF or a
 	 * screen recording has none, and was told it could not be played.

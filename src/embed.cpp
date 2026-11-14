@@ -108,6 +108,7 @@ bool snurra_player::open(const snurra_media &media) {
 	const QString name = media.name.isEmpty() ? snurra_title_of(media.path) : media.name;
 	connect(tile, &snurra_tile::failed, this,
 	        [this, name] { emit failed(name, tr("snurra cannot play %1: it is not sound or video it can read.").arg(name)); });
+	connect(tile, &snurra_tile::ended, this, [this, name] { emit ended(name); });
 	connect(tile, &snurra_tile::close_requested, this, [this](snurra_tile *closing) {
 		if (!d->tiles.removeOne(closing)) return;
 		closing->deck()->stop_reading();
@@ -120,6 +121,31 @@ bool snurra_player::open(const snurra_media &media) {
 
 int snurra_player::count() const {
 	return int(d->tiles.size());
+}
+
+qint64 snurra_player::position_ms(int tile) const {
+	if (tile < 0 || tile >= d->tiles.size()) return -1;
+	const snurra_deck *deck = d->tiles.at(tile)->deck();
+	return qint64(snurra_frames_to_us(deck->position_at(snurra_clock_us()), deck->rate()) / 1000);
+}
+
+qint64 snurra_player::length_ms(int tile) const {
+	if (tile < 0 || tile >= d->tiles.size()) return -1;
+	const snurra_deck *deck = d->tiles.at(tile)->deck();
+	return deck->length() > 0 ? qint64(snurra_frames_to_us(deck->length(), deck->rate()) / 1000) : -1;
+}
+
+snurra_player::play_state snurra_player::state_of(int tile) const {
+	if (tile < 0 || tile >= d->tiles.size()) return play_state::none;
+	const snurra_tile *shown = d->tiles.at(tile);
+	const snurra_deck *deck = shown->deck();
+	if (deck->ended()) return play_state::ended;
+	if (!shown->playing()) return play_state::paused;
+	/* Asked to play, and its last period put out nothing: the bytes stop
+	 * there, or it has not begun to sound yet. */
+	int64_t frame = 0, at = 0, advanced = 0;
+	deck->last_rendered(frame, at, advanced);
+	return advanced > 0 ? play_state::playing : play_state::waiting;
 }
 
 void snurra_player::close_all() {

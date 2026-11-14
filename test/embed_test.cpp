@@ -79,6 +79,7 @@ private slots:
 	void a_cue_sheet_beside_a_file_is_its_tracklist();
 	void a_player_plays_a_hosts_bytes_and_says_when_empty();
 	void a_player_says_what_it_cannot_play();
+	void a_player_says_where_each_tile_is_and_that_it_ended();
 	void a_player_deleted_at_once_never_calls_the_bytes_again();
 };
 
@@ -1615,7 +1616,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 3);   /* 2: snurra_media::subtitles; 3: snurra_dj */
+	QCOMPARE(SNURRA_EMBED_VERSION, 4);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));
@@ -1642,6 +1643,46 @@ void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
 	player.close_all();
 	QCOMPARE(emptied.count(), 1);
 	QCOMPARE(player.count(), 0);
+}
+
+void embed_test::a_player_says_where_each_tile_is_and_that_it_ended() {
+	using state = snurra_player::play_state;
+	auto bytes = std::make_shared<memory_bytes>(make_wav(48000 * 2));
+	bytes->arrive(0, bytes->size() / 4);   /* about half a second */
+	snurra_player player;
+	QSignalSpy ended(&player, &snurra_player::ended);
+	QCOMPARE(player.state_of(0), state::none);
+	QCOMPARE(player.position_ms(0), qint64(-1));
+	QVERIFY(player.open(snurra_media{ QStringLiteral("song.wav"), QString(), bytes }));
+	QCOMPARE(player.state_of(1), state::none);
+
+	/* It plays, then waits where the bytes stop -- asked to play, silent. */
+	QTRY_COMPARE_WITH_TIMEOUT(player.state_of(0), state::playing, 3000);
+	QTRY_COMPARE_WITH_TIMEOUT(player.state_of(0), state::waiting, 5000);
+	const qint64 held = player.position_ms(0);
+	QVERIFY2(held > 250 && held < 600, qPrintable(QStringLiteral("waiting at %1 ms").arg(held)));
+	QTRY_COMPARE_WITH_TIMEOUT(player.length_ms(0), qint64(2000), 3000);
+	QCOMPARE(ended.count(), 0);
+
+	/* Paused by the person is paused, not waiting. */
+	snurra_tile *tile = player.findChild<snurra_tile *>();
+	QVERIFY(tile);
+	tile->set_playing(false);
+	QCOMPARE(player.state_of(0), state::paused);
+	tile->set_playing(true);
+
+	/* The rest comes: it plays on, to the end, and says so once. */
+	bytes->arrive(0, bytes->size());
+	QTRY_COMPARE_WITH_TIMEOUT(player.state_of(0), state::playing, 3000);
+	QVERIFY(player.position_ms(0) >= held);
+	QVERIFY2(ended.wait(5000), "no ended() at the end");
+	QCOMPARE(ended.count(), 1);
+	QCOMPARE(ended.first().at(0).toString(), QStringLiteral("song.wav"));
+	QCOMPARE(player.state_of(0), state::ended);
+	QVERIFY(player.position_ms(0) > 1900);
+	QTest::qWait(300);
+	QCOMPARE(ended.count(), 1);
+	QCOMPARE(player.count(), 1);   /* the tile stays */
 }
 
 void embed_test::a_player_says_what_it_cannot_play() {

@@ -1285,7 +1285,19 @@ controls; each tile very compact but resizeable).
   and a brace-initialised `snurra_media` of three still compiles. A
   `.srt` beside `path` is offered after the host's, bytes or not (BeerSSH,
   inbox 20261113T0834Z: a local film given as bytes and path showed none,
-  the tile looking beside the bytes' name). **Hydra plays through
+  the tile looking beside the bytes' name). Version 4 (2026-11-14,
+  fuzzypickles' ask, inbox 20261114T1128Z: its Library would host
+  `snurra_player` in place of a bare deck, and keep its own words --
+  "playing 1:02", "waiting for the rest to arrive" -- beside it):
+  `position_ms`, `length_ms` (-1 until known) and `state_of` by the
+  tile's place among those open -- `playing`, `paused`, `waiting` (asked
+  to play, its last period put out nothing: the bytes stop there),
+  `ended`, `none` for no such tile -- and a signal `ended(name)` once a
+  tile plays to its end, so a host lets the fetch-backed bytes go as a
+  close would; the tile stays, paused at the end. Getters for a host's
+  poll rather than a signal per change, as the host asked for a poll;
+  `a_player_says_where_each_tile_is_and_that_it_ended`, failing with the
+  waiting branch or the emit taken out. **Hydra plays through
   snurra** (inbox 20261113T1442Z, a signal): listed beside mpv and
   mplayer when `snurra` is on PATH, called `snurra <url>` and nothing
   else -- the URL hydra's local proxy, which adds the CDN's Referer,

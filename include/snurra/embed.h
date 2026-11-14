@@ -38,8 +38,9 @@
 
 #include "snurra/source.h"
 
-/* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj. */
-#define SNURRA_EMBED_VERSION 3
+/* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj.
+ * 4: snurra_player's position_ms, length_ms, state_of and ended(). */
+#define SNURRA_EMBED_VERSION 4
 
 /* One thing to play. */
 struct snurra_media {
@@ -78,9 +79,26 @@ public:
 	/* Every tile closed; emptied() follows. */
 	void close_all();
 
+	/*
+	 * (4) A tile, by its place among those open (0 the first opened still
+	 * open), for a host's own words beside it (fuzzypickles, inbox
+	 * 20261114T1128Z): where it is heard, in ms; its length once known,
+	 * -1 until then; and whether it plays, was paused, is waiting -- asked
+	 * to play and holding silent where the bytes stop, as a file still
+	 * arriving does -- or played to its end. -1, and `none`, for no such
+	 * tile.
+	 */
+	enum class play_state { none, playing, paused, waiting, ended };
+	qint64 position_ms(int tile) const;
+	qint64 length_ms(int tile) const;
+	play_state state_of(int tile) const;
+
 signals:
 	/* The last tile closed, by the person or by close_all(). */
 	void emptied();
+	/* (4) `name`'s tile played to its end: its bytes may be let go, as a
+	 * close would. The tile stays, paused at the end. */
+	void ended(const QString &name);
 	/* `name` cannot be played, and why, in words for the person. */
 	void failed(const QString &name, const QString &why);
 
