@@ -164,7 +164,10 @@ int main(int argc, char *argv[]) {
 		const QStringList given = parser.positionalArguments();
 		for (int deck = 0; deck < 2 && deck < given.size(); ++deck) {
 			snurra_media media;
-			media.path = QFileInfo(given.at(deck)).absoluteFilePath();
+			/* A name with a scheme as it is -- tone:440, fuzznet:ROOT, a URL --
+			 * which made absolute was a file under the current folder, and
+			 * the deck said it could not play it (seen in Xvfb, 2026-11-18). */
+			media.path = snurra_source_of(given.at(deck));
 			player->load(deck, media);
 		}
 #ifdef Q_OS_ANDROID

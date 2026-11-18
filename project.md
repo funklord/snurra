@@ -1405,7 +1405,10 @@ controls; each tile very compact but resizeable).
   One layout -- decks above, browser below -- for the desktop and the
   phone until they are seen to need two. An embedded tile's jump is now
   seamless too, as a window's group's (0.0 ms off its step, 26 ms short
-  before). `snurra --dj [a b]` opens it, seen in Xvfb -- and at 412 x 915, a
+  before). `snurra --dj [a b]` opens it, its names as a tile takes them
+  (`snurra_source_of`, 2026-11-18: made absolute, `tone:220` was a file
+  under the current folder and the deck said it could not play it; seen
+  in Xvfb, both tones load now), seen in Xvfb -- and at 412 x 915, a
   phone's portrait, the one layout holds: each deck half the width, the
   browser most of the screen, the tempo slider the first control
   squeezed. **Every button has its room there** (2026-11-13), checked
