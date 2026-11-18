@@ -1303,6 +1303,7 @@ void snurra_tile::build_video_drawer(bool open) {
 	m_video_toggle->setToolTip(m_video_toggle->accessibleName());
 	m_top->insertWidget(1, m_video_toggle);
 	connect(m_video_toggle, &QToolButton::toggled, this, &snurra_tile::set_video_open);
+	if (m_picture_closed_at_first) open = false;
 
 	m_frames = new QTimer(this);
 	m_frames->setInterval(16);

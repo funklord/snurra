@@ -310,6 +310,11 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 			if (!subtitles.contains(beside)) subtitles << beside;
 	tile->set_subtitle_files(subtitles);
 	tile->set_sync_available(true);
+	/* A deck is its waveform and its controls, as Traktor's: a film's
+	 * picture opened above them in a window of 700 squeezed the controls
+	 * and cut them off at the EQ (seen in Xvfb, 2026-11-18). Its button
+	 * on the title opens it. */
+	tile->set_picture_closed_at_first(true);
 	place->tile = tile;
 	place->name = media.name.isEmpty() ? snurra_title_of(media.path) : media.name;
 	place->empty->hide();

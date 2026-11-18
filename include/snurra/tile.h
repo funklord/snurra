@@ -147,6 +147,10 @@ public:
 	/* The sync button offered outside a window's group too (a DJ player's
 	 * decks), wherever this track has a beat. */
 	void set_sync_available(bool available);
+	/* Its film's picture closed when it is found, though the controls are
+	 * open (the DJ player's decks); its button opens it. Asked before the
+	 * picture is found, as right after the tile is made. */
+	void set_picture_closed_at_first(bool closed) { m_picture_closed_at_first = closed; }
 
 	/* The cue (a CDJ's, Traktor's): paused, it is set where the track
 	 * stands; playing, the track goes back to it and stops. */
@@ -338,6 +342,7 @@ private:
 	QPointer<snurra_engine> m_owner;
 	bool m_grouped = false;
 	bool m_sync_available = false;   /* offered outside a group */
+	bool m_picture_closed_at_first = false;
 	bool m_failed_said = false;
 	bool m_settled = false;   /* constructed, readers started: a failure can be judged */
 	int m_muted_from = -1;   /* the level before a mute; -1: not muted */

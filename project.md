@@ -1408,7 +1408,12 @@ controls; each tile very compact but resizeable).
   before). `snurra --dj [a b]` opens it, its names as a tile takes them
   (`snurra_source_of`, 2026-11-18: made absolute, `tone:220` was a file
   under the current folder and the deck said it could not play it; seen
-  in Xvfb, both tones load now), seen in Xvfb -- and at 412 x 915, a
+  in Xvfb, both tones load now). **A film on a deck starts with its
+  picture closed** (2026-11-18), its button on the title opening it: a
+  tile opens the picture with its controls, and a deck's are open, so a
+  film's picture in a window of 700 cut the deck's controls off at the
+  EQ (`a_dj_decks_film_starts_with_its_picture_closed`; without the
+  deck's `set_picture_closed_at_first` it fails). Seen in Xvfb -- and at 412 x 915, a
   phone's portrait, the one layout holds: each deck half the width, the
   browser most of the screen, the tempo slider the first control
   squeezed. **Every button has its room there** (2026-11-13), checked

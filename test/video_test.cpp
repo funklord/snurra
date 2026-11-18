@@ -82,6 +82,7 @@ private slots:
 	void a_full_screen_button_shows_while_the_pointer_moves();
 	void a_picture_is_made_as_wide_as_it_is_shown();
 	void a_local_films_srt_is_found_when_its_bytes_are_given();
+	void a_dj_decks_film_starts_with_its_picture_closed();
 	void a_picture_made_small_is_averaged_not_picked();
 	void a_skip_shows_the_frame_heard_not_one_behind();
 	void a_far_target_while_on_the_way_is_a_new_seek();
@@ -1293,6 +1294,36 @@ void video_test::a_local_films_srt_is_found_when_its_bytes_are_given() {
 	snurra_tile *tile = player.findChild<snurra_tile *>();
 	QVERIFY(tile);
 	QTRY_COMPARE_WITH_TIMEOUT(tile->subtitles_name(), QStringLiteral("film.srt"), 5000);
+}
+
+/*
+ * A film on a DJ deck: its picture found and its button offered, closed
+ * -- a deck is its waveform and controls -- where the single player opens
+ * it with the controls. The button opens it.
+ */
+void video_test::a_dj_decks_film_starts_with_its_picture_closed() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString name = QStringLiteral("deck.mp4");
+	QVERIFY(make(name, { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	snurra_media media;
+	media.path = m_dir.filePath(name);
+
+	snurra_player player;
+	QVERIFY(player.open(media));
+	QToolButton *opened = nullptr;
+	QTRY_VERIFY_WITH_TIMEOUT((opened = player.findChild<QToolButton *>(QStringLiteral("snurra-video"))), 5000);
+	QVERIFY2(opened->isChecked(), "the single player's picture was not opened");
+
+	snurra_dj dj;
+	QVERIFY(dj.load(0, media));
+	QToolButton *button = nullptr;
+	QTRY_VERIFY_WITH_TIMEOUT((button = dj.findChild<QToolButton *>(QStringLiteral("snurra-video"))), 5000);
+	QVERIFY2(!button->isChecked(), "the deck's picture opened");
+	QWidget *above = dj.findChild<QWidget *>(QStringLiteral("snurra-drawer-above"));
+	QVERIFY(above && above->isHidden());
+	button->click();
+	QVERIFY(button->isChecked());
+	QVERIFY(!above->isHidden());
 }
 
 /*
