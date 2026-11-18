@@ -127,7 +127,8 @@ and everything above it knows nothing of SFTP or fuzznet.
     fuzznet's. **Being built** (sec 3b, the estate):
     - fuzznet vendored at a pin, a shallow submodule (its history is
       1.2 GB, the pinned tree 7 MB), fetched by the Makefile, the
-      closure the calls need -- `local/*.c`, `hex`, `constant_time` --
+      closure the calls need -- `local/*.c`, `hex`, `constant_time`, and
+      since f1a6bbd the status and situ wire code and `files_local` --
       compiled into the player and the tests only (`app/fuzznet.pri`;
       some 16 KB of the player's code), never into `snurra.pri` or
       `snurra.mk`. It links only with sections collected: `rpc.c`'s
@@ -196,7 +197,20 @@ and everything above it knows nothing of SFTP or fuzznet.
       after the play began, then nothing on the file for 24 s, then 768
       of its 938 leaves in one batch. Sent back (inbox 20261114T1109Z):
       a lost request or answer waiting out a long retry, more like, and
-      fuzznet's to say.
+      fuzznet's to say. **fuzznet found it (inbox 20261114T1539Z, its
+      8767ce7, sec 1165):** every want was answered, but its loop resent
+      only when a poll of up to a second returned, so a span's 3 s wait
+      held one or two resends of three and most waited it out; it polls
+      no longer than the next resend now. Pinned at f1a6bbd since
+      (2026-11-18), four runs at 20 % loss played the middle after 9.6,
+      10.2, 10.9 and 11.7 s, the whole file there with it -- the 24 s
+      silence gone. What is left is fuzznet's: a whole span resent for
+      one missing piece (its sec 1164). The pin needed `wire/status.c`,
+      the generated `situ.c`, `status.c` and `files_local.c` beside
+      `local/` (the first under a name of its own, `app/fuzznet_wire_status.c`,
+      since qmake puts both `status.o` in one directory); and the glob over
+      `local/` is in the qmake stamp now, which a new `rpc_binary.c` had
+      slipped past.
     - **Titled by its catalogued name**: a tile, the window, the picture's
       full screen and a DJ deck called an estate file by its 64 hex
       digits, each making a title of the name's file name. They ask

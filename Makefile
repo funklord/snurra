@@ -66,10 +66,14 @@ $(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 # widget read at the wrong offsets, a crash in a layout (2026-11-13). The
 # include lines of every source and header are the stamp: written only
 # when they change, and qmake run again then, without a clean, the flags
-# being the same.
+# being the same. And the files app/fuzznet.pri takes by a glob, which
+# qmake expands only when it runs: moving the pin to a fuzznet with a new
+# local/rpc_binary.c left it uncompiled and the link short of its
+# symbols (2026-11-18).
 INCLUDE_SOURCES = $(sort $(wildcard src/*.cpp include/snurra/*.h test/*.cpp test/*.h))
+GLOBBED_SOURCES = $(sort $(wildcard fuzznet/local/*.c))
 %/includes.list: FORCE
-	@mkdir -p $(@D); grep -H '^#include "' $(INCLUDE_SOURCES) > $@.new || true
+	@mkdir -p $(@D); { grep -H '^#include "' $(INCLUDE_SOURCES); printf '%s\n' $(GLOBBED_SOURCES); } > $@.new || true
 	@if cmp -s $@.new $@; then rm -f $@.new; else mv $@.new $@; fi
 $(BUILD_DIR)/qmake.stamp: $(BUILD_DIR)/includes.list $(BUILD_DIR)/Makefile
 	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release

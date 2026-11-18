@@ -12,7 +12,11 @@ FUZZNET_DIR = $$PWD/../fuzznet
 INCLUDEPATH += $$FUZZNET_DIR $$PWD
 SOURCES += $$files($$FUZZNET_DIR/local/*.c) \
            $$FUZZNET_DIR/hex/hex.c \
-           $$FUZZNET_DIR/constant_time/constant_time.c
+           $$FUZZNET_DIR/constant_time/constant_time.c \
+           $$PWD/fuzznet_wire_status.c \
+           $$FUZZNET_DIR/wire/generated/situ.c \
+           $$FUZZNET_DIR/wire/generated/files_local.c \
+           $$FUZZNET_DIR/wire/generated/status.c
 SOURCES += $$PWD/estate.cpp
 HEADERS += $$PWD/estate.h
 # Sections collected, and not only for size: rpc.c's calls for cards,
