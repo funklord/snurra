@@ -1652,7 +1652,15 @@ controls; each tile very compact but resizeable).
   tested by key presses through X. **The key shift** (2026-11-13, a
   DJ's key knob, with the key now shown -- sec 3b, the library): a dial
   of semitones, an octave either way, 0 at the top and back on a
-  double-click, carried by a handover; on top of the tempo's pitch
+  double-click, carried by a handover. **Turned by holding it and moving
+  up or down** (the holder, 2026-11-18: "a knob should be held L mouse
+  button or touch and then up/down"), a step every half line of text,
+  wherever the press began -- `snurra_knob`, a `QDial` drawn as before.
+  It had been Qt's stock `QDial`, taken with the EQ (a59ddff) and this
+  knob (484de7c) as the nearest thing to a mixer's: it follows the
+  pointer's angle round its centre, so at two lines across a few pixels
+  span the range, a press alone jumps it (to -7 from the left edge, the
+  test's sabotage), and a finger has no gesture for it; on top of the tempo's pitch
   without key lock, alone with it. WSOLA at the tempo over the pitch
   heard keeps the pitch, then its frames are read by the same cubic at
   the pitch heard a frame, which raises it and gives the tempo back; at

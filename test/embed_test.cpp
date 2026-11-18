@@ -1270,6 +1270,34 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	QTest::mouseDClick(knob, Qt::LeftButton);
 	QCOMPARE(tile->state().key_shift, 0);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));
+
+	/* Turned as a mixer's knob on a screen: held, then up or down, a step
+	 * every half line -- wherever the press began. A press at its left
+	 * edge, where a dial's angle would read most of the way down, moves
+	 * nothing; three steps up is 3, five down from there -2; after the
+	 * release a move turns nothing. */
+	const int step = std::max(4, knob->fontMetrics().height() / 2);
+	const QPoint left(1, knob->height() / 2);
+	QTest::mousePress(knob, Qt::LeftButton, Qt::NoModifier, left);
+	QCOMPARE(tile->state().key_shift, 0);
+	auto move_to = [knob](QPoint at) {
+		QMouseEvent moved(QEvent::MouseMove, at, knob->mapToGlobal(at), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(knob, &moved);
+	};
+	move_to(left - QPoint(0, 3 * step + 1));
+	QCOMPARE(tile->state().key_shift, 3);
+	move_to(left + QPoint(0, 2 * step + 1));
+	QCOMPARE(tile->state().key_shift, -2);
+	QTest::mouseRelease(knob, Qt::LeftButton, Qt::NoModifier, left + QPoint(0, 2 * step + 1));
+	move_to(left - QPoint(0, 10 * step));
+	QCOMPARE(tile->state().key_shift, -2);
+	/* And it stops at its ends. */
+	QTest::mousePress(knob, Qt::LeftButton, Qt::NoModifier, left);
+	move_to(left - QPoint(0, 100 * step));
+	QCOMPARE(tile->state().key_shift, 12);
+	QTest::mouseRelease(knob, Qt::LeftButton, Qt::NoModifier, left - QPoint(0, 100 * step));
+	QTest::mouseDClick(knob, Qt::LeftButton);
+	QCOMPARE(tile->state().key_shift, 0);
 }
 
 /*

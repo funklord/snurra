@@ -38,6 +38,58 @@
 #include "snurra/video.h"
 
 /*
+ * A knob as a mixer's is turned on a screen: held -- the left button, or
+ * a finger, which Qt hands on as the left button -- and moved up to turn
+ * it up, down to turn it down, a step every half line of text, wherever
+ * on it the press began; the wheel and the keys as a dial's. QDial's own
+ * follows the pointer's angle round its centre, which at two lines across
+ * leaves a few pixels between one end and the other, jumps to wherever
+ * the press landed, and has no gesture a finger can make on a phone (the
+ * holder, 2026-11-18: "a knob should be held L mouse button or touch and
+ * then up/down"). Drawn as a dial still.
+ */
+class snurra_knob : public QDial {
+public:
+	using QDial::QDial;
+
+protected:
+	void mousePressEvent(QMouseEvent *event) override {
+		if (event->button() != Qt::LeftButton) {
+			event->ignore();
+			return;
+		}
+		m_held = true;
+		m_from = value();
+		m_from_y = event->position().y();
+		setSliderDown(true);
+		event->accept();
+	}
+	void mouseMoveEvent(QMouseEvent *event) override {
+		if (!m_held) {
+			event->ignore();
+			return;
+		}
+		const double step = std::max(4, fontMetrics().height() / 2);
+		setSliderPosition(m_from + int(std::lround((m_from_y - event->position().y()) / step)));
+		event->accept();
+	}
+	void mouseReleaseEvent(QMouseEvent *event) override {
+		if (!m_held) {
+			event->ignore();
+			return;
+		}
+		m_held = false;
+		setSliderDown(false);
+		event->accept();
+	}
+
+private:
+	bool m_held = false;
+	int m_from = 0;
+	double m_from_y = 0;
+};
+
+/*
  * The waveform: the source's peaks, read on a thread of their own and
  * filled in left to right as they come; until they do, and for what has
  * no audio to read, a stand-in of bars from the source's name, so the
@@ -870,11 +922,12 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_key_lock->setToolTip(tr("Key lock: the pitch stays as the tempo moves"));
 	keys->addWidget(m_key_lock);
 	/* The key shift, a DJ's key knob: semitones, 0 at the top, an octave
-	 * either way; a double-click puts it back. */
-	m_key_shift = new QDial(m_controls);
+	 * either way; held and moved up or down (snurra_knob); a double-click
+	 * puts it back. */
+	m_key_shift = new snurra_knob(m_controls);
 	m_key_shift->setObjectName(QStringLiteral("snurra-key-shift"));
 	m_key_shift->setAccessibleName(tr("Key shift"));
-	m_key_shift->setToolTip(tr("Key shift, in semitones; a double-click puts it back"));
+	m_key_shift->setToolTip(tr("Key shift, in semitones: hold and move up or down; a double-click puts it back"));
 	m_key_shift->setRange(-12, 12);
 	m_key_shift->setNotchesVisible(true);
 	m_key_shift->setFixedSize(fontMetrics().height() * 2, fontMetrics().height() * 2);
@@ -912,10 +965,10 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	for (int band = 0; band < 3; ++band) {
 		QLabel *name = new QLabel(band_names[band], m_controls);
 		snurra_mute(name);
-		m_eq[band] = new QDial(m_controls);
+		m_eq[band] = new snurra_knob(m_controls);
 		m_eq[band]->setObjectName(QLatin1String(band_objects[band]));
 		m_eq[band]->setAccessibleName(tr("EQ %1").arg(band_names[band]));
-		m_eq[band]->setToolTip(tr("EQ %1, killed at the left end to +6 dB; a double-click puts it back").arg(band_names[band]));
+		m_eq[band]->setToolTip(tr("EQ %1, from killed to +6 dB: hold and move up or down; a double-click puts it back").arg(band_names[band]));
 		m_eq[band]->setRange(-12, 12);
 		m_eq[band]->setNotchesVisible(true);
 		const int side = fontMetrics().height() * 2;
