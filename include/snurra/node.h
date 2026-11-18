@@ -28,7 +28,15 @@ struct snurra_beat_grid;
  * they cross.
  */
 int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, double tempo = 1, double next_tempo = 1,
-                             const snurra_beat_grid *grid = nullptr, const snurra_beat_grid *next_grid = nullptr);
+                             const snurra_beat_grid *grid = nullptr, const snurra_beat_grid *next_grid = nullptr,
+                             int64_t chosen = -1);
+/* `chosen`, an overlap dragged to, the next one's first beat moved onto the
+ * nearest beat of the first -- by less than half a beat, within half the
+ * shorter, at least one beat -- or as it was where either has no beat.
+ * Placed so by snurra_node when a later tile of a train is dragged; then
+ * passed to snurra_train_overlap as `chosen`, which keeps it. */
+int64_t snurra_overlap_on_beat(int64_t chosen, int64_t length, int64_t next_length, double tempo, double next_tempo,
+                               const snurra_beat_grid *grid, const snurra_beat_grid *next_grid);
 
 /*
  * One snurra process: its window, the tiles in it, and its side of every
@@ -135,6 +143,14 @@ private:
 	void remove_tile(snurra_tile *tile);
 	void drop_tile(snurra_tile *tile);
 	void place_tiles();
+	/* The grid's columns as spans of the timeline (place_tiles): every
+	 * tile as wide as its time, the lanes on one scale. */
+	void lay_out_timeline();
+	/* The width at which every tile has room at the timeline's one scale,
+	 * no wider than the screen; the window grows to it, never shrinks. */
+	void widen_for_timeline();
+	int m_timeline_wanted = 0;   /* lay_out_timeline's: that width, for the tiles */
+	void timing_changed();
 	void fit_to_drawers();
 	void reshape();
 	void ask_where();
@@ -187,6 +203,7 @@ private:
 
 	bool m_drawers_look = false;
 	bool m_fitting = false;   /* a re-fit is queued */
+	bool m_timing_queued = false;   /* a lay_out_timeline is */
 	bool m_shape_queued = false;
 	QString m_path;
 	QLocalServer *m_server = nullptr;
@@ -220,6 +237,8 @@ private:
 	bool m_sounding = false;        /* some tile played at the last tick */
 	bool m_stopped = false;         /* by a pause or a tile going: not an end */
 	int m_shift_row = -1;          /* a lane being moved by a drag, */
+	snurra_tile *m_shift_tile = nullptr;   /* or a train's later tile, */
+	int64_t m_shift_from_overlap = 0;      /* and its overlap before it */
 	qint64 m_shift_from_us = 0;    /* and where it began before it */
 };
 

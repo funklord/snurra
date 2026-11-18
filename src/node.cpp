@@ -11,6 +11,7 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QGridLayout>
+#include <QScreen>
 #include <QGuiApplication>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -261,6 +262,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	tile->set_grouped(true);
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
 	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
+	connect(tile, &snurra_tile::timing_changed, this, &snurra_node::timing_changed);
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
 	connect(tile, &snurra_tile::key_sync_requested, this, [this](snurra_tile *asking) { sync_key(asking); });
@@ -310,23 +312,15 @@ void snurra_node::place_tiles() {
 	 * lane is on one line whatever is open, and a row of drawers all
 	 * closed takes no room. Spare height goes below the last lane. */
 	setUpdatesEnabled(false);
-	for (snurra_tile *tile : m_tiles) {
-		m_grid->removeWidget(tile);
-		m_grid->removeWidget(tile->drawer_above());
-		m_grid->removeWidget(tile->drawer_below());
-	}
-	for (int row = 0; row < m_grid->rowCount(); ++row) m_grid->setRowStretch(row, 0);
-	for (snurra_tile *tile : m_tiles) {
-		tile->set_place(rows.value(tile->row()), columns.value(tile->column()));
-		const int lane = 3 * tile->row();
-		m_grid->addWidget(tile->drawer_above(), lane, tile->column());
-		m_grid->addWidget(tile, lane + 1, tile->column());
-		m_grid->addWidget(tile->drawer_below(), lane + 2, tile->column());
-		tile->show();
-	}
-	m_grid->setRowStretch(3 * int(rows.size()), 1);
+	for (snurra_tile *tile : m_tiles) tile->set_place(rows.value(tile->row()), columns.value(tile->column()));
+	lay_out_timeline();
 	setUpdatesEnabled(true);
+	/* As wide as it was, or as the tiles ask -- a few lines a tile -- and
+	 * never wider than the screen: what a long lane needs is room, and the
+	 * scale gives it (the holder, 2026-11-18: proportional "without going
+	 * off screen"). */
 	adjustSize();
+	widen_for_timeline();
 
 	/* Titled by what it plays -- the first tile's file, and how many
 	 * more -- so a taskbar or a window switcher tells windows apart. */
@@ -341,6 +335,114 @@ void snurra_node::place_tiles() {
 	}
 	setWindowTitle(title);
 	reshape();
+}
+
+/*
+ * The tiles along the timeline (the holder, 2026-11-18: "the tracklengths
+ * probably need to be proportional for mixing (without going off
+ * screen)"): a tile from where its lane starts it to where the next one
+ * starts -- its whole length if it is last -- so every lane is on one
+ * scale, a lane that begins later begins further right, and a train's
+ * join is drawn where the next track comes in, on the beat the overlap
+ * snapped to (snurra_train_overlap). The grid's columns are the spans
+ * between every tile's start and end, each stretched by its time; a tile
+ * and its drawers span its own. Each tile keeps a few letters' width, so
+ * a short one beside a long one is narrow, not gone.
+ */
+void snurra_node::lay_out_timeline() {
+	struct span_t {
+		snurra_tile *tile;
+		int64_t from, to;
+	};
+	std::vector<span_t> spans;
+	std::vector<int64_t> edges;
+	for (int row : rows()) {
+		const QList<snurra_tile *> tiles = lane(row);
+		for (int i = 0; i < tiles.size(); ++i) {
+			const int64_t from = lane_start(tiles.at(i));
+			const int64_t to = i + 1 < tiles.size() ? lane_start(tiles.at(i + 1)) : from + timeline_length(tiles.at(i));
+			spans.push_back({ tiles.at(i), from, std::max(to, from + 1) });
+			edges.push_back(from);
+			edges.push_back(std::max(to, from + 1));
+		}
+	}
+	std::sort(edges.begin(), edges.end());
+	edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
+	/* The scale at which the tile that asks most for its time -- a short
+	 * one beside a long set -- has its least width, and so the width of
+	 * the whole timeline at it. */
+	double per_frame = 0;
+	for (const span_t &span : spans) {
+		const int least = std::max({ span.tile->minimumSizeHint().width(), span.tile->drawer_above()->isVisible() ? span.tile->drawer_above()->minimumSizeHint().width() : 0,
+		                             span.tile->drawer_below()->isVisible() ? span.tile->drawer_below()->minimumSizeHint().width() : 0 });
+		per_frame = std::max(per_frame, double(least) / double(span.to - span.from));
+	}
+	m_timeline_wanted = edges.size() > 1 ? int(std::ceil(per_frame * double(edges.back() - edges.front()))) : 0;
+	auto column_of = [&edges](int64_t at) { return int(std::lower_bound(edges.begin(), edges.end(), at) - edges.begin()); };
+	for (const span_t &span : spans) {
+		m_grid->removeWidget(span.tile);
+		m_grid->removeWidget(span.tile->drawer_above());
+		m_grid->removeWidget(span.tile->drawer_below());
+	}
+	for (int column = 0; column < m_grid->columnCount(); ++column) m_grid->setColumnStretch(column, 0);
+	for (int row = 0; row < m_grid->rowCount(); ++row) m_grid->setRowStretch(row, 0);
+	/* Stretches in tenths of a second: an int, and finer than a pixel. */
+	for (size_t i = 0; i + 1 < edges.size(); ++i)
+		m_grid->setColumnStretch(int(i), std::max(1, int(snurra_frames_to_us(edges[i + 1] - edges[i], m_engine->rate()) / 100000)));
+	for (const span_t &span : spans) {
+		const int lane = 3 * span.tile->row();
+		const int column = column_of(span.from);
+		const int across = std::max(1, column_of(span.to) - column);
+		m_grid->addWidget(span.tile->drawer_above(), lane, column, 1, across);
+		m_grid->addWidget(span.tile, lane + 1, column, 1, across);
+		m_grid->addWidget(span.tile->drawer_below(), lane + 2, column, 1, across);
+		span.tile->show();
+	}
+	m_grid->setRowStretch(3 * int(rows().size()), 1);
+}
+
+/* A length known, a tempo moved, beats found, a lane's begin set: laid
+ * out again once the event loop is back, as one -- a tempo slider dragged
+ * says so at every step. Not while a lane is dragged along the timeline,
+ * whose waveform the pointer is on; its release says so again. */
+void snurra_node::timing_changed() {
+	if (m_timing_queued) return;
+	m_timing_queued = true;
+	QTimer::singleShot(100, this, [this] {
+		m_timing_queued = false;
+		if (m_shift_row >= 0) {
+			timing_changed();
+			return;
+		}
+		setUpdatesEnabled(false);
+		lay_out_timeline();
+		setUpdatesEnabled(true);
+		widen_for_timeline();
+		reshape();
+	});
+}
+
+/* Wide enough for the timeline's one scale (lay_out_timeline), and never
+ * wider than the screen (the holder, 2026-11-18: proportional "without
+ * going off screen"): grown to it, never narrowed -- a width a person set
+ * that already has room stays. Where the screen is too narrow for it the
+ * shortest tiles keep their least width and the scale gives. */
+void snurra_node::widen_for_timeline() {
+	if (!isWindow()) return;
+	const QMargins margins = layout() ? layout()->contentsMargins() : QMargins();
+	const int spacing = m_grid->horizontalSpacing() > 0 ? m_grid->horizontalSpacing() : 0;
+	const int wanted = m_timeline_wanted + margins.left() + margins.right() + spacing * std::max(0, m_grid->columnCount() - 1);
+	const QScreen *on = screen();
+	const int most = on ? on->availableGeometry().width() : wanted;
+	const int width_now = std::min(std::max(width(), wanted), most);
+	if (width_now != width()) resize(width_now, height());
+	/* And on the screen: grown from where it was opened -- at the pointer
+	 * -- its right edge went past the screen's (seen in Xvfb). */
+	if (on && isVisible()) {
+		const QRect room = on->availableGeometry();
+		const int x = std::max(room.left(), std::min(pos().x(), room.right() + 1 - width()));
+		if (x != pos().x()) move(x, pos().y());
+	}
 }
 
 /* The window as tall as what is open: a drawer opened adds its height, a
@@ -467,10 +569,12 @@ void snurra_node::drop_tile(snurra_tile *tile) {
  * -- so two tempos apart drift through the overlap from in phase.
  */
 int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, double tempo, double next_tempo,
-                             const snurra_beat_grid *grid, const snurra_beat_grid *next_grid) {
+                             const snurra_beat_grid *grid, const snurra_beat_grid *next_grid, int64_t chosen) {
 	const QByteArray wanted = qgetenv("SNURRA_TRAIN_OVERLAP_MS");
 	const qint64 overlap_us = wanted.isEmpty() ? 5000000 : qint64(wanted.toLongLong()) * 1000;
 	const int64_t room = std::min(length / 2, next_length / 2);
+	/* Dragged to: where it was put, snapped then or not. */
+	if (chosen >= 0) return std::clamp<int64_t>(chosen, std::min<int64_t>(1, room), std::max<int64_t>(1, room));
 	const int64_t plain = std::min(snurra_us_to_frames(overlap_us, rate), room);
 	if (plain <= 0 || !grid || !next_grid || !grid->valid() || !next_grid->valid() || tempo <= 0 || next_tempo <= 0)
 		return plain;
@@ -490,14 +594,35 @@ int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, doub
 	return std::llround(snapped);
 }
 
+int64_t snurra_overlap_on_beat(int64_t chosen, int64_t length, int64_t next_length, double tempo, double next_tempo,
+                               const snurra_beat_grid *grid, const snurra_beat_grid *next_grid) {
+	const int64_t room = std::min(length / 2, next_length / 2);
+	chosen = std::clamp<int64_t>(chosen, std::min<int64_t>(1, room), std::max<int64_t>(1, room));
+	if (!grid || !next_grid || !grid->valid() || !next_grid->valid() || tempo <= 0 || next_tempo <= 0) return chosen;
+	/* As snurra_train_overlap: overlap = length + next_first - (beat k of
+	 * the first, out), the k nearest what was chosen -- a beat, not bars:
+	 * the hand chose the bar. */
+	const double beat = grid->period / tempo;
+	const double next_first = next_grid->first / next_tempo;
+	const double k = std::round(((double(length) + next_first - double(chosen)) * tempo - grid->first) / grid->period);
+	double snapped = double(length) + next_first - (grid->first + k * grid->period) / tempo;
+	while (snapped > double(room)) snapped -= beat;
+	while (snapped < beat && snapped + beat <= double(room)) snapped += beat;
+	if (snapped <= 0 || snapped > double(room)) return chosen;   /* no beat of it fits */
+	return std::llround(snapped);
+}
+
 /* The overlap between `tile` and `next` on their lane's timeline: the
- * one the train plays and every seek counts with. */
+ * one the train plays and every seek counts with -- `next`'s own where it
+ * was dragged to come in. */
 int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
 	if (!next) return 0;
 	const snurra_beat_grid grid = tile->beats();
 	const snurra_beat_grid next_grid = next->beats();
+	const qint64 chosen_us = next->state().overlap_us;
 	return snurra_train_overlap(timeline_length(tile), timeline_length(next), m_engine->rate(), tile->deck()->tempo(),
-	                            next->deck()->tempo(), &grid, &next_grid);
+	                            next->deck()->tempo(), &grid, &next_grid,
+	                            chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1);
 }
 
 void snurra_node::run_trains() {
@@ -777,6 +902,36 @@ void snurra_node::start_group_at(int64_t time, bool moving) {
 void snurra_node::shift_lane(snurra_tile *tile, qint64 delta_us, bool done, bool snap) {
 	const QList<snurra_tile *> tiles = lane(tile->row());
 	if (tiles.isEmpty()) return;
+	/* A train's later tile: where it comes in, along the one before it --
+	 * later, a shorter crossing; earlier, a longer -- its first beat on a
+	 * beat of the one before (the holder, 2026-11-18: "they need to snap
+	 * to beats when connecting"), Shift held where it is put. */
+	const int at = int(tiles.indexOf(tile));
+	if (at > 0) {
+		snurra_tile *before = tiles.at(at - 1);
+		if (m_shift_tile != tile) {
+			m_shift_tile = tile;
+			m_shift_row = tile->row();
+			m_shift_from_overlap = overlap(before, tile);
+		}
+		const int64_t length = timeline_length(before), next_length = timeline_length(tile);
+		int64_t chosen = m_shift_from_overlap - snurra_us_to_frames(delta_us, m_engine->rate());
+		if (snap) {
+			const snurra_beat_grid grid = before->beats(), next_grid = tile->beats();
+			chosen = snurra_overlap_on_beat(chosen, length, next_length, before->deck()->tempo(), tile->deck()->tempo(), &grid,
+			                                &next_grid);
+		}
+		chosen = snurra_train_overlap(length, next_length, m_engine->rate(), 1, 1, nullptr, nullptr, std::max<int64_t>(0, chosen));
+		tile->set_overlap_us(qint64(snurra_frames_to_us(chosen, m_engine->rate())));
+		if (!done) return;
+		m_shift_tile = nullptr;
+		m_shift_row = -1;
+		snurra_tile *clock = nullptr;
+		for (snurra_tile *other : m_tiles)
+			if (other->playing() && (!clock || clock == tile)) clock = other;
+		if (clock) start_group_at(group_time(clock), true);
+		return;
+	}
 	if (m_shift_row != tile->row()) {
 		m_shift_row = tile->row();
 		m_shift_from_us = tiles.first()->lane_start_us();

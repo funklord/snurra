@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScreen>
 #include <QSettings>
 #include <QElapsedTimer>
 #include <QAbstractItemModel>
@@ -60,6 +61,8 @@ private slots:
 	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_lane_dragged_later_starts_later_on_the_beat();
+	void tiles_are_as_wide_as_their_time_on_the_timeline();
+	void a_trains_next_tile_dragged_comes_in_on_the_beat();
 	void loop_plays_again_from_the_start();
 	void the_library_lists_finds_and_hands_out_tunes();
 	void a_file_dropped_on_a_tile_takes_its_place();
@@ -509,6 +512,123 @@ void embed_test::a_folder_or_a_link_dropped_joins_too() {
  * first at 0.1 s -- a drag to 1.3 s snaps to 1.4 s, so B's first beat
  * lands on A's at 1.5 s; Shift held, it stays at 1.3 s.
  */
+/*
+ * Proportional (the holder, 2026-11-18): A of 40 s then B of 20 s in one
+ * lane, C of 60 s below. B comes in 5 s before A ends, so A is drawn to
+ * 35 s and B from there to 55, C the whole 60 -- one scale. C's lane
+ * begun 10 s later is drawn a seventh of the way along a timeline of 70.
+ * The window no wider than the screen.
+ */
+void embed_test::tiles_are_as_wide_as_their_time_on_the_timeline() {
+	snurra_node node;
+	auto timed = [](const QString &name, int row, int column, qint64 seconds) {
+		snurra_tile_state state = placed(name, row, column);
+		state.duration_us = seconds * 1000000;
+		return state;
+	};
+	snurra_tile *a = node.add_tile(timed(QStringLiteral("a"), 0, 0, 40));
+	snurra_tile *b = node.add_tile(timed(QStringLiteral("b"), 0, 1, 20));
+	snurra_tile *c = node.add_tile(timed(QStringLiteral("c"), 1, 0, 60));
+	/* Laid out by itself, no wider than the screen. */
+	const QScreen *screen = node.screen();
+	QVERIFY2(!screen || node.width() <= screen->availableGeometry().width(),
+	         qPrintable(QStringLiteral("%1 on a screen of %2").arg(node.width()).arg(screen ? screen->availableGeometry().width() : 0)));
+	node.resize(1200, 300);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(a->length_frames() > 0 && b->length_frames() > 0 && c->length_frames() > 0, 3000);
+	const int spacing = std::max(0, node.layout() ? 6 : 0);
+	auto near = [](double got, double want, double within) { return std::abs(got - want) <= within; };
+	auto check = [&](double a_to, double b_to, double total, double c_from, double c_to) {
+		const double scale = double(c->x() + c->width() - std::min(a->x(), c->x())) / (std::max(c_to, b_to) - std::min(0.0, c_from));
+		const double left = std::min(a->x(), c->x());
+		return near(a->x() - left, 0, 2 + spacing) && near(a->width(), a_to * scale, 8 + spacing)
+		       && near(b->x() - left, a_to * scale, 8 + spacing) && near(b->width(), (b_to - a_to) * scale, 8 + spacing)
+		       && near(c->x() - left, c_from * scale, 8 + spacing) && near(c->width(), (c_to - c_from) * scale, 8 + spacing)
+		       && total > 0;
+	};
+	auto said = [&] {
+		return QStringLiteral("a %1+%2, b %3+%4, c %5+%6").arg(a->x()).arg(a->width()).arg(b->x()).arg(b->width()).arg(c->x()).arg(c->width());
+	};
+	QTRY_VERIFY2_WITH_TIMEOUT(check(35, 55, 60, 0, 60), qPrintable(said()), 3000);
+	c->set_lane_start_us(10000000);
+	QTRY_VERIFY2_WITH_TIMEOUT(check(35, 55, 70, 10, 70), qPrintable(said()), 3000);
+}
+
+/*
+ * Connecting on the beat (the holder, 2026-11-18): B after A in one lane,
+ * both 60 s at 120 BPM, B's first beat 0.1 s in. B's waveform dragged
+ * with Ctrl comes in where it is put, its first beat moved onto the
+ * nearest of A's; with Shift exactly where it is put. Kept by a handover.
+ */
+void embed_test::a_trains_next_tile_dragged_comes_in_on_the_beat() {
+	snurra_node node;
+	snurra_tile_state a_state = placed(QStringLiteral("a"), 0, 0);
+	snurra_tile_state b_state = placed(QStringLiteral("b"), 0, 1);
+	a_state.duration_us = b_state.duration_us = 60000000;
+	snurra_tile *a = node.add_tile(a_state);
+	snurra_tile *b = node.add_tile(b_state);
+	node.resize(1000, 300);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(a->length_frames() > 0 && b->length_frames() > 0, 3000);
+	const int rate = a->deck()->rate();
+	a->set_beats(snurra_beat_grid{ rate * 0.5, 0, 2, rate });
+	b->set_beats(snurra_beat_grid{ rate * 0.5, rate * 0.1, 2, rate });
+	QCOMPARE(b->state().overlap_us, qint64(-1));   /* the train's own until dragged */
+	QWidget *wave_b = waveform_of(b);
+	QVERIFY(wave_b);
+	auto drag = [&](qint64 by_us, Qt::KeyboardModifiers held) {
+		/* The waveform's own scale: its track over its width. */
+		const int w = wave_b->width();
+		const QPointF from(w / 2.0, wave_b->height() / 2.0);
+		const QPointF to = from + QPointF(double(by_us) / 60000000.0 * w, 0);
+		QMouseEvent press(QEvent::MouseButtonPress, from, wave_b->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, held);
+		QCoreApplication::sendEvent(wave_b, &press);
+		QMouseEvent move(QEvent::MouseMove, to, wave_b->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, held);
+		QCoreApplication::sendEvent(wave_b, &move);
+		QMouseEvent release(QEvent::MouseButtonRelease, to, wave_b->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, held);
+		QCoreApplication::sendEvent(wave_b, &release);
+		return qint64(60000000.0 / w) + 1;   /* a pixel's time */
+	};
+	/* B's first beat, as a time in A: A's length less the overlap, plus
+	 * B's first beat; a beat of A is a multiple of 0.5 s. */
+	auto off_beat_us = [&] {
+		const double at = 60.0 - b->state().overlap_us / 1e6 + 0.1;
+		return std::abs(at / 0.5 - std::round(at / 0.5)) * 500000;
+	};
+	/* Dragged 4.13 s earlier than it came in by itself -- not a whole
+	 * number of beats from where it was, which was on one: a longer crossing. */
+	drag(-4130000, Qt::ControlModifier);
+	QVERIFY2(b->state().overlap_us > 5000000, qPrintable(QString::number(b->state().overlap_us)));
+	QVERIFY2(off_beat_us() < 25, qPrintable(QStringLiteral("%1 us off the beat").arg(off_beat_us())));
+	const qint64 snapped = b->state().overlap_us;
+	/* With Shift, where it is put: 0.13 s later is not on a beat. */
+	const qint64 pixel_us = drag(130000, Qt::ControlModifier | Qt::ShiftModifier);
+	QVERIFY2(std::abs(b->state().overlap_us - (snapped - 130000)) <= pixel_us,
+	         qPrintable(QStringLiteral("%1, not %2").arg(b->state().overlap_us).arg(snapped - 130000)));
+	QVERIFY(off_beat_us() > 25);
+	/* Kept by a handover. */
+	QByteArray bytes;
+	QDataStream out(&bytes, QIODevice::WriteOnly);
+	out << b->state();
+	snurra_tile_state back;
+	QDataStream in(bytes);
+	in >> back;
+	QCOMPARE(back.overlap_us, b->state().overlap_us);
+	/* And the lane, Ctrl-dragged on its first tile, still moves as a lane. */
+	QWidget *wave_a = waveform_of(a);
+	const int wa = wave_a->width();
+	const QPointF from(wa / 2.0, wave_a->height() / 2.0), to = from + QPointF(wa / 6.0, 0);
+	QMouseEvent press(QEvent::MouseButtonPress, from, wave_a->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, Qt::ControlModifier);
+	QCoreApplication::sendEvent(wave_a, &press);
+	QMouseEvent move(QEvent::MouseMove, to, wave_a->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::ControlModifier);
+	QCoreApplication::sendEvent(wave_a, &move);
+	QMouseEvent release(QEvent::MouseButtonRelease, to, wave_a->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, Qt::ControlModifier);
+	QCoreApplication::sendEvent(wave_a, &release);
+	QVERIFY2(a->lane_start_us() > 5000000, qPrintable(QString::number(a->lane_start_us())));
+}
+
 void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {
 	snurra_node node;
 	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
@@ -519,8 +639,11 @@ void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {
 	QWidget *wave_a = waveform_of(a);
 	QWidget *wave_b = waveform_of(b);
 	QVERIFY(wave_a && wave_b);
+	/* Its width as it is at each drag: a lane begun later is laid out
+	 * further along the timeline, and its tile narrower. */
 	const int w = wave_b->width();
 	auto drag = [&](double fraction, Qt::KeyboardModifiers held) {
+		const int w = wave_b->width();
 		const QPointF from(w / 4.0, wave_b->height() / 2.0);
 		const QPointF to = from + QPointF(fraction * w, 0);
 		QMouseEvent press(QEvent::MouseButtonPress, from, wave_b->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, held);

@@ -631,7 +631,14 @@ does the same with a tile's playback:
   less than half a beat, and not at all where either has no grid. Shift
   held while dragging, it goes where it is put -- the one modifier left,
   Ctrl being the drag's own (an assumption, 2026-11-13: not checked
-  against an editor's convention).
+  against an editor's convention). **A train's later tile, Ctrl-dragged,
+  moves where it comes in** (the holder, 2026-11-18: "they need to snap
+  to beats when connecting"): later is a shorter crossing of the tile
+  before, earlier a longer, its first beat moved onto the nearest beat of
+  the one before (`snurra_overlap_on_beat`, by a beat, not bars: the hand
+  chose the bar), Shift where it is put. Kept on the tile as
+  `overlap_us`, carried by a handover; the train and every seek count
+  with it. A lane's first tile, dragged so, still moves the lane.
 - **Envelopes:** a level curve per tile, drawn on it; the crossfade of a
   train is two of them. Settled with step 5 (2026-11-12): points of
   (time into the track, gain 0 to 1), straight lines in amplitude
@@ -1626,6 +1633,26 @@ controls; each tile very compact but resizeable).
   overlap. Tested on grids alone, four cases including tempos and a
   short next, to under a frame (`a_trains_overlap_brings_the_next_in_on_the_beat`);
   whole bars without the phase fail it. Not yet heard on real music.
+- **Tiles along the timeline, 2026-11-18** (the holder: "the
+  tracklengths probably need to be proportional for mixing (without going
+  off screen)"): a window's grid columns are the spans between every
+  tile's start and end on the group's timeline, each stretched by its
+  time, and a tile with its drawers spans its own -- from where its lane
+  starts it to where the next one comes in, its whole length if it is
+  last. So every lane is on one scale, a lane begun later is drawn
+  further right, and a train's join is drawn where the next track comes
+  in, on the beat its overlap snapped to. A tile keeps ten letters'
+  width, and the one with the controls theirs, so a 3:39 tune beside an
+  hour's set (seen in Xvfb) is narrow, not gone. The window grows to the
+  width at which the tile asking most for its time has its least -- never
+  narrower than it was, never wider than the screen, and moved back onto
+  it, since one opened at the pointer and grown ran off the right edge.
+  Laid out again, once the event loop is back, when a length becomes
+  known, a tempo moves, beats are found or a lane's begin is set -- not
+  while a lane is being dragged, whose waveform is under the pointer
+  (`tiles_are_as_wide_as_their_time_on_the_timeline`, failing with every
+  column stretched alike). An assumption: the window grows when lengths
+  become known even where a person set its width.
 - **Drawers, built 2026-11-12** (sec 3b): a tile has an upward drawer
   (empty until video) and a downward one, its controls; one height for
   every waveform. A window takes the drawers out of its tiles and gives

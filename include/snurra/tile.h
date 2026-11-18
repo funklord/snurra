@@ -151,6 +151,9 @@ public:
 	 * open (the DJ player's decks); its button opens it. Asked before the
 	 * picture is found, as right after the tile is made. */
 	void set_picture_closed_at_first(bool closed) { m_picture_closed_at_first = closed; }
+	/* Where it comes in on a train, as the crossing with the tile before
+	 * it, in microseconds; -1 the train's own (tile_state.h). */
+	void set_overlap_us(qint64 us);
 
 	/* The cue (a CDJ's, Traktor's): paused, it is set where the track
 	 * stands; playing, the track goes back to it and stops. */
@@ -255,6 +258,9 @@ signals:
 	void files_dropped(const QStringList &files);
 	/* A drawer opened, closed or changed height: the window re-fits. */
 	void drawers_changed(snurra_tile *tile);
+	/* Its length on the timeline, its beats or its lane's begin changed:
+	 * the window lays its tiles out along the timeline again. */
+	void timing_changed(snurra_tile *tile);
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;

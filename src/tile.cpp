@@ -1208,6 +1208,7 @@ void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	if (grid.valid() && length > 0) m_waveform->set_beats(grid.first / length, grid.period / length);
 	else m_waveform->set_beats(0, 0);
 	show_jumps();
+	emit timing_changed(this);
 }
 
 /*
@@ -1860,8 +1861,14 @@ void snurra_tile::set_envelope(const QList<QPair<qint64, float>> &points) {
 	show_envelope();
 }
 
+void snurra_tile::set_overlap_us(qint64 us) {
+	m_state.overlap_us = us < 0 ? -1 : us;
+	emit timing_changed(this);
+}
+
 void snurra_tile::set_lane_start_us(qint64 us) {
 	m_state.lane_start_us = qMax<qint64>(0, us);
+	emit timing_changed(this);
 	/* To a tenth: a start on a beat is finer than a second. */
 	const qint64 tenths = (m_state.lane_start_us + 50000) / 100000;
 	m_waveform->set_note(m_state.lane_start_us > 0 ? QStringLiteral("+%1:%2.%3")
@@ -1917,6 +1924,7 @@ void snurra_tile::set_tempo(float tempo) {
 	m_tempo->blockSignals(false);
 	m_tempo_label->setText(QStringLiteral("%1%2 %").arg(tenths > 0 ? QStringLiteral("+") : QString()).arg(tenths / 10.0, 0, 'f', 1));
 	show_beat();
+	emit timing_changed(this);
 }
 
 /* The key as heard against the track's: its shift, and without key lock
@@ -2056,12 +2064,16 @@ void snurra_tile::tick() {
 	m_waveform->set_fraction(m_state.duration_us > 0 ? double(now) / m_state.duration_us : 0);
 }
 
+/* As narrow as the title's buttons and a few letters: in a window its
+ * width is its time on the timeline (snurra_node::lay_out_timeline), and a
+ * short track beside a long one is narrow. Alone, the window gives it the
+ * width a person sets. */
 QSize snurra_tile::sizeHint() const {
-	return QSize(fontMetrics().averageCharWidth() * 26, QWidget::sizeHint().height());
+	return QSize(fontMetrics().averageCharWidth() * 10, QWidget::sizeHint().height());
 }
 
 QSize snurra_tile::minimumSizeHint() const {
-	return QSize(fontMetrics().averageCharWidth() * 14, QWidget::minimumSizeHint().height());
+	return QSize(fontMetrics().averageCharWidth() * 10, QWidget::minimumSizeHint().height());
 }
 
 /* From where the deck is -- or was just asked to go -- not from the tile's

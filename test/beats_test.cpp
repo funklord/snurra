@@ -193,6 +193,21 @@ void beats_test::a_trains_overlap_brings_the_next_in_on_the_beat() {
 	const double beat = grid.period / tempo;
 	const double whole = std::max(1.0, std::round(double(plain) / (4 * beat))) * 4 * beat;
 	if (whole <= double(next_length) / 2) QVERIFY(std::abs(double(overlap) - whole) <= beat / 2 + 1);
+
+	/* Dragged to come in elsewhere: 11.3 s chosen is moved onto a beat --
+	 * the next one's first beat on one of the first's, by less than half a
+	 * beat -- and kept as it is by the train once chosen. */
+	const int64_t chosen = std::min<int64_t>(int64_t(11.3 * RATE), std::min(length, next_length) / 2 - 1);
+	const int64_t on_beat = snurra_overlap_on_beat(chosen, length, next_length, tempo, next_tempo, &grid, &next_grid);
+	const double chosen_at = (double(length - on_beat) + next_first / next_tempo) * tempo;
+	const double chosen_beats = (chosen_at - first) / grid.period;
+	QVERIFY2(std::abs(chosen_beats - std::round(chosen_beats)) * grid.period < 1.0,
+	         qPrintable(QStringLiteral("dragged, it comes in %1 of a beat off").arg(chosen_beats - std::round(chosen_beats))));
+	QVERIFY2(std::abs(double(on_beat - chosen)) <= beat / 2 + 1 || on_beat == chosen,
+	         qPrintable(QStringLiteral("moved %1 frames from where it was put, a beat %2").arg(on_beat - chosen).arg(beat)));
+	QCOMPARE(snurra_train_overlap(length, next_length, RATE, tempo, next_tempo, &grid, &next_grid, on_beat), on_beat);
+	/* No grid, as it was put. */
+	QCOMPARE(snurra_overlap_on_beat(chosen, length, next_length, tempo, next_tempo, &none, &next_grid), chosen);
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {
