@@ -732,10 +732,9 @@ it takes, boosted only as far as the highest sample has room and 12 dB
 at most. The trim is under the level slider and moves at one unit of gain
 a second, so one that arrives mid-play (a tune not yet analysed) is a
 half-second fade, never a step; before the first sound it is there at
-once. **On unless the setting `loudness/match` is false**: a level match
-is what a mixing player does by default, and snurra has no settings page
-yet to say it -- an assumption to check with the holder, since it makes
-a loud master quieter than mplayer played it.
+once. **On unless the setting `loudness/match` is false**, and at -14
+LUFS: settled by the holder 2026-11-18 ("keep loudness matching on, -14
+is fine"), though it plays a loud master quieter than mplayer did.
 
 **The licence question this raises:** snurra has none yet, which is
 right; but linking qm-dsp or Rubber Band makes the whole program
