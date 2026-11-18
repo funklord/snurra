@@ -1073,16 +1073,61 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 
 	/* The EQ's dials: the low one down to the kill, a step short of it
 	 * -22 dB, kept by a handover, put back by a double-click. */
-	QDial *low = deck->findChild<QDial *>(QStringLiteral("snurra-eq-low"));
-	QVERIFY(low && deck->findChild<QDial *>(QStringLiteral("snurra-eq-mid")) && deck->findChild<QDial *>(QStringLiteral("snurra-eq-high")));
-	QCOMPARE(low->value(), (low->minimum() + low->maximum()) / 2);   /* 0 dB at the top */
-	low->setValue(low->minimum() + 1);
-	QCOMPARE(deck->state().eq_db[0], -22.0f);
-	low->setValue(low->minimum());
-	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
-	low->setValue(low->maximum());
+	QWidget *eq = deck->findChild<QWidget *>(QStringLiteral("snurra-eq"));
+	QVERIFY(eq);
+	/* The EQ line: a band pulled to the bottom is killed, to the top
+	 * +6 dB; one stroke from the low band's bottom across to the high
+	 * band's middle draws all three, the mid taking the height it was
+	 * crossed at. */
+	const int w = eq->width(), h = eq->height();
+	auto at = [w, h](int band, int step) {   /* -12 the bottom, 12 the top */
+		return QPoint(int((band + 0.5) * w / 3), int(std::lround(2.5 + (12 - step) / 24.0 * (h - 5))));
+	};
+	auto move_to = [eq](QPoint to) {
+		QMouseEvent moved(QEvent::MouseMove, to, eq->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(eq, &moved);
+	};
+	QCOMPARE(deck->state().eq_db[0], 0.0f);
+	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, 12));
 	QCOMPARE(deck->state().eq_db[0], 6.0f);
-	low->setValue(low->minimum());
+	QCOMPARE(deck->state().eq_db[1], 0.0f);   /* the others untouched */
+	move_to(at(0, -12));
+	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
+	move_to(at(2, 0));   /* across the mid, at the middle */
+	QCOMPARE(deck->state().eq_db[1], 0.0f);
+	QCOMPARE(deck->state().eq_db[2], 0.0f);
+	move_to(at(2, -6));
+	QCOMPARE(deck->state().eq_db[2], -12.0f);
+	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, -6));
+	move_to(at(2, 12));   /* not held: nothing */
+	QCOMPARE(deck->state().eq_db[2], -12.0f);
+	/* A stroke skips no band: low to high in one move, the mid too. */
+	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, 6));
+	move_to(at(2, 6));
+	QCOMPARE(deck->state().eq_db[1], 3.0f);
+	QCOMPARE(deck->state().eq_db[2], 3.0f);
+	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, 6));
+	/* Drawn band by band, each keeps its own height: low down, mid
+	 * flat, high up -- moving on into the next does not take the last
+	 * with it. */
+	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, -4));
+	move_to(at(1, 0));
+	move_to(at(2, 4));
+	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, 4));
+	QCOMPARE(deck->state().eq_db[0], -8.0f);
+	QCOMPARE(deck->state().eq_db[1], 0.0f);
+	QCOMPARE(deck->state().eq_db[2], 2.0f);
+	deck->set_eq(3, 3, 3);
+	QTest::mouseDClick(eq, Qt::LeftButton, Qt::NoModifier, at(1, 6));
+	QCOMPARE(deck->state().eq_db[1], 0.0f);
+	QCOMPARE(deck->state().eq_db[0], 3.0f);
+	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, -12));
+	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(0, -12));
+	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
+	/* And a step short of the bottom is -22 dB. */
+	deck->set_eq(-22, 0, 0);
+	QCOMPARE(deck->state().eq_db[0], -22.0f);
+	deck->set_eq(SNURRA_EQ_KILL, 3, 3);
 
 	QByteArray bytes;
 	QDataStream out(&bytes, QIODevice::WriteOnly);
@@ -1092,7 +1137,7 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	in >> back;
 	QCOMPARE(back.cue_us, deck->cue_us());
 	QCOMPARE(back.eq_db[0], SNURRA_EQ_KILL);
-	QTest::mouseDClick(low, Qt::LeftButton);
+	QTest::mouseDClick(eq, Qt::LeftButton, Qt::NoModifier, at(0, 0));
 	QCOMPARE(deck->state().eq_db[0], 0.0f);
 }
 

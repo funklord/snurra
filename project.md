@@ -1461,9 +1461,22 @@ controls; each tile very compact but resizeable).
   allpass so the three add up flat; each band weighted, the weights
   gliding over 10 ms, and the dry track crossfaded to the isolator and
   back in the same 10 ms, so at 0 dB everywhere an untouched deck stays
-  exact. On dials with 0 dB at the top, as on a mixer: the left half
-  down 2 dB a step to -22 and the band killed at its end
-  (`SNURRA_EQ_KILL`), the right up to +6; carried by a handover.
+  exact. Down 2 dB a step to -22 and below that the band killed
+  (`SNURRA_EQ_KILL`), up to +6 by 0.5; carried by a handover. **Drawn
+  as one line** (the holder, 2026-11-18: "a line where segments of it
+  can be pulled up or down, and where it can be drawn from one side to
+  the other"; `snurra_eq_line`, in place of the three dials it had --
+  the key shift keeps its knob): low, mid and high its three segments left to right,
+  each as high as the band is loud, 0 dB on a dashed middle, the kill at
+  the bottom, three lines of text high, as wide as the controls. Held,
+  the segment under the pointer or finger goes to its height; moved
+  across while held, each band it reaches takes the height it was
+  reached at, and a band a quick stroke jumped over the next one's --
+  so one stroke draws the whole curve. A double-click puts a band back,
+  the wheel steps one. Found by looking at it in Xvfb: the first fill
+  ran from the last band to this one inclusive, so leaving the mid for
+  the high took the mid along to the high's height; the test now draws
+  band by band and fails with that fill.
   Fourth order was tried first and was not a kill: a killed high band
   left 8 kHz, an octave from its split, at -27 dB. Measured on tones
   through a deck: cut to -24, 60 Hz -24.0, 8 kHz -23.7, 1 kHz -24.0,
@@ -1660,7 +1673,8 @@ controls; each tile very compact but resizeable).
   knob (484de7c) as the nearest thing to a mixer's: it follows the
   pointer's angle round its centre, so at two lines across a few pixels
   span the range, a press alone jumps it (to -7 from the left edge, the
-  test's sabotage), and a finger has no gesture for it; on top of the tempo's pitch
+  test's sabotage), and a finger has no gesture for it. The EQ, which
+  had three, became a line the same day; on top of the tempo's pitch
   without key lock, alone with it. WSOLA at the tempo over the pitch
   heard keeps the pitch, then its frames are read by the same cubic at
   the pitch heard a frame, which raises it and gives the tempo back; at

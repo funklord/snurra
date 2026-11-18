@@ -326,7 +326,7 @@ private:
 	QString m_title_base;   /* the title before a chapter's is added */
 	int chapter_at(qint64 us) const;
 	void show_chapters();
-	class QDial *m_eq[3] = { nullptr, nullptr, nullptr };
+	class snurra_eq_line *m_eq = nullptr;
 	void show_cue();
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;

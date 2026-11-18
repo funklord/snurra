@@ -90,6 +90,129 @@ private:
 };
 
 /*
+ * The EQ as one line across its three bands (the holder, 2026-11-18: "a
+ * line where segments of it can be pulled up or down, and where it can be
+ * drawn from one side to the other"): low, mid and high left to right,
+ * each segment as high as its band is loud -- +6 dB at the top, 0 on the
+ * dashed middle, killed at the bottom, in the steps the knobs had (2 dB
+ * apiece down to -22, then the kill; 0.5 up to +6). Held, the segment
+ * under the pointer or finger goes to its height; moved across while held,
+ * every segment it passes takes the height it passed at, so one stroke
+ * draws the whole curve -- a bass cut with the rest flat is a line drawn
+ * low then up. A double-click puts the band under it back to 0; the wheel
+ * steps it.
+ */
+class snurra_eq_line : public QWidget {
+public:
+	static constexpr int LOWEST = -12;   /* the kill */
+	static constexpr int HIGHEST = 12;   /* +6 dB */
+	std::function<void()> changed;
+
+	explicit snurra_eq_line(QWidget *parent) : QWidget(parent) {
+		const int line = fontMetrics().height();
+		/* Three lines high: 24 steps over two left a pixel apiece, finer
+		 * than a finger; as wide as the controls let it be. */
+		setFixedHeight(line * 3);
+		setMinimumWidth(line * 7);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		setCursor(Qt::CrossCursor);
+	}
+	int step(int band) const { return m_steps[band]; }
+	/* From the tile: drawn, not told back. */
+	void show_steps(const int steps[3]) {
+		for (int band = 0; band < 3; ++band) m_steps[band] = std::clamp(steps[band], LOWEST, HIGHEST);
+		update();
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override {
+		QPainter painter(this);
+		painter.setRenderHint(QPainter::Antialiasing);
+		const QColor text = palette().color(QPalette::Text);
+		QColor faint = text;
+		faint.setAlphaF(0.25f);
+		painter.setPen(QPen(faint, 1, Qt::DashLine));
+		painter.drawLine(QPointF(0, y_of(0)), QPointF(width(), y_of(0)));
+		painter.setPen(QPen(faint, 1));
+		for (int band = 1; band < 3; ++band) painter.drawLine(QPointF(band * width() / 3.0, 0), QPointF(band * width() / 3.0, height()));
+		const QString names[3] = { tr("lo"), tr("mid"), tr("hi") };
+		for (int band = 0; band < 3; ++band)
+			painter.drawText(QRectF(band * width() / 3.0, 0, width() / 3.0, height()), Qt::AlignHCenter | Qt::AlignBottom, names[band]);
+		QPainterPath path;
+		for (int band = 0; band < 3; ++band) {
+			const double y = y_of(m_steps[band]);
+			const QPointF from(band * width() / 3.0, y), to((band + 1) * width() / 3.0, y);
+			if (band == 0) path.moveTo(from);
+			else path.lineTo(from);
+			path.lineTo(to);
+		}
+		painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+		painter.drawPath(path);
+	}
+	void mousePressEvent(QMouseEvent *event) override {
+		if (event->button() != Qt::LeftButton) {
+			event->ignore();
+			return;
+		}
+		m_held = true;
+		m_last_band = band_at(event->position().x());
+		set(m_last_band, step_at(event->position().y()));
+		event->accept();
+	}
+	void mouseMoveEvent(QMouseEvent *event) override {
+		if (!m_held) {
+			event->ignore();
+			return;
+		}
+		/* This band, and any between it and the last one a quick stroke
+		 * jumped over -- not the last itself, which keeps the height it
+		 * was drawn at. */
+		const int band = band_at(event->position().x());
+		const int to = step_at(event->position().y());
+		const int way = band > m_last_band ? 1 : -1;
+		for (int b = m_last_band + way; band != m_last_band && b != band; b += way) set(b, to);
+		set(band, to);
+		m_last_band = band;
+		event->accept();
+	}
+	void mouseReleaseEvent(QMouseEvent *event) override {
+		m_held = false;
+		event->accept();
+	}
+	void mouseDoubleClickEvent(QMouseEvent *event) override {
+		set(band_at(event->position().x()), 0);
+		event->accept();
+	}
+	void wheelEvent(QWheelEvent *event) override {
+		const int band = band_at(event->position().x());
+		set(band, m_steps[band] + (event->angleDelta().y() > 0 ? 1 : -1));
+		event->accept();
+	}
+
+private:
+	int m_steps[3] = { 0, 0, 0 };
+	bool m_held = false;
+	int m_last_band = 0;
+
+	double margin() const { return 2.5; }
+	double y_of(int step) const {
+		return margin() + double(HIGHEST - step) / (HIGHEST - LOWEST) * (height() - 2 * margin());
+	}
+	int step_at(double y) const {
+		const double share = (y - margin()) / std::max(1.0, height() - 2 * margin());
+		return std::clamp(HIGHEST - int(std::lround(share * (HIGHEST - LOWEST))), LOWEST, HIGHEST);
+	}
+	int band_at(double x) const { return std::clamp(int(x * 3 / std::max(1, width())), 0, 2); }
+	void set(int band, int step) {
+		step = std::clamp(step, LOWEST, HIGHEST);
+		if (m_steps[band] == step) return;
+		m_steps[band] = step;
+		update();
+		if (changed) changed();
+	}
+};
+
+/*
  * The waveform: the source's peaks, read on a thread of their own and
  * filled in left to right as they come; until they do, and for what has
  * no audio to read, a stand-in of bars from the source's name, so the
@@ -955,33 +1078,23 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	keys->addStretch(1);
 	strip->addLayout(speed);
 	strip->addLayout(keys);
-	/* The EQ, a DJ's three bands: 0 dB at the top of the dial, as on a
-	 * mixer -- the left half down by 2 dB a step to -22 and, at its end,
-	 * the band killed, as an isolator's; the right up to +6 by 0.5. A
-	 * double-click puts one back. */
+	/* The EQ, a DJ's three bands, as one line (snurra_eq_line): down by
+	 * 2 dB a step to -22 and below that the band killed, as an isolator's;
+	 * up to +6 by 0.5. */
 	QHBoxLayout *bands = new QHBoxLayout;
-	const QString band_names[3] = { tr("lo"), tr("mid"), tr("hi") };
-	const char *band_objects[3] = { "snurra-eq-low", "snurra-eq-mid", "snurra-eq-high" };
-	for (int band = 0; band < 3; ++band) {
-		QLabel *name = new QLabel(band_names[band], m_controls);
-		snurra_mute(name);
-		m_eq[band] = new snurra_knob(m_controls);
-		m_eq[band]->setObjectName(QLatin1String(band_objects[band]));
-		m_eq[band]->setAccessibleName(tr("EQ %1").arg(band_names[band]));
-		m_eq[band]->setToolTip(tr("EQ %1, from killed to +6 dB: hold and move up or down; a double-click puts it back").arg(band_names[band]));
-		m_eq[band]->setRange(-12, 12);
-		m_eq[band]->setNotchesVisible(true);
-		const int side = fontMetrics().height() * 2;
-		m_eq[band]->setFixedSize(side, side);
-		m_eq[band]->installEventFilter(this);
-		bands->addWidget(name);
-		bands->addWidget(m_eq[band]);
-		connect(m_eq[band], &QDial::valueChanged, this, [this] {
-			auto db = [](int step) { return step <= -12 ? SNURRA_EQ_KILL : step < 0 ? 2.0f * float(step) : 0.5f * float(step); };
-			set_eq(db(m_eq[0]->value()), db(m_eq[1]->value()), db(m_eq[2]->value()));
-		});
-	}
-	bands->addStretch(1);
+	QLabel *eq_name = new QLabel(tr("EQ"), m_controls);
+	snurra_mute(eq_name);
+	m_eq = new snurra_eq_line(m_controls);
+	m_eq->setObjectName(QStringLiteral("snurra-eq"));
+	m_eq->setAccessibleName(tr("EQ"));
+	m_eq->setToolTip(tr("EQ, low, mid and high: pull a band up or down, or draw the line across; a double-click puts a band back"));
+	m_eq->installEventFilter(this);
+	bands->addWidget(eq_name);
+	bands->addWidget(m_eq, 1);
+	m_eq->changed = [this] {
+		auto db = [](int step) { return step <= -12 ? SNURRA_EQ_KILL : step < 0 ? 2.0f * float(step) : 0.5f * float(step); };
+		set_eq(db(m_eq->step(0)), db(m_eq->step(1)), db(m_eq->step(2)));
+	};
 	strip->addLayout(bands);
 	column->addWidget(m_controls);
 
@@ -1560,16 +1673,14 @@ void snurra_tile::seek(qint64 position_us) {
 
 void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
 	const float asked[3] = { low_db, mid_db, high_db };
+	int steps[3];
 	for (int band = 0; band < 3; ++band) {
 		const float db = std::isnan(asked[band]) ? 0.0f : asked[band] < -24.0f ? SNURRA_EQ_KILL : std::min(asked[band], 6.0f);
 		m_state.eq_db[band] = db;
-		if (m_eq[band]) {
-			m_eq[band]->blockSignals(true);
-			/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
-			m_eq[band]->setValue(db <= SNURRA_EQ_KILL ? -12 : db < 0 ? std::max(-11, int(std::lround(db / 2))) : int(std::lround(db * 2)));
-			m_eq[band]->blockSignals(false);
-		}
+		/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
+		steps[band] = db <= SNURRA_EQ_KILL ? -12 : db < 0 ? std::max(-11, int(std::lround(db / 2))) : int(std::lround(db * 2));
 	}
+	if (m_eq) m_eq->show_steps(steps);
 	m_deck->set_eq(m_state.eq_db[0], m_state.eq_db[1], m_state.eq_db[2]);
 }
 
@@ -1995,11 +2106,6 @@ bool snurra_tile::eventFilter(QObject *watched, QEvent *event) {
 		set_key_shift(0);
 		return true;
 	}
-	for (QDial *dial : m_eq)
-		if (watched == dial && event->type() == QEvent::MouseButtonDblClick) {
-			dial->setValue(0);
-			return true;
-		}
 	if (event->type() == QEvent::MouseButtonPress) emit touched(this);
 	if (watched != m_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {
