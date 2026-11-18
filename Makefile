@@ -24,10 +24,12 @@ BIN      = $(BUILD_DIR)/snurra
 TEST_BIN = $(TEST_BUILD_DIR)/snurra-tests
 
 # A ceiling inside the target: the tests start processes, and one that
-# hung would otherwise wait for ever. The suite took 123 s on 2026-11-13
-# (24 cores, load 5), so about twice that. Killed ten seconds after the
-# signal (-k 10): a run hung in a destructor has outlived SIGTERM alone.
-TEST_TIMEOUT ?= 300
+# hung would otherwise wait for ever. About twice what the suite takes:
+# 123 s on 2026-11-13 (24 cores, load 5), 240 s on 2026-11-18 -- when 300
+# killed a run at load 38 midway, video_test alone taking 129 s. Killed
+# ten seconds after the signal (-k 10): a run hung in a destructor has
+# outlived SIGTERM alone.
+TEST_TIMEOUT ?= 600
 
 .DEFAULT_GOAL := all
 
