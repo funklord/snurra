@@ -48,7 +48,7 @@ $(FUZZNET_PROBE):
 
 $(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
+	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release
 	@# qmake's rules depend on sources alone, so a change to the flags,
 	@# defines or libraries -- snurra.pri's, say -- left objects and the
 	@# binary built the old way standing (measured 2026-11-12: Qt
@@ -76,7 +76,7 @@ GLOBBED_SOURCES = $(sort $(wildcard fuzznet/local/*.c))
 	@mkdir -p $(@D); { grep -H '^#include "' $(INCLUDE_SOURCES); printf '%s\n' $(GLOBBED_SOURCES); } > $@.new || true
 	@if cmp -s $@.new $@; then rm -f $@.new; else mv $@.new $@; fi
 $(BUILD_DIR)/qmake.stamp: $(BUILD_DIR)/includes.list $(BUILD_DIR)/Makefile
-	cd $(BUILD_DIR) && $(QMAKE) ../snurra.pro CONFIG+=release
+	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release
 	touch $@
 
 $(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
@@ -84,13 +84,13 @@ $(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
 
 $(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(TEST_BUILD_DIR)
-	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN))
 	@# As the player's: a test built the old way passes against nothing.
 	$(MAKE) -C $(TEST_BUILD_DIR) clean
 	rm -f $(TEST_BIN)
 
 $(TEST_BUILD_DIR)/qmake.stamp: $(TEST_BUILD_DIR)/includes.list $(TEST_BUILD_DIR)/Makefile
-	cd $(TEST_BUILD_DIR) && $(QMAKE) ../test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN))
 	touch $@
 
 tests-build: $(TEST_BUILD_DIR)/Makefile $(TEST_BUILD_DIR)/qmake.stamp FORCE

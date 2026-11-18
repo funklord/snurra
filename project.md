@@ -207,10 +207,22 @@ and everything above it knows nothing of SFTP or fuzznet.
       silence gone. What is left is fuzznet's: a whole span resent for
       one missing piece (its sec 1164). The pin needed `wire/status.c`,
       the generated `situ.c`, `status.c` and `files_local.c` beside
-      `local/` (the first under a name of its own, `app/fuzznet_wire_status.c`,
-      since qmake puts both `status.o` in one directory); and the glob over
-      `local/` is in the qmake stamp now, which a new `rpc_binary.c` had
-      slipped past.
+      `local/`; and the glob over `local/` is in the qmake stamp now, which
+      a new `rpc_binary.c` had slipped past. fuzznet then renamed its
+      `wire/status.c` to `status_message.c` (inbox 20261118T2105Z, its
+      814d033), apart from the generated `status.c`, and snurra lists it
+      at that pin -- where a wrapper had compiled it under a name of its
+      own, both being `status.o` in qmake's one directory. **The rename
+      stopped the player's build from outside the tree**: qmake, writing
+      paths relative to the build directory, looked headers up for the
+      dependencies against the project's own, so `-I../fuzznet` found the
+      sibling checkout -- `estate.o` depended on `../../fuzznet`, another
+      tree's headers, and on none of the vendored copy's, and when the
+      sibling renamed the file the build stopped (2026-11-18, for an hour
+      before it was seen: `make` failed under a pipe that hid it). Paths
+      are written absolute now (`QMAKE_PROJECT_DEPTH = 0`), and the
+      Makefile names each `.pro` by its absolute path, as the Android
+      rule already did, which a `BUILD_DIR` not one level down needs.
     - **Titled by its catalogued name**: a tile, the window, the picture's
       full screen and a DJ deck called an estate file by its 64 hex
       digits, each making a title of the name's file name. They ask

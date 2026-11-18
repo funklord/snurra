@@ -10,10 +10,17 @@
 # Measured 2026-11-14: these sources, sections collected, are some 20 KB.
 FUZZNET_DIR = $$PWD/../fuzznet
 INCLUDEPATH += $$FUZZNET_DIR $$PWD
+# Paths written absolute. Written relative to the build directory, qmake
+# looked the headers up for the dependencies against the project's own
+# directory, so -I../fuzznet found the sibling checkout at ../../fuzznet:
+# estate.o depended on another tree's headers and none of the vendored
+# copy's, and the build stopped when the sibling renamed a file
+# (2026-11-18).
+QMAKE_PROJECT_DEPTH = 0
 SOURCES += $$files($$FUZZNET_DIR/local/*.c) \
            $$FUZZNET_DIR/hex/hex.c \
            $$FUZZNET_DIR/constant_time/constant_time.c \
-           $$PWD/fuzznet_wire_status.c \
+           $$FUZZNET_DIR/wire/status_message.c \
            $$FUZZNET_DIR/wire/generated/situ.c \
            $$FUZZNET_DIR/wire/generated/files_local.c \
            $$FUZZNET_DIR/wire/generated/status.c
