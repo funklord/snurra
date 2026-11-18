@@ -1033,6 +1033,14 @@ sound 133-156 ms in four runs against its 150 ms bar, where the plain
 build measures 6-50 ms in five -- the instrumented conversion of some
 290 decoded frames, not a fault.
 
+**Static analysis, 2026-11-18, the first run:** cppcheck (warning,
+performance, portability) and clang-tidy (bugprone, clang-analyzer) over
+`src/` and `app/estate.cpp` -- nothing real. The ones that look like it
+and are not: a division by a sample rate of 0 (`source.cpp`, unreachable:
+`swr_init` refuses that rate and `append` returns first), null `m_loop`
+and `m_title` (always made in the constructor), a `!self` checked twice
+(the second in a later callback), a frame size cast after a 16 MB cap.
+
 **Codecs keep time, measured** (`codec_test`, the holder 2026-11-12:
 every codec added gets tests of how it keeps time against other files,
 so timing faults are found and fixed before anything depends on them). A
