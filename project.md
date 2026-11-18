@@ -1483,7 +1483,12 @@ controls; each tile very compact but resizeable).
   the wheel steps one. Found by looking at it in Xvfb: the first fill
   ran from the last band to this one inclusive, so leaving the mid for
   the high took the mid along to the high's height; the test now draws
-  band by band and fails with that fill.
+  band by band and fails with that fill. **By touch too**, on the API 36
+  emulator (2026-11-18, `adb shell input swipe`, touch events and not a
+  mouse): a swipe up the key knob turned it three semitones, the key
+  read 9A to 6A, and one swipe from the low band's bottom to the high
+  band's top drew a rising line of three steps -- Qt handing a finger on
+  as the left button, which both rely on.
   Fourth order was tried first and was not a kill: a killed high band
   left 8 kHz, an octave from its split, at -27 dB. Measured on tones
   through a deck: cut to -24, 60 Hz -24.0, 8 kHz -23.7, 1 kHz -24.0,
