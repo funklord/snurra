@@ -148,8 +148,15 @@ private:
 	void lay_out_timeline();
 	/* The width at which every tile has room at the timeline's one scale,
 	 * no wider than the screen; the window grows to it, never shrinks. */
-	void widen_for_timeline();
+	void widen_for_timeline(bool may_narrow = false);
+	/* A width the person set -- with the grip, or the window manager --
+	 * is theirs: no layout changes it after (the holder, 2026-11-18: "keep
+	 * my width if I set it"). Told from the window's own resizes, which
+	 * are made with m_resizing_self set. */
+	bool m_width_chosen = false;
+	bool m_resizing_self = false;
 	int m_timeline_wanted = 0;   /* lay_out_timeline's: that width, for the tiles */
+	void keep_on_screen();
 	void timing_changed();
 	void fit_to_drawers();
 	void reshape();

@@ -1651,8 +1651,15 @@ controls; each tile very compact but resizeable).
   known, a tempo moves, beats are found or a lane's begin is set -- not
   while a lane is being dragged, whose waveform is under the pointer
   (`tiles_are_as_wide_as_their_time_on_the_timeline`, failing with every
-  column stretched alike). An assumption: the window grows when lengths
-  become known even where a person set its width.
+  column stretched alike). **A width the person set is kept** (the
+  holder, 2026-11-18: "keep my width if I set it"): a resize to another
+  width that is not one of the window's own -- the grip, a window manager
+  -- marks it, and from then on neither the timeline's widening, a tile
+  added nor one closed changes it; the tiles fill it at its scale. Left to
+  itself, a window with a tile closed fits the timeline again: narrowed
+  to the size hint, as before the tiles went along it, it was their least
+  widths -- 146 px where 759 had fitted
+  (`a_width_the_person_set_is_kept`, failing both ways).
 - **Drawers, built 2026-11-12** (sec 3b): a tile has an upward drawer
   (empty until video) and a downward one, its controls; one height for
   every waveform. A window takes the drawers out of its tiles and gives

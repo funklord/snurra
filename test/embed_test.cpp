@@ -62,6 +62,7 @@ private slots:
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void a_lane_dragged_later_starts_later_on_the_beat();
 	void tiles_are_as_wide_as_their_time_on_the_timeline();
+	void a_width_the_person_set_is_kept();
 	void a_trains_next_tile_dragged_comes_in_on_the_beat();
 	void loop_plays_again_from_the_start();
 	void the_library_lists_finds_and_hands_out_tunes();
@@ -627,6 +628,57 @@ void embed_test::a_trains_next_tile_dragged_comes_in_on_the_beat() {
 	QMouseEvent release(QEvent::MouseButtonRelease, to, wave_a->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, Qt::ControlModifier);
 	QCoreApplication::sendEvent(wave_a, &release);
 	QVERIFY2(a->lane_start_us() > 5000000, qPrintable(QString::number(a->lane_start_us())));
+}
+
+/*
+ * The holder, 2026-11-18: "keep my width if I set it". A window left to
+ * itself fits the timeline, a tile closed included -- not its tiles' least
+ * widths. One resized from outside, as the grip or a window manager does,
+ * keeps that width through a tile added, a lane moved and a tile closed.
+ */
+void embed_test::a_width_the_person_set_is_kept() {
+	auto timed = [](const QString &name, int row, int column, qint64 seconds) {
+		snurra_tile_state state = placed(name, row, column);
+		state.duration_us = seconds * 1000000;
+		return state;
+	};
+	{
+		snurra_node node;
+		snurra_tile *a = node.add_tile(timed(QStringLiteral("a"), 0, 0, 200));
+		snurra_tile *b = node.add_tile(timed(QStringLiteral("b"), 0, 1, 20));
+		node.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&node));
+		QTRY_VERIFY_WITH_TIMEOUT(a->length_frames() > 0 && b->length_frames() > 0, 3000);
+		QTest::qWait(300);
+		const int fitted = node.width();
+		QVERIFY2(fitted > a->minimumSizeHint().width() + b->minimumSizeHint().width() + 20, qPrintable(QString::number(fitted)));
+		snurra_tile *c = node.add_tile(timed(QStringLiteral("c"), 0, 2, 20));
+		QTRY_VERIFY_WITH_TIMEOUT(c->length_frames() > 0, 3000);
+		QTest::qWait(300);
+		emit c->close_requested(c);
+		QTest::qWait(300);
+		QVERIFY2(node.width() >= fitted - 2, qPrintable(QStringLiteral("%1 after a close, %2 fitted").arg(node.width()).arg(fitted)));
+	}
+	snurra_node node;
+	snurra_tile *a = node.add_tile(timed(QStringLiteral("a"), 0, 0, 200));
+	snurra_tile *b = node.add_tile(timed(QStringLiteral("b"), 0, 1, 20));
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(a->length_frames() > 0 && b->length_frames() > 0, 3000);
+	QTest::qWait(300);
+	const int chosen = std::max(node.minimumSizeHint().width() + 40, node.width() / 2);
+	node.resize(chosen, node.height());   /* the person's */
+	QCOMPARE(node.width(), chosen);
+	snurra_tile *c = node.add_tile(timed(QStringLiteral("c"), 0, 2, 600));
+	QTRY_VERIFY_WITH_TIMEOUT(c->length_frames() > 0, 3000);
+	QTest::qWait(300);
+	QVERIFY2(node.width() == chosen, qPrintable(QStringLiteral("%1 after a tile came, %2 chosen").arg(node.width()).arg(chosen)));
+	b->set_tempo(0.5f);   /* twice as long on the timeline */
+	QTest::qWait(300);
+	QCOMPARE(node.width(), chosen);
+	emit c->close_requested(c);
+	QTest::qWait(300);
+	QCOMPARE(node.width(), chosen);
 }
 
 void embed_test::a_lane_dragged_later_starts_later_on_the_beat() {

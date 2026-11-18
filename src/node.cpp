@@ -319,7 +319,11 @@ void snurra_node::place_tiles() {
 	 * never wider than the screen: what a long lane needs is room, and the
 	 * scale gives it (the holder, 2026-11-18: proportional "without going
 	 * off screen"). */
+	const int kept = width();
+	m_resizing_self = true;
 	adjustSize();
+	if (m_width_chosen) resize(kept, height());
+	m_resizing_self = false;
 	widen_for_timeline();
 
 	/* Titled by what it plays -- the first tile's file, and how many
@@ -427,22 +431,34 @@ void snurra_node::timing_changed() {
  * going off screen"): grown to it, never narrowed -- a width a person set
  * that already has room stays. Where the screen is too narrow for it the
  * shortest tiles keep their least width and the scale gives. */
-void snurra_node::widen_for_timeline() {
+void snurra_node::widen_for_timeline(bool may_narrow) {
 	if (!isWindow()) return;
+	if (m_width_chosen) {
+		keep_on_screen();
+		return;
+	}
 	const QMargins margins = layout() ? layout()->contentsMargins() : QMargins();
 	const int spacing = m_grid->horizontalSpacing() > 0 ? m_grid->horizontalSpacing() : 0;
 	const int wanted = m_timeline_wanted + margins.left() + margins.right() + spacing * std::max(0, m_grid->columnCount() - 1);
 	const QScreen *on = screen();
 	const int most = on ? on->availableGeometry().width() : wanted;
-	const int width_now = std::min(std::max(width(), wanted), most);
-	if (width_now != width()) resize(width_now, height());
-	/* And on the screen: grown from where it was opened -- at the pointer
-	 * -- its right edge went past the screen's (seen in Xvfb). */
-	if (on && isVisible()) {
-		const QRect room = on->availableGeometry();
-		const int x = std::max(room.left(), std::min(pos().x(), room.right() + 1 - width()));
-		if (x != pos().x()) move(x, pos().y());
+	const int width_now = std::min(std::max(may_narrow ? std::max(minimumSizeHint().width(), wanted) : width(), wanted), most);
+	if (width_now != width()) {
+		m_resizing_self = true;
+		resize(width_now, height());
+		m_resizing_self = false;
 	}
+	keep_on_screen();
+}
+
+/* On the screen: grown from where it was opened -- at the pointer -- its
+ * right edge went past the screen's (seen in Xvfb). */
+void snurra_node::keep_on_screen() {
+	const QScreen *on = screen();
+	if (!on || !isWindow() || !isVisible()) return;
+	const QRect room = on->availableGeometry();
+	const int x = std::max(room.left(), std::min(pos().x(), room.right() + 1 - width()));
+	if (x != pos().x()) move(x, pos().y());
 }
 
 /* The window as tall as what is open: a drawer opened adds its height, a
@@ -460,7 +476,9 @@ void snurra_node::fit_to_drawers() {
 	QTimer::singleShot(0, this, [this, before, anchor = QPointer<snurra_tile>(first)] {
 		m_fitting = false;
 		layout()->activate();
+		m_resizing_self = true;
 		resize(qMax(width(), minimumSizeHint().width()), sizeHint().height());
+		m_resizing_self = false;
 		layout()->activate();
 		if (anchor && isWindow() && isVisible()) move(pos() - (anchor->mapTo(this, QPoint()) - before));
 		reshape();
@@ -469,6 +487,9 @@ void snurra_node::fit_to_drawers() {
 
 void snurra_node::resizeEvent(QResizeEvent *event) {
 	QWidget::resizeEvent(event);
+	/* Not one of its own, while shown, to another width: the person's. */
+	if (!m_resizing_self && isVisible() && event->oldSize().width() > 0 && event->size().width() != event->oldSize().width())
+		m_width_chosen = true;
 	if (QSizeGrip *grip = findChild<QSizeGrip *>(QString(), Qt::FindDirectChildrenOnly)) {
 		grip->move(width() - grip->width(), height() - grip->height());
 		grip->raise();
@@ -538,13 +559,15 @@ void snurra_node::drop_tile(snurra_tile *tile) {
 	if (tile->drawer_below()) tile->drawer_below()->hide();
 	tile->deleteLater();
 	place_tiles();
-	/* Narrowed to what is left: where the tile was is nothing now, cut
-	 * away by the shape, and a window wider than its tiles is a target
-	 * for drops that miss them. */
+	/* Fitted to what is left, at the timeline's scale: the tiles fill the
+	 * width, so where the tile was is not left as nothing. Narrowed to the
+	 * size hint instead, as before the tiles went along the timeline, it
+	 * was the tiles' least widths, every one squeezed. A width the person
+	 * set stays, the tiles filling it. */
 	QTimer::singleShot(0, this, [this] {
 		if (m_tiles.isEmpty()) return;
 		layout()->activate();
-		if (width() > sizeHint().width()) resize(sizeHint().width(), height());
+		widen_for_timeline(true);
 	});
 	fit_to_drawers();
 }
