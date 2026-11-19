@@ -29,6 +29,22 @@ the bytes come from. So the library's centre is a **byte source that may
 still be arriving** -- read at an offset, saying which ranges it holds --
 and everything above it knows nothing of SFTP or fuzznet.
 
+## 1a. State (folded 2026-11-19, on winding down)
+
+- Level with origin at 84293dd. Loudness matching is on by default at
+  -14 LUFS (holder, 2026-11-18). Knobs turn by holding and moving up or
+  down; the EQ is one line drawn across its three bands; tiles are as
+  wide as their time on the timeline, a train's next tile dragged comes
+  in on a beat, and a width the person set is kept (e4e1257).
+- The suite takes about 240 s on a quiet machine, so `TEST_TIMEOUT` is
+  600 s (84293dd). e4e1257 was pushed on a run killed at the old 300 s
+  under load 38 -- no test failed, four classes never ran; the rerun
+  passed whole. Read the suite's exit code, not its FAIL lines.
+- Waiting on the holder: a Wayland compositor (weston) for testing, an
+  AcoustID key, the phone (install, a fuzznet node of its own, the fold
+  cover layout, whether Android gets its own FFmpeg), moving a joined
+  window, and the cross-process drop's entry point.
+
 ## 2. Decided
 
 - **Qt Widgets**, C++17, as every GUI in this workspace. No QML.
