@@ -192,6 +192,12 @@ public:
 		setMinimumHeight(fontMetrics().height() * 8);
 		column = new QVBoxLayout(this);
 		column->setContentsMargins(2, 2, 2, 2);
+		/* Its side of the crossfader: left, right or thru. */
+		side = new QToolButton(this);
+		side->setAccessibleName(QObject::tr("Crossfader side"));
+		side->setToolTip(QObject::tr("Which side of the crossfader this deck is on, or thru, out of its reach"));
+		side->setAutoRaise(true);
+		column->addWidget(side, 0, Qt::AlignRight);
 		/* The plug's socket here: a listener's headphones hear this deck. */
 		listen = new QToolButton(this);
 		listen->setText(QObject::tr("listen"));
@@ -226,6 +232,7 @@ public:
 	 * process's socket and its index there (snurra_wire::TILE_MIME). */
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
+	QToolButton *side;
 	QToolButton *listen;
 	QToolButton *fold;
 	QToolButton *unfold;
@@ -389,15 +396,61 @@ public:
 	 * A and C on its left, B and D on its right. */
 	void apply_crossfader() {
 		const double angle = (position + 1) / 2 * M_PI_2;
-		const float gains[2] = { float(std::cos(angle)), float(std::sin(angle)) };
+		const float gains[3] = { float(std::cos(angle)), float(std::sin(angle)), 1.0f };
 		for (int i = 0; i < decks.size(); ++i)
-			if (decks[i]->tile) decks[i]->tile->deck()->set_mix(gains[i % 2]);
+			if (decks[i]->tile) decks[i]->tile->deck()->set_mix(gains[side_of(i)]);
+	}
+	/*
+	 * Which side of the crossfader a deck is on (sec 3f: "which deck slot
+	 * sits on which side of the crossfader" is the person's layout): left,
+	 * right, or thru -- out of the crossfader's reach, as a mixer's assign
+	 * switch. A, C left and B, D right by default; a side the person chose
+	 * is kept (decks/<letter>/crossfader), and a deck that follows the
+	 * default writes nothing, so a later default reaches it.
+	 */
+	enum { LEFT, RIGHT, THRU };
+	static QString side_key(int deck) { return QStringLiteral("decks/%1/crossfader").arg(QChar(QLatin1Char(char('A' + deck)))); }
+	static int side_default(int deck) { return deck % 2 == 0 ? LEFT : RIGHT; }
+	/* Read from the settings when they change, not on each move of the
+	 * crossfader: empty where the deck follows the default. */
+	QStringList chosen_sides;
+	void read_sides() {
+		QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+		chosen_sides.clear();
+		for (int i = 0; i < decks.size(); ++i) chosen_sides << settings.value(side_key(i)).toString();
+	}
+	int side_of(int deck) const {
+		const QString chosen = deck < chosen_sides.size() ? chosen_sides[deck] : QString();
+		if (chosen == QLatin1String("left")) return LEFT;
+		if (chosen == QLatin1String("right")) return RIGHT;
+		if (chosen == QLatin1String("thru")) return THRU;
+		return side_default(deck);
+	}
+	/* Default, then left, right, thru, and round to default again. */
+	void next_side(int deck) {
+		QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+		const QString chosen = settings.value(side_key(deck)).toString();
+		const QString next = chosen.isEmpty() ? QStringLiteral("left")
+		                     : chosen == QLatin1String("left") ? QStringLiteral("right")
+		                     : chosen == QLatin1String("right") ? QStringLiteral("thru") : QString();
+		if (next.isEmpty()) settings.remove(side_key(deck));
+		else settings.setValue(side_key(deck), next);
+		read_sides();
+		name_sides();
+		apply_crossfader();
 	}
 	void name_sides() {
 		if (!left_side) return;
-		const bool four = decks.size() > 2;
-		left_side->setText(four ? QStringLiteral("A C") : QStringLiteral("A"));
-		right_side->setText(four ? QStringLiteral("B D") : QStringLiteral("B"));
+		QStringList on[2];
+		for (int i = 0; i < decks.size(); ++i) {
+			const int side = side_of(i);
+			if (side != THRU) on[side] << QString(QChar(QLatin1Char(char('A' + i))));
+			const bool chosen = i < chosen_sides.size() && !chosen_sides[i].isEmpty();
+			const QString word = side == LEFT ? snurra_dj::tr("left") : side == RIGHT ? snurra_dj::tr("right") : snurra_dj::tr("thru");
+			decks[i]->side->setText(chosen ? word : snurra_dj::tr("%1 (default)").arg(word));
+		}
+		left_side->setText(on[LEFT].join(QLatin1Char(' ')));
+		right_side->setText(on[RIGHT].join(QLatin1Char(' ')));
 	}
 	/* What a deck syncs to: another deck playing, else another loaded. */
 	snurra_tile *other_than(int deck) const {
@@ -1501,6 +1554,7 @@ void snurra_dj::set_deck_count(int count) {
 		 * the handover is its to make -- the tile, or with Shift the whole
 		 * player -- onto this deck. */
 		connect(deck->unfold, &QToolButton::clicked, this, [this, i] { unfold(i); });
+		connect(deck->side, &QToolButton::clicked, this, [this, i] { d->next_side(i); });
 		connect(deck->fold, &QToolButton::clicked, this, [this] { fold(); });
 		connect(deck->listen, &QToolButton::toggled, this, [this, i](bool on) { d->plug(d->chosen_listener, on ? i : -1); });
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
@@ -1524,6 +1578,7 @@ void snurra_dj::set_deck_count(int count) {
 		d->decks << deck;
 	}
 	for (int row = 0; row < 2; ++row) d->grid->setRowStretch(row, row < (count + 1) / 2 ? 1 : 0);
+	d->read_sides();
 	d->name_sides();
 	d->show_plugs();
 	d->apply_crossfader();

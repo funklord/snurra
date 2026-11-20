@@ -1076,7 +1076,18 @@ example.")
   which ALSA's sequencer allows, or one passing it on over the wire -- is
   settled with step 6.
 
-**2 or 4 decks**, a choice in the view: two layouts of slots. The phone gets the cut-down one:
+**2 or 4 decks**, a choice in the view: two layouts of slots. **Each
+deck's side of the crossfader, 2026-11-20** (built): a small button on
+each deck goes from its default -- A and C left, B and D right, shown as
+"left (default)" -- to left, right and thru (out of the crossfader's
+reach, as a mixer's assign switch), and round to the default again. A
+side chosen is kept (`decks/<letter>/crossfader`); a deck on its default
+writes nothing, so a later default reaches it (working-practice.md, *A
+config file records choices*); the crossfader's ends name the decks on
+each side. Tested in `each_deck_has_its_side_of_the_crossfader` (C to
+thru full at either end, D to left with A, both kept and read by a deck
+view made again, D round to its default forgotten); thru taken as left,
+it fails. The phone gets the cut-down one:
 two decks, the controls that fit (sec 3b's fold-cover measures stand).
 **Hardware control on the desktop**: every deck and mixer control is a
 typed control (sec 3a kept the string bus out; a name per control is

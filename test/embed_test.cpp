@@ -87,6 +87,7 @@ private slots:
 	void a_nested_track_is_brought_to_the_level_its_deck_would_give();
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void each_player_takes_the_bindings_named_for_it();
+	void each_deck_has_its_side_of_the_crossfader();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_plugs_into_a_windows_tile();
 	void a_player_unfolds_across_the_decks();
@@ -1511,6 +1512,61 @@ void embed_test::each_player_takes_the_bindings_named_for_it() {
 	QTest::qWait(1100);   /* the window reads the bindings again at most each second */
 	note(52);
 	QTRY_VERIFY_WITH_TIMEOUT(mix->playing(), 2000);
+}
+
+/*
+ * Each deck's side of the crossfader (project.md sec 3f, the layout's):
+ * A and C left, B and D right by default, written nowhere. C clicked to
+ * thru is out of the crossfader's reach -- full whichever way it goes --
+ * and D clicked to left goes with A; both choices are kept and a deck view
+ * made again has them; D clicked round to its default again forgets it.
+ */
+void embed_test::each_deck_has_its_side_of_the_crossfader() {
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks")); });
+	auto side_button = [](snurra_dj &dj, int deck) {
+		QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-%1").arg(QChar(QLatin1Char(char('a' + deck)))));
+		for (QToolButton *button : place->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly))
+			if (button->accessibleName() == QLatin1String("Crossfader side")) return button;
+		return static_cast<QToolButton *>(nullptr);
+	};
+	auto mix_of = [](snurra_dj &dj, int deck) {
+		QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-%1").arg(QChar(QLatin1Char(char('a' + deck)))));
+		return place->findChild<snurra_tile *>()->deck()->mix();
+	};
+	{
+		snurra_dj dj;
+		dj.set_deck_count(4);
+		for (int deck = 0; deck < 4; ++deck) {
+			snurra_media media;
+			media.path = QStringLiteral("tone:%1").arg(220 * (deck + 1));
+			QVERIFY(dj.load(deck, media));
+		}
+		QVERIFY(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).childKeys().filter(QStringLiteral("decks")).isEmpty());
+		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("left (default)"));
+		for (int click = 0; click < 3; ++click) side_button(dj, 2)->click();   /* left, right, thru */
+		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("thru"));
+		side_button(dj, 3)->click();   /* left */
+		dj.set_crossfader(-1);
+		QCOMPARE(mix_of(dj, 0), 1.0f);
+		QVERIFY(mix_of(dj, 1) < 1e-6f);
+		QCOMPARE(mix_of(dj, 2), 1.0f);
+		QCOMPARE(mix_of(dj, 3), 1.0f);
+		dj.set_crossfader(1);
+		QVERIFY(mix_of(dj, 0) < 1e-6f);
+		QCOMPARE(mix_of(dj, 2), 1.0f);
+		QVERIFY(mix_of(dj, 3) < 1e-6f);
+	}
+	QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+	QCOMPARE(settings.value(QStringLiteral("decks/C/crossfader")).toString(), QStringLiteral("thru"));
+	QCOMPARE(settings.value(QStringLiteral("decks/D/crossfader")).toString(), QStringLiteral("left"));
+	QVERIFY(!settings.contains(QStringLiteral("decks/A/crossfader")));
+	snurra_dj again;
+	again.set_deck_count(4);
+	QCOMPARE(side_button(again, 2)->text(), QStringLiteral("thru"));
+	for (int click = 0; click < 3; ++click) side_button(again, 3)->click();   /* right, thru, default */
+	QCOMPARE(side_button(again, 3)->text(), QStringLiteral("right (default)"));
+	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/D/crossfader")));
 }
 
 /*
