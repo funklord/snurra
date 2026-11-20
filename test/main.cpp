@@ -53,6 +53,10 @@ int main(int argc, char **argv) {
 	const QString settings = cache.path() + QStringLiteral("/config");
 	QDir().mkpath(settings);
 	qputenv("XDG_CONFIG_HOME", settings.toLocal8Bit());
+	/* No session bus: a tile playing a film offscreen asks the portal to
+	 * keep the screen on (tile.cpp), and a run on the person's desktop
+	 * would hold their real one. The test that wants a bus starts its own. */
+	qunsetenv("DBUS_SESSION_BUS_ADDRESS");
 	QApplication app(argc, argv);
 	/* Tunes left at their own levels: the trains' and stacks' tests
 	 * measure exact levels on files that would otherwise be trimmed to

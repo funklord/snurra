@@ -26,6 +26,13 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#if SNURRA_DBUS
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusObjectPath>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#endif
 
 #include <cmath>
 
@@ -1483,6 +1490,69 @@ static void keep_screen_awake() {
 #endif
 }
 
+/*
+ * Where there is no X server to tell -- Wayland -- the screen is kept on
+ * by the desktop portal's Inhibit (idle), held while a film plays where it
+ * can be seen and closed when it stops being, the portal being what GNOME,
+ * KDE and wlroots desktops serve a sandboxed or plain program alike. Only
+ * where a session bus is named: asked with none, Qt autolaunches a
+ * dbus-daemon nothing reaps (qtkit found it). Asynchronous, so a desktop
+ * with no portal costs the player nothing but an error it ignores.
+ */
+#if SNURRA_DBUS
+static const QString PORTAL = QStringLiteral("org.freedesktop.portal.Desktop");
+
+static bool portal_keeps_awake() {
+	if (qEnvironmentVariableIsEmpty("DBUS_SESSION_BUS_ADDRESS")) return false;
+#if QT_CONFIG(xcb)
+	auto *x11 = qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QX11Application>() : nullptr;
+	if (x11 && x11->connection()) return false;   /* the heartbeat's, above */
+#endif
+	return true;
+}
+
+static void close_inhibit(const QString &handle) {
+	if (handle.isEmpty()) return;
+	QDBusConnection::sessionBus().asyncCall(
+	        QDBusMessage::createMethodCall(PORTAL, handle, QStringLiteral("org.freedesktop.portal.Request"), QStringLiteral("Close")));
+}
+#endif
+
+void snurra_tile::hold_screen_awake(bool want) {
+#if SNURRA_DBUS
+	if (want == m_inhibit_wanted) return;
+	m_inhibit_wanted = want;
+	const int asking = ++m_inhibit_asking;
+	if (!want) {
+		close_inhibit(m_inhibit_handle);
+		m_inhibit_handle.clear();
+		return;
+	}
+	if (!portal_keeps_awake()) return;
+	QDBusMessage call = QDBusMessage::createMethodCall(PORTAL, QStringLiteral("/org/freedesktop/portal/desktop"),
+	                                                   QStringLiteral("org.freedesktop.portal.Inhibit"), QStringLiteral("Inhibit"));
+	call << QString() << uint(8) /* idle */
+	     << QVariantMap{ { QStringLiteral("reason"), QStringLiteral("Playing a film") } };
+	auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call));
+	QPointer<snurra_tile> self = this;
+	QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher, [self, asking](QDBusPendingCallWatcher *done) {
+		done->deleteLater();
+		const QDBusPendingReply<QDBusObjectPath> reply = *done;
+		if (reply.isError()) return;
+		const QString handle = reply.value().path();
+		/* Granted after it stopped being wanted, or to a tile gone: given
+		 * back at once, or the screen would stay on for good. */
+		if (!self || self->m_inhibit_asking != asking) {
+			close_inhibit(handle);
+			return;
+		}
+		self->m_inhibit_handle = handle;
+	});
+#else
+	(void)want;
+#endif
+}
+
 void snurra_tile::show_video_frame() {
 	if (!m_video) return;
 	/* Each ten seconds while a picture plays where it can be seen. */
@@ -1586,6 +1656,7 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 }
 
 snurra_tile::~snurra_tile() {
+	hold_screen_awake(false);
 	m_peaks.reset();   /* before the deck can go: the waveform first */
 	m_video.reset();   /* its reader, joined */
 	m_beats.reset();
@@ -2070,6 +2141,7 @@ void snurra_tile::tick() {
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
 	m_state.position_us = now;
 	m_state.sampled_at_us = snurra_clock_us();
+	hold_screen_awake(m_state.playing && (m_full || video_open()));
 	/* Live, the time is only where it is, as mplayer shows a radio's, and
 	 * the position has no end to be a fraction of. */
 	const bool is_live = live();

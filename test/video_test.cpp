@@ -24,10 +24,13 @@
 #include <QTreeView>
 #include <QToolButton>
 #include <QProcess>
+#include <QScopeGuard>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <QDBusConnection>
+#include <QDBusObjectPath>
 
 #include <algorithm>
 #include <cmath>
@@ -72,6 +75,7 @@ private slots:
 	void a_url_plays_with_its_picture();
 	void a_live_stream_counts_up_and_does_not_seek();
 	void a_films_sound_can_come_from_a_file_of_its_own();
+	void a_film_holds_the_portals_inhibit_while_it_plays();
 	void a_url_that_never_answers_lets_the_window_close();
 	void an_hls_stream_plays_and_seeks_data();
 	void an_hls_stream_plays_and_seeks();
@@ -719,6 +723,99 @@ void video_test::a_films_sound_can_come_from_a_file_of_its_own() {
 	QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->state().duration_us - 5000000) < 50000, 5000);
 	QVERIFY(!tile->deck()->failed());
 	QCOMPARE(tile->state().sound, sound);
+}
+
+/*
+ * The desktop portal's Inhibit, stood in for on a bus of the test's own:
+ * each Inhibit hands out a request object, whose Close is counted.
+ */
+class fake_request : public QObject {
+	Q_OBJECT
+	Q_CLASSINFO("D-Bus Interface", "org.freedesktop.portal.Request")
+public:
+	explicit fake_request(int *closed, QObject *parent) : QObject(parent), m_closed(closed) {}
+public slots:
+	void Close() { ++*m_closed; }
+private:
+	int *m_closed;
+};
+
+class fake_inhibit : public QObject {
+	Q_OBJECT
+	Q_CLASSINFO("D-Bus Interface", "org.freedesktop.portal.Inhibit")
+public:
+	explicit fake_inhibit(QDBusConnection bus) : m_bus(bus) {}
+	int asked = 0;
+	int closed = 0;
+	uint flags = 0;
+public slots:
+	QDBusObjectPath Inhibit(const QString &, uint flags_given, const QVariantMap &) {
+		flags = flags_given;
+		const QString path = QStringLiteral("/org/freedesktop/portal/desktop/request/test/%1").arg(++asked);
+		m_bus.registerObject(path, new fake_request(&closed, this), QDBusConnection::ExportAllSlots);
+		return QDBusObjectPath(path);
+	}
+private:
+	QDBusConnection m_bus;
+};
+
+/*
+ * A film keeps a Wayland screen on through the portal (tile.cpp), where
+ * there is no X server to reset: asked to inhibit idle while it plays where
+ * it is seen, and the inhibit closed when it pauses and when it goes. On a
+ * bus of the test's own -- a dbus-daemon it starts and ends -- with a
+ * stand-in portal, so the person's own screen saver is never touched.
+ */
+void video_test::a_film_holds_the_portals_inhibit_while_it_plays() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	if (QStandardPaths::findExecutable(QStringLiteral("dbus-daemon")).isEmpty()) QSKIP("no dbus-daemon");
+	if (!QGuiApplication::platformName().startsWith(QLatin1String("offscreen"))) QSKIP("on X11 the heartbeat keeps it on");
+	const QString socket = m_dir.filePath(QStringLiteral("bus"));
+	QProcess daemon;
+	daemon.start(QStringLiteral("dbus-daemon"), { QStringLiteral("--session"), QStringLiteral("--nofork"), QStringLiteral("--nopidfile"),
+	                                              QStringLiteral("--address=unix:path=") + socket });
+	QVERIFY(daemon.waitForStarted());
+	auto end_daemon = qScopeGuard([&daemon] {
+		daemon.terminate();
+		if (!daemon.waitForFinished(3000)) daemon.kill();
+		daemon.waitForFinished(3000);
+	});
+	QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(socket), 5000);
+	const QByteArray address = "unix:path=" + QFile::encodeName(socket);
+	qputenv("DBUS_SESSION_BUS_ADDRESS", address);
+	auto no_bus = qScopeGuard([] { qunsetenv("DBUS_SESSION_BUS_ADDRESS"); });
+	QDBusConnection portal_bus = QDBusConnection::connectToBus(QString::fromLatin1(address), QStringLiteral("portal"));
+	QVERIFY(portal_bus.isConnected());
+	fake_inhibit portal(portal_bus);
+	QVERIFY(portal_bus.registerObject(QStringLiteral("/org/freedesktop/portal/desktop"), &portal, QDBusConnection::ExportAllSlots));
+	QVERIFY(portal_bus.registerService(QStringLiteral("org.freedesktop.portal.Desktop")));
+	QVERIFY(QDBusConnection::sessionBus().isConnected());
+
+	const QString film = QStringLiteral("awake.mkv");
+	QVERIFY(make(film, { QStringLiteral("-c:v"), QStringLiteral("mpeg4") }, 0));
+	{
+		snurra_node node;
+		snurra_tile_state state;
+		state.source = m_dir.filePath(film);
+		state.duration_us = 180000000;
+		state.controls = true;
+		state.playing = true;
+		state.sampled_at_us = snurra_clock_us();
+		snurra_tile *tile = node.add_tile(state);
+		node.show();
+		QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+		QTRY_COMPARE_WITH_TIMEOUT(portal.asked, 1, 3000);
+		QCOMPARE(portal.flags, uint(8));
+		QTest::qWait(300);
+		QCOMPARE(portal.asked, 1);   /* held, not asked again each tick */
+		tile->set_playing(false);
+		QTRY_COMPARE_WITH_TIMEOUT(portal.closed, 1, 3000);
+		tile->set_playing(true);
+		QTRY_COMPARE_WITH_TIMEOUT(portal.asked, 2, 3000);
+		QTest::qWait(200);   /* the handle back before the tile goes */
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(portal.closed, 2, 3000);
+	QDBusConnection::disconnectFromBus(QStringLiteral("portal"));
 }
 
 /*

@@ -1325,8 +1325,22 @@ controls; each tile very compact but resizeable).
   so no consumer builds against it. Tested on Xvfb by the idle time a
   saver reads (libXss, resolved by the test too): 1850 ms twelve seconds
   into a film, 12694 ms with the reset taken out
-  (`a_film_playing_keeps_the_screen_awake`). **Not yet: Wayland**, where
-  only the compositor's idle-inhibit protocol or a portal can do it.
+  (`a_film_playing_keeps_the_screen_awake`). **On Wayland, 2026-11-20,
+  through the portal**: where there is no X server, the tile holds the
+  desktop portal's Inhibit (idle) while its film plays where it is seen,
+  and closes it on a pause, a closed drawer or the tile's end -- one
+  request, not one per tick; an answer arriving after it stopped being
+  wanted is given straight back. Only where `DBUS_SESSION_BUS_ADDRESS`
+  is set (asked with none, Qt autolaunches a dbus-daemon nothing reaps,
+  qtkit's finding). QtDBus is linked on a Linux desktop (snurra.pri,
+  snurra.mk), which QtGui already links there; not on Android. Tested on
+  a dbus-daemon the test starts and ends, with a stand-in portal: asked
+  once with idle's flag, closed on pause, asked again on play, closed
+  when the tile goes (`a_film_holds_the_portals_inhibit_while_it_plays`);
+  with the asking or the closing taken out it fails. The suite unsets
+  the session bus for every other test, so a run offscreen on the
+  holder's desktop never holds the real screen. Not yet tried on a real
+  compositor (weston waits on the holder).
 - **mplayer's wheel, 2026-11-13**: over the picture, in its drawer or
   full screen, a notch up is the small jump forward and down back -- the
   arrows' step (sec 4), where mplayer's is its 10 s. Whole notches,

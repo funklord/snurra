@@ -84,6 +84,13 @@ HEADERS += \
 # Qt Quick, QML and PDF -- 27 MB of an 80 MB APK, measured 2026-11-12
 # (project.md sec 3).
 linux:!android {
+    # The portal's idle inhibit, where there is no X server to reset (a
+    # film on Wayland, tile.cpp). QtGui already links Qt DBus on a Linux
+    # desktop, so this adds no library there.
+    qtHaveModule(dbus) {
+        QT += dbus
+        DEFINES += SNURRA_DBUS=1
+    }
     SOURCES += $$SNURRA_ROOT/src/output_alsa.cpp
     PKGCONFIG += alsa
     DEFINES += SNURRA_ALSA=1

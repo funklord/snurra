@@ -311,6 +311,12 @@ private:
 	qint64 m_sound_delay = 0;       /* mplayer's -delay: the picture is shown this much ahead */
 	bool m_clock = false;           /* mplayer's o: the time over the picture */
 	QElapsedTimer m_awake;          /* since the screen saver was last put off */
+	/* The portal's idle inhibit (Wayland): wanted, its handle once
+	 * granted, and which asking a late answer belongs to. */
+	bool m_inhibit_wanted = false;
+	QString m_inhibit_handle;
+	int m_inhibit_asking = 0;
+	void hold_screen_awake(bool want);
 	QStringList m_subtitle_files;   /* a host's, offered first */
 	QPair<double, double> m_crossfade{ 0, 0 };   /* a train's: in and out, of the track */
 	QToolButton *m_play;
