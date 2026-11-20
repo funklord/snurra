@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -54,6 +55,9 @@ public:
 		bool anchored = false;         /* in step with the anchor's clock: a handover's taker */
 		int64_t lead_us = 0;           /* how far ahead the first block is needed */
 		int audio_track = -1;          /* the sound track to open on; -1 the file's choice */
+		/* Opens the source in place of `source` and `bytes` where set: a
+		 * player's output (timeline.h), which the deck need not know. */
+		std::function<std::unique_ptr<snurra_source>(int rate, std::function<bool()> interrupted)> open;
 	};
 
 	explicit snurra_deck(const start_t &start);

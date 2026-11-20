@@ -27,6 +27,7 @@
 
 #include "snurra/beats.h"
 #include "snurra/timeline.h"
+#include "snurra/tile_state.h"
 #include "snurra/fingerprint.h"
 #include "snurra/library.h"
 #include "snurra/node.h"
@@ -119,6 +120,7 @@ class beats_test : public QObject {
 private slots:
 	void a_timeline_places_its_tiles();
 	void channels_are_seated_so_none_overlaps();
+	void a_player_sounds_as_its_tiles();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -333,6 +335,69 @@ void beats_test::channels_are_seated_so_none_overlaps() {
 	seated = both.seat();
 	QCOMPARE(seated.channel[1], 0);
 	QCOMPARE(seated.conflicts, std::vector<int>{ 1 });
+}
+
+/*
+ * A player's output as a source (project.md sec 3f, step 2), heard sample
+ * by sample through the test ramp, whose left channel is the frame's own
+ * index: a train of two 2 s tracks crossing over 0.5 s, the second at
+ * half level and tempo 2. Before the crossfade, the first track's frames
+ * as they are; in it, the two on a quarter circle; after it, every second
+ * frame of the second at half. A seek lands on the very samples a read
+ * through gives, and the same player inside a tile of another player
+ * sounds the same.
+ */
+void beats_test::a_player_sounds_as_its_tiles() {
+	std::vector<snurra_tile_state> player(2);
+	for (int i = 0; i < 2; ++i) {
+		player[size_t(i)].source = QStringLiteral("snurra-test:ramp");
+		player[size_t(i)].duration_us = 2000000;
+		player[size_t(i)].column = i;
+	}
+	player[1].overlap_us = 500000;
+	player[1].level = 50;
+	player[1].tempo = 2;   /* 1 s out */
+	std::unique_ptr<snurra_source> source = snurra_open_timeline(player, RATE);
+	const int64_t second_starts = 2 * RATE - RATE / 2;
+	QCOMPARE(source->length(), second_starts + RATE);
+	std::vector<float> heard(size_t(2 * source->length()));
+	QCOMPARE(int64_t(source->read(heard.data(), int(source->length()))), source->length());
+	QVERIFY(source->at_end());
+	const double frame = 1.0 / SNURRA_RAMP_SCALE;
+	for (int64_t t = 0; t < source->length(); t += 97) {
+		double left = 0, right = 0;
+		if (t < second_starts + RATE / 2) {   /* the first, fading out over its last 0.5 s */
+			const double out = t < second_starts ? 1 : std::cos(double(t - second_starts) / (RATE / 2) * M_PI_2);
+			left += out * double(t) * frame;
+			right += out;
+		}
+		if (t >= second_starts) {   /* the second, fading in, at half and twice the speed */
+			const double in = t < second_starts + RATE / 2 ? std::sin(double(t - second_starts) / (RATE / 2) * M_PI_2) : 1;
+			left += 0.5 * in * double(2 * (t - second_starts)) * frame;
+			right += 0.5 * in;
+		}
+		QVERIFY2(std::abs(heard[size_t(2 * t)] - left) < 0.5 * frame && std::abs(heard[size_t(2 * t + 1)] - right) < 1e-5,
+		         qPrintable(QStringLiteral("at %1: %2 %3, meant %4 %5").arg(t).arg(heard[size_t(2 * t)] / frame)
+		                            .arg(heard[size_t(2 * t + 1)]).arg(left / frame).arg(right)));
+	}
+	/* Sought into the crossfade: the samples a read through gave. */
+	const int64_t at = second_starts + 777;
+	source->seek(at);
+	std::vector<float> again(2 * 2000);
+	QCOMPARE(source->read(again.data(), 2000), 2000);
+	for (int i = 0; i < 2 * 2000; ++i) QCOMPARE(again[size_t(i)], heard[size_t(2 * at + i)]);
+
+	/* Nested: the player as one tile of another, as long as it is. */
+	std::vector<snurra_tile_state> outer(1);
+	outer[0].source = QStringLiteral("a mix");
+	outer[0].duration_us = snurra_frames_to_us(source->length(), RATE);
+	outer[0].player = player;
+	std::unique_ptr<snurra_source> nested = snurra_open_timeline(outer, RATE);
+	QCOMPARE(nested->length(), source->length());
+	std::vector<float> inside(heard.size());
+	QCOMPARE(int64_t(nested->read(inside.data(), int(nested->length()))), nested->length());
+	for (size_t i = 0; i < heard.size(); ++i)
+		QVERIFY2(std::abs(inside[i] - heard[i]) < 0.5 * frame, qPrintable(QStringLiteral("nested, at %1").arg(i / 2)));
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

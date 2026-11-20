@@ -24,6 +24,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "snurra/clock.h"
+#include "snurra/deck.h"
 #include "snurra/node.h"
 #include "snurra/snap.h"
 #include "snurra/tile.h"
@@ -52,6 +54,7 @@ private slots:
 	void shuffle_plays_the_files_in_another_order();
 	void audiofile_gives_the_first_file_its_sound();
 	void a_chapters_file_gives_the_first_file_its_tracklist();
+	void a_tile_plays_a_player_and_the_wire_carries_it();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1429,6 +1432,67 @@ void handover_test::a_chapters_file_gives_the_first_file_its_tracklist() {
 	state.chapters = expected;
 	snurra_tile *tile = node.add_tile(state);
 	QCOMPARE(tile->chapter_count(), 2);
+}
+
+/*
+ * A player in a tile (project.md sec 3f, step 2): a tile whose state
+ * holds a train of two plays their sum on a real deck -- as long as the
+ * train, not failed, moving -- and a message carries the player whole,
+ * nested to sixteen deep; seventeen is refused, so a stream cannot nest a
+ * reader into its stack's end.
+ */
+void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
+	snurra_tile_state state;
+	state.source = QStringLiteral("a mix");
+	state.duration_us = 3500000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	state.player.resize(2);
+	for (int i = 0; i < 2; ++i) {
+		state.player[size_t(i)].source = QStringLiteral("tone:%1").arg(440 * (i + 1));
+		state.player[size_t(i)].duration_us = 2000000;
+		state.player[size_t(i)].column = i;
+	}
+	state.player[1].overlap_us = 500000;
+	{
+		snurra_node node;
+		snurra_tile *tile = node.add_tile(state);
+		node.show();
+		QTRY_COMPARE_WITH_TIMEOUT(tile->deck()->length(), int64_t(3.5 * tile->deck()->rate()), 3000);
+		QVERIFY(!tile->deck()->failed());
+		QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 500000, 3000);
+	}
+
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.states << state;
+	QByteArray bytes = snurra_wire::encode(offer);
+	const QByteArray sent = bytes;
+	const QList<snurra_wire::message> got = snurra_wire::decode(bytes);
+	QCOMPARE(got.size(), 1);
+	QCOMPARE(int(got.first().states.first().player.size()), 2);
+	QCOMPARE(got.first().states.first().player[1].overlap_us, qint64(500000));
+	QCOMPARE(snurra_wire::encode(got.first()), sent);
+
+	auto nested = [](int depth) {
+		snurra_tile_state top;
+		top.source = QStringLiteral("level 0");
+		snurra_tile_state *at = &top;
+		for (int i = 1; i <= depth; ++i) {
+			at->player.resize(1);
+			at = &at->player[0];
+			at->source = QStringLiteral("level %1").arg(i);
+		}
+		snurra_wire::message m;
+		m.type = snurra_wire::OFFER;
+		m.states << top;
+		return snurra_wire::encode(m);
+	};
+	QByteArray deep = nested(SNURRA_PLAYER_DEPTH);
+	QCOMPARE(snurra_wire::decode(deep).size(), 1);
+	QByteArray too_deep = nested(SNURRA_PLAYER_DEPTH + 1);
+	QCOMPARE(snurra_wire::decode(too_deep).size(), 0);
 }
 
 /*

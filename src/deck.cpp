@@ -48,14 +48,16 @@ snurra_deck::snurra_deck(const start_t &start)
 	const int64_t fallback = start.fallback_length;
 	std::shared_ptr<snurra_bytes> bytes = start.bytes;
 	const int track = start.audio_track;
-	m_reader = std::thread([this, name, fallback, bytes, track] {
+	auto open = start.open;
+	m_reader = std::thread([this, name, fallback, bytes, track, open] {
 		/* A wait for bytes is given up for a seek elsewhere or a close. */
 		auto interrupted = [this] {
 			return m_stop.load(std::memory_order_relaxed)
 			       || m_generation.load(std::memory_order_acquire) != m_reader_generation;
 		};
 		m_reader_generation = m_generation.load(std::memory_order_acquire);
-		if (bytes) m_source = snurra_open_source(bytes, name, m_rate, interrupted);
+		if (open) m_source = open(m_rate, interrupted);
+		if (!m_source && bytes) m_source = snurra_open_source(bytes, name, m_rate, interrupted);
 		if (!m_source) m_source = snurra_open_source(bytes ? QString() : name, m_rate, fallback, interrupted);
 		/* Not for a close that gave up the opening: that is not a failure. */
 		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);

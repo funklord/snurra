@@ -2,6 +2,8 @@
 #define SNURRA_TIMELINE_H
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <vector>
 
 #include "snurra/beats.h"
@@ -97,6 +99,27 @@ private:
 	const snurra_timeline_track *track(int index) const;
 	int m_rate;
 };
+
+class snurra_source;
+struct snurra_tile_state;
+
+/*
+ * A player's output as a source (project.md sec 3f, step 2): what its
+ * tiles -- `states`, as a window's group hands them over -- sound
+ * together, so a deck can play a whole player. Each row is a train, its
+ * first tile coming in at its lane start and each after it following the
+ * one before; each track read through a stretch of its own at its tempo,
+ * key lock and key shift, as a deck reads it, at its level and envelope,
+ * crossing over its overlaps on a quarter circle as a train does. A
+ * state's own `player` makes it a timeline in turn, so players nest.
+ *
+ * Rendered in the timeline's own time on the deck's reader thread: a
+ * position is a frame of the timeline, and a seek moves every track.
+ * Not yet in a nested track: its EQ and the level match's trim, which a
+ * deck applies in its callback.
+ */
+std::unique_ptr<snurra_source> snurra_open_timeline(const std::vector<snurra_tile_state> &states, int rate,
+                                                    std::function<bool()> interrupted = nullptr);
 
 /*
  * A train's overlap between a track and the next (project.md sec 3b, steps

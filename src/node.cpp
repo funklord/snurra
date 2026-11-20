@@ -254,6 +254,13 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.held = held;
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
 	start.audio_track = state.audio_track;
+	/* A player in the tile (project.md sec 3f): its output is the track. */
+	if (!state.player.empty()) {
+		const std::vector<snurra_tile_state> player = state.player;
+		start.open = [player](int rate, std::function<bool()> interrupted) {
+			return snurra_open_timeline(player, rate, std::move(interrupted));
+		};
+	}
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);

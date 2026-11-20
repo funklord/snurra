@@ -1103,7 +1103,29 @@ alike.
    a channel kept, a pin kept and its collision named -- with what still
    sounds ignored, or the kept channel ignored, it fails.
 2. A timeline as a source, so a deck plays a player's output -- a
-   channel with a prepared mix.
+   channel with a prepared mix. **Built 2026-11-20**
+   (`snurra_open_timeline`, `src/timeline_source.cpp`): a tile state
+   holds a player (`player`, its tiles' states, a tree), and a tile so
+   given plays their sum on its deck, the deck opening it through a
+   factory (`start_t::open`) so it knows nothing of timelines. Each
+   track is read as a deck reads it -- straight at tempo 1 with no key
+   lock or shift, through its own stretch otherwise -- at its level and
+   envelope, crossing over on the quarter circle a train's decks use;
+   a nested player is a track whose source is a timeline in turn. A
+   handover carries the tree, and a state read off the wire nests no
+   deeper than `SNURRA_PLAYER_DEPTH` (16), each level being a call.
+   Tested sample by sample through the test ramp
+   (`a_player_sounds_as_its_tiles`: a train of two, the second at half
+   level and tempo 2, the crossfade, a seek landing on the very samples,
+   and the same player nested inside another), and on a real deck and the
+   wire (`a_tile_plays_a_player_and_the_wire_carries_it`); the crossfade
+   or the level left out fails the first, the depth limit or the deck's
+   factory left out the second. Found on the way: a track read through
+   the stretch at tempo 1 lost its last two frames, the cubic wanting
+   frames past the end -- why a deck reads straight there, and now this
+   does too. **Not yet in a nested track:** its EQ and the level match's
+   trim, which a deck applies in its callback; and a waveform of the
+   whole mix.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless.
 4. A train unfolded onto the decks, its automation driving them, a hand

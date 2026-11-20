@@ -51,6 +51,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/subtitles.cpp \
     $$SNURRA_ROOT/src/theme.cpp \
     $$SNURRA_ROOT/src/timeline.cpp \
+    $$SNURRA_ROOT/src/timeline_source.cpp \
     $$SNURRA_ROOT/src/tile.cpp \
     $$SNURRA_ROOT/src/video.cpp \
     $$SNURRA_ROOT/src/wire.cpp

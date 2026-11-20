@@ -6,6 +6,8 @@
 #include <QPair>
 #include <QString>
 
+#include <vector>
+
 #include "snurra/clock.h"
 
 /*
@@ -18,6 +20,9 @@
  * should sound in step with the giver to within a frame needs better
  * than a millisecond.
  */
+/* How deep players may nest in a state read off the wire. */
+constexpr int SNURRA_PLAYER_DEPTH = 16;
+
 struct snurra_tile_state {
 	QString source;            /* a path, or a name source.h knows */
 	qint64 duration_us = 0;
@@ -89,6 +94,13 @@ struct snurra_tile_state {
 	 * overwrite. Empty: the source's own chapters, where it has any. */
 	QList<QPair<qint64, QString>> chapters;
 
+	/* A player inside this tile (project.md sec 3f): where not empty, the
+	 * tile plays these tiles' output, the sum of all their decks, as its
+	 * track -- a channel with a prepared mix in it. A tree: a player is
+	 * moved into a tile, never shared, so it cannot contain itself.
+	 * std::vector, which takes the element type before it is complete. */
+	std::vector<snurra_tile_state> player;
+
 	/* Where it is at `now`, carried along from the sample -- either way,
 	 * since a sample's time can be just ahead, when it is heard. */
 	qint64 position_now(qint64 now = snurra_clock_us()) const {
@@ -98,8 +110,10 @@ struct snurra_tile_state {
 };
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
-	return out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters;
+	out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters << quint32(state.player.size());
+	for (const snurra_tile_state &inner : state.player) out << inner;
+	return out;
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -110,6 +124,24 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 key_shift = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
 	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2] >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
+	quint32 inner = 0;
+	in >> inner;
+	/* No more than a stream can hold: a count read from bytes that are not
+	 * a state must not reserve a gigabyte. */
+	state.player.clear();
+	/* And no deeper than a person nests players: each level is a call. */
+	static thread_local int depth = 0;
+	if (inner > 0 && depth >= SNURRA_PLAYER_DEPTH) {
+		in.setStatus(QDataStream::ReadCorruptData);
+		return in;
+	}
+	++depth;
+	for (quint32 i = 0; i < inner && in.status() == QDataStream::Ok && !in.atEnd(); ++i) {
+		snurra_tile_state one;
+		in >> one;
+		state.player.push_back(std::move(one));
+	}
+	--depth;
 	state.key_shift = key_shift;
 	state.level = level;
 	state.row = row;

@@ -1172,7 +1172,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	const bool url = snurra_is_url(state.source);
 	/* The waveform and the beats are the sound's, which may be a stream
 	 * of its own beside the picture's (tile_state.h). */
-	if (!snurra_is_url(state.sound_source())) read_peaks(nullptr);
+	/* A player in it has no file to read again (not yet its waveform). */
+	if (!snurra_is_url(state.sound_source()) && state.player.empty()) read_peaks(nullptr);
 	if (QFileInfo(state.source).isFile() || url) read_video(state.controls);
 	if (QFileInfo(state.sound_source()).isFile()) read_beats(nullptr);
 	show_jumps();
