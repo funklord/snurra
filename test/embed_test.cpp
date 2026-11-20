@@ -1191,13 +1191,13 @@ void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 	QVERIFY(!columns->isSectionHidden(4));
 	QVERIFY2(dj.minimumSizeHint().width() <= 412, qPrintable(QString::number(dj.minimumSizeHint().width())));
 	dj.set_crossfader(-1);
-	QCOMPARE(a->deck()->fade_to(), 1.0f);
-	QVERIFY(b->deck()->fade_to() < 1e-6f);
+	QCOMPARE(a->deck()->mix(), 1.0f);
+	QVERIFY(b->deck()->mix() < 1e-6f);
 	dj.set_crossfader(0);
-	QVERIFY(qAbs(a->deck()->fade_to() - float(M_SQRT1_2)) < 1e-4f && qAbs(b->deck()->fade_to() - float(M_SQRT1_2)) < 1e-4f);
+	QVERIFY(qAbs(a->deck()->mix() - float(M_SQRT1_2)) < 1e-4f && qAbs(b->deck()->mix() - float(M_SQRT1_2)) < 1e-4f);
 	dj.set_crossfader(1);
-	QVERIFY(a->deck()->fade_to() < 1e-6f);
-	QCOMPARE(b->deck()->fade_to(), 1.0f);
+	QVERIFY(a->deck()->mix() < 1e-6f);
+	QCOMPARE(b->deck()->mix(), 1.0f);
 
 	/* Sync: B's 126 onto A's 120, from either deck's button. */
 	a->set_beats(snurra_beat_grid{ 24000, 0, 10, 48000 });
@@ -1887,7 +1887,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 4);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended */
+	QCOMPARE(SNURRA_EMBED_VERSION, 5);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

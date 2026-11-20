@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "snurra/beats.h"
+#include "snurra/deck.h"
 #include "snurra/source.h"
 #include "snurra/tile_state.h"
 
@@ -59,9 +60,18 @@ public:
 	 * here; without, it is the stand-in, so a transport that pays per read
 	 * (SFTP) never pays twice.
 	 */
+	/* `taking`: a handover's taker -- its deck silent and in step with the
+	 * giver's position until fade() brings it in (snurra_dj). */
 	static snurra_tile *embedded(snurra_engine &engine, const snurra_tile_state &state,
 	                             std::shared_ptr<snurra_bytes> bytes, QWidget *parent = nullptr,
-	                             std::shared_ptr<snurra_bytes> peak_bytes = nullptr);
+	                             std::shared_ptr<snurra_bytes> peak_bytes = nullptr, bool taking = false);
+	/* What a deck for `state` starts with, at `rate`: its sound, where it
+	 * stands, its level, its track -- and a player in it, opened as its
+	 * source (project.md sec 3f). */
+	static snurra_deck::start_t start_for(const snurra_tile_state &state, int rate);
+	/* An embedded tile's deck retired at `at_us` on the shared clock, not
+	 * when the tile goes: a deck handed over sounds on through its fade. */
+	void retire_deck_at(int64_t at_us);
 	snurra_deck *deck() const { return m_deck; }
 
 	/* As it is now, sampled this moment, for a handover. */

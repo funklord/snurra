@@ -5,6 +5,8 @@
  */
 #include "snurra/timeline.h"
 
+#include <QObject>
+
 #include <algorithm>
 #include <cmath>
 
@@ -14,6 +16,37 @@
 #include "snurra/tile_state.h"
 
 namespace {
+
+/* The states in timeline order -- rows, each in column order -- and their
+ * timeline: a window's lane is a train whose first comes in at its lane
+ * start (snurra_node::timeline). */
+std::vector<const snurra_tile_state *> in_order(const std::vector<snurra_tile_state> &states) {
+	std::vector<const snurra_tile_state *> order;
+	for (const snurra_tile_state &state : states) order.push_back(&state);
+	std::stable_sort(order.begin(), order.end(), [](const snurra_tile_state *a, const snurra_tile_state *b) {
+		return a->row != b->row ? a->row < b->row : a->column < b->column;
+	});
+	return order;
+}
+
+snurra_timeline timeline_of(const std::vector<const snurra_tile_state *> &order, int rate) {
+	snurra_timeline timeline(rate);
+	for (size_t i = 0; i < order.size(); ++i) {
+		const snurra_tile_state &state = *order[i];
+		snurra_timeline_track track;
+		track.length = snurra_us_to_frames(state.duration_us, rate);
+		track.tempo = std::clamp(double(state.tempo), 0.25, 4.0);
+		track.offset = snurra_us_to_frames(state.offset_us, rate);
+		if (i == 0 || order[i - 1]->row != state.row) {
+			track.position = snurra_us_to_frames(state.lane_start_us, rate);
+		} else {
+			track.follows = int(i) - 1;
+			track.chosen_overlap = state.overlap_us >= 0 ? snurra_us_to_frames(state.overlap_us, rate) : -1;
+		}
+		timeline.tracks.push_back(track);
+	}
+	return timeline;
+}
 
 /* One tile of the timeline: what it plays and how. */
 struct part {
@@ -57,27 +90,11 @@ class timeline_source : public snurra_source {
 public:
 	timeline_source(const std::vector<snurra_tile_state> &states, int rate, std::function<bool()> interrupted)
 	    : m_timeline(rate), m_rate(rate), m_interrupted(std::move(interrupted)) {
-		/* Rows, each in column order: a window's lane is a train whose
-		 * first comes in at its lane start (snurra_node::timeline). */
-		std::vector<const snurra_tile_state *> order;
-		for (const snurra_tile_state &state : states) order.push_back(&state);
-		std::stable_sort(order.begin(), order.end(), [](const snurra_tile_state *a, const snurra_tile_state *b) {
-			return a->row != b->row ? a->row < b->row : a->column < b->column;
-		});
+		const std::vector<const snurra_tile_state *> order = in_order(states);
+		m_timeline = timeline_of(order, rate);
 		for (size_t i = 0; i < order.size(); ++i) {
 			const snurra_tile_state &state = *order[i];
-			snurra_timeline_track track;
-			track.length = snurra_us_to_frames(state.duration_us, rate);
-			track.tempo = std::clamp(double(state.tempo), 0.25, 4.0);
-			track.offset = snurra_us_to_frames(state.offset_us, rate);
-			if (i == 0 || order[i - 1]->row != state.row) {
-				track.position = snurra_us_to_frames(state.lane_start_us, rate);
-			} else {
-				track.follows = int(i) - 1;
-				track.chosen_overlap = state.overlap_us >= 0 ? snurra_us_to_frames(state.overlap_us, rate) : -1;
-			}
-			m_timeline.tracks.push_back(track);
-
+			const snurra_timeline_track &track = m_timeline.tracks[i];
 			part made;
 			made.name = state.sound_source();
 			made.player = state.player;
@@ -207,6 +224,34 @@ private:
 };
 
 }   // namespace
+
+snurra_tile_state snurra_player_state(const std::vector<snurra_tile_state> &states, int rate) {
+	snurra_tile_state player;
+	player.player = states;
+	player.source = QObject::tr("%n tracks", nullptr, int(states.size()));
+	const std::vector<const snurra_tile_state *> order = in_order(states);
+	const snurra_timeline timeline = timeline_of(order, rate);
+	int64_t length = 0;
+	for (size_t i = 0; i < order.size(); ++i) length = std::max(length, timeline.end(int(i)));
+	player.duration_us = snurra_frames_to_us(length, rate);
+	/* Where the group stands: the time of a tile playing, else the first's,
+	 * at that tile's own sample -- so a taker anchors on what the giver
+	 * said, as it does a single tile. */
+	size_t from = 0;
+	for (size_t i = 0; i < order.size(); ++i)
+		if (order[i]->playing) {
+			from = i;
+			break;
+		}
+	if (!order.empty()) {
+		const snurra_tile_state &here = *order[from];
+		player.playing = here.playing;
+		player.sampled_at_us = here.sampled_at_us;
+		player.position_us = snurra_frames_to_us(
+		        timeline.time_of(int(from), snurra_us_to_frames(here.position_us, rate)), rate);
+	}
+	return player;
+}
 
 std::unique_ptr<snurra_source> snurra_open_timeline(const std::vector<snurra_tile_state> &states, int rate,
                                                     std::function<bool()> interrupted) {

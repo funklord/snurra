@@ -1,9 +1,18 @@
 #include "snurra/embed.h"
 
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QProcess>
+#include <QTimer>
+#include <QUuid>
+#include <QHash>
+#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QList>
@@ -22,6 +31,8 @@
 #include "snurra/theme.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
+#include "snurra/wire.h"
+#include "snurra/timeline.h"
 
 namespace {
 
@@ -181,6 +192,9 @@ public:
 		column->addWidget(empty);
 	}
 	std::function<void(const QString &path)> on_drop;
+	/* A tile of a window dropped here, as the drag carries it: its
+	 * process's socket and its index there (snurra_wire::TILE_MIME). */
+	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
@@ -188,9 +202,17 @@ public:
 
 protected:
 	void dragEnterEvent(QDragEnterEvent *event) override {
-		if (snurra_drop_offers(event->mimeData())) event->acceptProposedAction();
+		if (snurra_drop_offers(event->mimeData())
+		    || (on_tile_drop && event->mimeData()->hasFormat(QLatin1String(snurra_wire::TILE_MIME))))
+			event->acceptProposedAction();
 	}
 	void dropEvent(QDropEvent *event) override {
+		if (on_tile_drop && event->mimeData()->hasFormat(QLatin1String(snurra_wire::TILE_MIME))) {
+			const QString data = QString::fromUtf8(event->mimeData()->data(QLatin1String(snurra_wire::TILE_MIME)));
+			event->acceptProposedAction();
+			on_tile_drop(data.section(QLatin1Char('\n'), 0, 0), data.section(QLatin1Char('\n'), 1, 1).toInt());
+			return;
+		}
 		const QStringList files = snurra_dropped(event->mimeData());
 		if (files.isEmpty() || !on_drop) return;
 		event->acceptProposedAction();
@@ -202,18 +224,75 @@ protected:
 
 class snurra_dj_private {
 public:
+	snurra_dj *q = nullptr;
 	std::shared_ptr<snurra_engine> engine;
-	dj_deck *decks[2] = { nullptr, nullptr };
+
+	/* ---- on the wire, as a deck view (project.md sec 3f, step 3) ---- */
+	QLocalServer *server = nullptr;
+	QString path;
+	/* A handover being taken onto a deck: its tile silent and in step
+	 * with the giver until COMMIT names the moment to fade in. */
+	struct taking_t {
+		QPointer<QLocalSocket> socket;
+		QPointer<snurra_tile> tile;
+		qint64 since = 0;
+		QTimer *timer = nullptr;
+		bool ready = false;
+	};
+	QHash<QString, taking_t> taking;
+	/* A deck being given to a window: it plays on until READY. */
+	struct giving_t {
+		QPointer<QLocalSocket> socket;
+		int deck = -1;
+		QTimer *expiry = nullptr;
+	};
+	QHash<QString, giving_t> giving;
+	qint64 last_started = 0;   /* the last crossfade taken: its start */
+	qint64 last_stopped = 0;   /* and its end */
+
+	void install(int deck, snurra_tile *tile, const QString &name);
+	void watch(QLocalSocket *socket);
+	void send(QLocalSocket *socket, const snurra_wire::message &m);
+	void handle(QLocalSocket *socket, const snurra_wire::message &m);
+	int deck_at(const QPoint &global) const;
+	void take(QLocalSocket *socket, const snurra_wire::message &m);
+	void check_ready(const QString &token);
+	void fade_in(const QString &token, qint64 start_us, qint64 length_us);
+	void end_take(const QString &token);
+	void release(int deck, const QPoint &at);
+	void offer(QLocalSocket *socket, const QString &token, int deck);
+	void complete_give(QLocalSocket *socket, const snurra_wire::message &ready);
+	void abort_give(const QString &token);
+	/* The deck's tile gone from it, its deck left to the engine's retire. */
+	void detach(int deck);
+
+	QList<dj_deck *> decks;   /* A, B and, with four, C and D */
+	QGridLayout *grid = nullptr;
 	QSlider *crossfader = nullptr;
+	QLabel *left_side = nullptr, *right_side = nullptr;   /* which decks each end sends */
 	snurra_library *browser = nullptr;
 	double position = 0;
 
-	/* Equal power (project.md sec 3b): cos and sin of the quarter circle. */
+	/* Equal power (project.md sec 3b): cos and sin of the quarter circle.
+	 * A and C on its left, B and D on its right. */
 	void apply_crossfader() {
 		const double angle = (position + 1) / 2 * M_PI_2;
 		const float gains[2] = { float(std::cos(angle)), float(std::sin(angle)) };
-		for (int i = 0; i < 2; ++i)
-			if (decks[i]->tile) decks[i]->tile->deck()->fade(0, 0, gains[i], gains[i]);
+		for (int i = 0; i < decks.size(); ++i)
+			if (decks[i]->tile) decks[i]->tile->deck()->set_mix(gains[i % 2]);
+	}
+	void name_sides() {
+		if (!left_side) return;
+		const bool four = decks.size() > 2;
+		left_side->setText(four ? QStringLiteral("A C") : QStringLiteral("A"));
+		right_side->setText(four ? QStringLiteral("B D") : QStringLiteral("B"));
+	}
+	/* What a deck syncs to: another deck playing, else another loaded. */
+	snurra_tile *other_than(int deck) const {
+		for (int pass = 0; pass < 2; ++pass)
+			for (int i = 0; i < decks.size(); ++i)
+				if (i != deck && decks[i]->tile && (pass == 1 || decks[i]->tile->playing())) return decks[i]->tile;
+		return nullptr;
 	}
 	void unload(int i) {
 		dj_deck *deck = decks[i];
@@ -230,28 +309,292 @@ public:
 	/* A double-click's deck: an empty one, else the one not playing, else
 	 * the one the crossfader has quieter. */
 	int idle_deck() const {
-		for (int i = 0; i < 2; ++i)
+		for (int i = 0; i < decks.size(); ++i)
 			if (!decks[i]->tile) return i;
-		for (int i = 0; i < 2; ++i)
+		for (int i = 0; i < decks.size(); ++i)
 			if (!decks[i]->tile->playing()) return i;
 		return position > 0 ? 0 : 1;
 	}
 };
 
-snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snurra_dj_private>()) {
-	QVBoxLayout *column = new QVBoxLayout(this);
-	QHBoxLayout *decks = new QHBoxLayout;
-	for (int i = 0; i < 2; ++i) {
-		d->decks[i] = new dj_deck(i == 0 ? QStringLiteral("A") : QStringLiteral("B"), this);
-		d->decks[i]->setObjectName(i == 0 ? QStringLiteral("snurra-deck-a") : QStringLiteral("snurra-deck-b"));
-		d->decks[i]->on_drop = [this, i](const QString &path) {
-			snurra_media media;
-			media.path = path;
-			load(i, media);
-		};
-		decks->addWidget(d->decks[i], 1);
+/* ---- the deck view on the wire --------------------------------------- */
+
+using namespace snurra_wire::timing;
+
+void snurra_dj_private::watch(QLocalSocket *socket) {
+	auto buffer = std::make_shared<QByteArray>();
+	QObject::connect(socket, &QLocalSocket::readyRead, q, [this, socket, buffer] {
+		buffer->append(socket->readAll());
+		for (const snurra_wire::message &m : snurra_wire::decode(*buffer)) handle(socket, m);
+	});
+	QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+}
+
+void snurra_dj_private::send(QLocalSocket *socket, const snurra_wire::message &m) {
+	if (socket && socket->state() == QLocalSocket::ConnectedState) socket->write(snurra_wire::encode(m));
+}
+
+void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message &m) {
+	switch (m.type) {
+	case snurra_wire::WHERE: {
+		/* Where it is, and that it is a deck view: how many decks. */
+		snurra_wire::message here;
+		here.type = snurra_wire::HERE;
+		here.frame = q->window()->isVisible() ? q->window()->frameGeometry() : QRect();
+		here.path = path;
+		here.index = int(decks.size());
+		send(socket, here);
+		break;
 	}
-	column->addLayout(decks);
+	case snurra_wire::OFFER:
+		take(socket, m);
+		break;
+	case snurra_wire::COMMIT:
+		fade_in(m.token, m.time, m.fade);
+		break;
+	case snurra_wire::ABORT: {
+		/* The giver plays on: what was taken goes, never having sounded. */
+		const QPointer<snurra_tile> tile = taking.value(m.token).tile;
+		end_take(m.token);
+		for (int i = 0; i < decks.size(); ++i)
+			if (tile && decks[i]->tile == tile) unload(i);
+		break;
+	}
+	case snurra_wire::READY:
+		complete_give(socket, m);
+		break;
+	case snurra_wire::RELEASE:
+		/* As a deck's title dragged out to `frame`'s corner. */
+		release(m.index, m.frame.topLeft());
+		break;
+	case snurra_wire::ADOPT: {
+		/* The window started to take a deck asks for it by its token. */
+		const auto it = giving.find(m.token);
+		if (it == giving.end()) break;
+		const int deck = it->deck;
+		if (it->expiry) it->expiry->deleteLater();
+		giving.erase(it);
+		offer(socket, m.token, deck);
+		break;
+	}
+	case snurra_wire::STATUS: {
+		/* Each deck's tile, its deck as its column; an empty deck none. */
+		snurra_wire::message status;
+		status.type = snurra_wire::STATUS_IS;
+		for (int i = 0; i < decks.size(); ++i)
+			if (decks[i]->tile) {
+				snurra_tile_state state = decks[i]->tile->state();
+				state.row = 0;
+				state.column = i;
+				status.states << state;
+			}
+		status.path = path;
+		status.index = int(decks.size());
+		status.started = last_started;
+		status.stopped = last_stopped;
+		send(socket, status);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+int snurra_dj_private::deck_at(const QPoint &global) const {
+	for (int i = 0; i < decks.size(); ++i)
+		if (decks[i]->isVisible() && QRect(decks[i]->mapToGlobal(QPoint(0, 0)), decks[i]->size()).contains(global)) return i;
+	return -1;
+}
+
+void snurra_dj_private::take(QLocalSocket *socket, const snurra_wire::message &m) {
+	if (m.states.isEmpty()) return;
+	if (!engine) engine = shared_engine();
+	/* Onto the deck meant, else the one let go over, else an idle one. */
+	int deck = m.deck >= 0 && m.deck < decks.size() ? int(m.deck) : -1;
+	if (deck < 0 && m.frame.isValid()) deck = deck_at(m.frame.topLeft());
+	if (deck < 0) deck = idle_deck();
+	/* One tile as it is; several -- a whole player -- as one tile holding
+	 * them, standing where the group stands (snurra_player_state). */
+	snurra_tile_state state;
+	if (m.states.size() == 1) {
+		state = m.states.first();
+	} else {
+		state = snurra_player_state(std::vector<snurra_tile_state>(m.states.begin(), m.states.end()), engine->rate());
+	}
+	state.row = 0;
+	state.column = 0;
+	state.controls = true;
+	unload(deck);
+	snurra_tile *tile = snurra_tile::embedded(*engine, state, nullptr, decks[deck], nullptr, true);
+	install(deck, tile, state.player.empty() ? snurra_title_of(state.source) : state.source);
+
+	const QString token = m.token;
+	taking_t pending;
+	pending.socket = socket;
+	pending.tile = tile;
+	pending.since = snurra_clock_us();
+	pending.timer = new QTimer(q);
+	pending.timer->setInterval(2);
+	QObject::connect(pending.timer, &QTimer::timeout, q, [this, token] { check_ready(token); });
+	pending.timer->start();
+	taking.insert(token, pending);
+	/* A giver gone without a word: what was taken fades in on its own. */
+	if (socket)
+		QObject::connect(socket, &QLocalSocket::disconnected, q,
+		                 [this, token] { fade_in(token, snurra_clock_us(), CROSSFADE_US); });
+	check_ready(token);
+}
+
+void snurra_dj_private::check_ready(const QString &token) {
+	auto it = taking.find(token);
+	if (it == taking.end() || it->ready) return;
+	const bool in_step = !it->tile || it->tile->deck()->locked();
+	if (!in_step && snurra_clock_us() - it->since < qint64(IN_STEP_WAIT_MS) * 1000) return;
+	it->ready = true;
+	it->timer->stop();
+	QObject::disconnect(it->timer, nullptr, q, nullptr);
+	QObject::connect(it->timer, &QTimer::timeout, q, [this, token] { fade_in(token, snurra_clock_us(), CROSSFADE_US); });
+	it->timer->setSingleShot(true);
+	it->timer->start(COMMIT_WAIT_MS);
+	const qint64 period_us = qint64(engine->period()) * 1000000 / engine->rate();
+	snurra_wire::message ready;
+	ready.type = snurra_wire::READY;
+	ready.token = token;
+	ready.time = snurra_clock_us() + engine->latency_us() + period_us + COMMIT_MARGIN_US;
+	send(it->socket, ready);
+}
+
+void snurra_dj_private::fade_in(const QString &token, qint64 start_us, qint64 length_us) {
+	const auto it = taking.constFind(token);
+	if (it == taking.constEnd()) return;
+	if (it->tile) it->tile->deck()->fade(start_us, length_us, 0, 1);
+	last_started = start_us;
+	last_stopped = start_us + length_us;
+	end_take(token);
+}
+
+void snurra_dj_private::end_take(const QString &token) {
+	const taking_t pending = taking.take(token);
+	if (pending.timer) pending.timer->deleteLater();
+}
+
+void snurra_dj_private::release(int deck, const QPoint &at) {
+	if (deck < 0 || deck >= decks.size() || !decks[deck]->tile) return;
+	/* A new window takes it: it starts, connects back and asks for it by
+	 * the token (ADOPT); the deck plays on here until it says READY. */
+	const QString token = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	giving_t placeholder;
+	placeholder.deck = deck;
+	placeholder.expiry = new QTimer(q);
+	placeholder.expiry->setSingleShot(true);
+	QObject::connect(placeholder.expiry, &QTimer::timeout, q, [this, token] { abort_give(token); });
+	placeholder.expiry->start(ADOPT_WAIT_MS);
+	giving.insert(token, placeholder);
+	QProcess::startDetached(QCoreApplication::applicationFilePath(),
+	                        { QStringLiteral("--adopt"), path, QStringLiteral("--token"), token, QStringLiteral("--index"),
+	                          QString::number(deck), QStringLiteral("--at"), QStringLiteral("%1,%2").arg(at.x()).arg(at.y()) });
+}
+
+void snurra_dj_private::offer(QLocalSocket *socket, const QString &token, int deck) {
+	if (deck < 0 || deck >= decks.size() || !decks[deck]->tile) return;
+	snurra_wire::message m;
+	m.type = snurra_wire::OFFER;
+	m.token = token;
+	snurra_tile_state state = decks[deck]->tile->state();
+	state.row = 0;
+	state.column = 0;
+	m.states << state;
+	giving_t give;
+	give.socket = socket;
+	give.deck = deck;
+	give.expiry = new QTimer(q);
+	give.expiry->setSingleShot(true);
+	QObject::connect(give.expiry, &QTimer::timeout, q, [this, token] { abort_give(token); });
+	give.expiry->start(READY_WAIT_MS);
+	giving.insert(token, give);
+	send(socket, m);
+}
+
+void snurra_dj_private::complete_give(QLocalSocket *socket, const snurra_wire::message &ready) {
+	const auto it = giving.find(ready.token);
+	if (it == giving.end()) return;
+	const giving_t give = it.value();
+	giving.erase(it);
+	if (give.expiry) give.expiry->deleteLater();
+	if (give.deck < 0 || give.deck >= decks.size() || !decks[give.deck]->tile) return;
+	/* As a window gives (snurra_node::complete_give): out over the same
+	 * stretch the taker comes in, the deck sounding on through it. */
+	snurra_tile *tile = decks[give.deck]->tile;
+	const qint64 period_us = qint64(engine->period()) * 1000000 / engine->rate();
+	const qint64 start = qMax(ready.time, snurra_clock_us() + engine->latency_us() + period_us + COMMIT_MARGIN_US);
+	if (tile->playing()) {
+		tile->deck()->fade(start, CROSSFADE_US, 1, 0);
+		tile->retire_deck_at(start + CROSSFADE_US + period_us);
+	} else {
+		tile->retire_deck_at(0);
+	}
+	detach(give.deck);
+	snurra_wire::message commit;
+	commit.type = snurra_wire::COMMIT;
+	commit.token = ready.token;
+	commit.time = start;
+	commit.fade = CROSSFADE_US;
+	send(socket, commit);
+	if (socket) socket->flush();
+}
+
+void snurra_dj_private::abort_give(const QString &token) {
+	const auto it = giving.find(token);
+	if (it == giving.end()) return;
+	const giving_t give = it.value();
+	giving.erase(it);
+	if (give.expiry) give.expiry->deleteLater();
+	snurra_wire::message abort;
+	abort.type = snurra_wire::ABORT;
+	abort.token = token;
+	send(give.socket, abort);
+}
+
+void snurra_dj_private::detach(int deck) {
+	dj_deck *place = decks[deck];
+	if (!place->tile) return;
+	snurra_tile *tile = place->tile;
+	place->tile = nullptr;
+	place->name.clear();
+	tile->disconnect();
+	tile->hide();
+	tile->deleteLater();
+	place->empty->show();
+}
+
+bool snurra_dj::listen() {
+	if (d->server) return true;
+	d->path = snurra_wire::runtime_directory()
+	          + QStringLiteral("/%1%2").arg(QCoreApplication::applicationPid()).arg(QLatin1String(snurra_wire::DECKS_SUFFIX));
+	QLocalServer::removeServer(d->path);
+	d->server = new QLocalServer(this);
+	d->server->setSocketOptions(QLocalServer::UserAccessOption);
+	if (!d->server->listen(d->path)) {
+		delete d->server;
+		d->server = nullptr;
+		return false;
+	}
+	connect(d->server, &QLocalServer::newConnection, this, [this] {
+		while (QLocalSocket *socket = d->server->nextPendingConnection()) d->watch(socket);
+	});
+	return true;
+}
+
+QString snurra_dj::socket_path() const {
+	return d->path;
+}
+
+snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snurra_dj_private>()) {
+	d->q = this;
+	QVBoxLayout *column = new QVBoxLayout(this);
+	d->grid = new QGridLayout;
+	column->addLayout(d->grid);
+	set_deck_count(2);
 	QHBoxLayout *fader = new QHBoxLayout;
 	d->crossfader = new QSlider(Qt::Horizontal, this);
 	d->crossfader->setObjectName(QStringLiteral("snurra-crossfader"));
@@ -259,9 +602,12 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	d->crossfader->setRange(-100, 100);
 	d->crossfader->setMaximumWidth(fontMetrics().horizontalAdvance(QLatin1Char('M')) * 24);
 	fader->addStretch(1);
-	fader->addWidget(new QLabel(QStringLiteral("A"), this));
+	d->left_side = new QLabel(this);
+	d->right_side = new QLabel(this);
+	fader->addWidget(d->left_side);
 	fader->addWidget(d->crossfader, 2);
-	fader->addWidget(new QLabel(QStringLiteral("B"), this));
+	fader->addWidget(d->right_side);
+	d->name_sides();
 	fader->addStretch(1);
 	column->addLayout(fader);
 	d->browser = new snurra_library(QString(), this);
@@ -291,7 +637,7 @@ snurra_dj::~snurra_dj() {
 }
 
 bool snurra_dj::load(int deck, const snurra_media &media) {
-	if (deck < 0 || deck > 1 || (!media.bytes && media.path.isEmpty())) return false;
+	if (deck < 0 || deck >= d->decks.size() || (!media.bytes && media.path.isEmpty())) return false;
 	if (!d->engine) d->engine = shared_engine();
 	d->unload(deck);
 	dj_deck *place = d->decks[deck];
@@ -309,6 +655,12 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 		for (const QString &beside : snurra_srt_beside(media.path))
 			if (!subtitles.contains(beside)) subtitles << beside;
 	tile->set_subtitle_files(subtitles);
+	d->install(deck, tile, media.name.isEmpty() ? snurra_title_of(media.path) : media.name);
+	return true;
+}
+
+void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name) {
+	dj_deck *place = decks[deck];
 	tile->set_sync_available(true);
 	/* A deck is its waveform and its controls, as Traktor's: a film's
 	 * picture opened above them in a window of 700 squeezed the controls
@@ -316,28 +668,81 @@ bool snurra_dj::load(int deck, const snurra_media &media) {
 	 * on the title opens it. */
 	tile->set_picture_closed_at_first(true);
 	place->tile = tile;
-	place->name = media.name.isEmpty() ? snurra_title_of(media.path) : media.name;
+	place->name = name;
 	place->empty->hide();
 	place->column->addWidget(tile);
 	tile->show();
-	const QString name = place->name;
-	connect(tile, &snurra_tile::failed, this,
-	        [this, name] { emit failed(name, tr("snurra cannot play %1: it is not sound or video it can read.").arg(name)); });
-	connect(tile, &snurra_tile::close_requested, this, [this, deck] { d->unload(deck); });
+	snurra_dj *dj = q;
+	QObject::connect(tile, &snurra_tile::failed, dj, [dj, name] {
+		emit dj->failed(name, snurra_dj::tr("snurra cannot play %1: it is not sound or video it can read.").arg(name));
+	});
+	QObject::connect(tile, &snurra_tile::close_requested, dj, [this, deck] { unload(deck); });
 	/* Sync: this deck's beat onto the other's, the phase bent out. */
-	connect(tile, &snurra_tile::sync_requested, this, [this, deck](snurra_tile *asking) {
-		snurra_tile *other = d->decks[1 - deck]->tile;
+	QObject::connect(tile, &snurra_tile::sync_requested, dj, [this, deck](snurra_tile *asking) {
+		snurra_tile *other = other_than(deck);
 		const qint64 delta_us = asking->match_beat_of(other);
 		if (delta_us != 0) asking->deck()->bend(snurra_us_to_frames(delta_us, asking->deck()->rate()));
 	});
-	connect(tile, &snurra_tile::key_sync_requested, this,
-	        [this, deck](snurra_tile *asking) { asking->match_key_of(d->decks[1 - deck]->tile); });
-	d->apply_crossfader();
-	return true;
+	QObject::connect(tile, &snurra_tile::key_sync_requested, dj,
+	                 [this, deck](snurra_tile *asking) { asking->match_key_of(other_than(deck)); });
+	/* Pulled out of the window by its title: a window of its own takes it
+	 * there (project.md sec 3f), where this deck view is on the wire. */
+	QObject::connect(tile, &snurra_tile::handle_released, dj, [this, deck](snurra_tile *, const QPoint &global) {
+		if (server && !q->window()->frameGeometry().contains(global)) release(deck, global);
+	});
+	apply_crossfader();
 }
 
 QString snurra_dj::loaded(int deck) const {
-	return deck >= 0 && deck < 2 ? d->decks[deck]->name : QString();
+	return deck >= 0 && deck < d->decks.size() ? d->decks[deck]->name : QString();
+}
+
+void snurra_dj::set_deck_count(int count) {
+	count = count >= 4 ? 4 : 2;
+	while (d->decks.size() > count) {
+		d->unload(int(d->decks.size()) - 1);
+		delete d->decks.takeLast();
+	}
+	while (d->decks.size() < count) {
+		const int i = int(d->decks.size());
+		const QChar letter(QLatin1Char(char('A' + i)));
+		dj_deck *deck = new dj_deck(QString(letter), this);
+		deck->setObjectName(QStringLiteral("snurra-deck-%1").arg(QChar(QLatin1Char(char('a' + i)))));
+		deck->on_drop = [this, i](const QString &path) {
+			snurra_media media;
+			media.path = path;
+			load(i, media);
+		};
+		/* The giver is asked, as a window asks it (snurra_node::dropEvent):
+		 * the handover is its to make -- the tile, or with Shift the whole
+		 * player -- onto this deck. */
+		deck->on_tile_drop = [this, i](const QString &giver, int index) {
+			if (!d->server || giver.isEmpty()) return;
+			snurra_wire::message merge;
+			merge.type = snurra_wire::MERGE_INTO;
+			merge.path = d->path;
+			merge.index = (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier) ? -1 : index;
+			merge.deck = i;
+			QLocalSocket *socket = new QLocalSocket(this);
+			connect(socket, &QLocalSocket::connected, this, [socket, merge] {
+				socket->write(snurra_wire::encode(merge));
+				socket->disconnectFromServer();
+			});
+			connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+			connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
+			socket->connectToServer(giver);
+		};
+		/* Two to a row, A and B above C and D, as Traktor's four. */
+		d->grid->addWidget(deck, i / 2, i % 2);
+		d->decks << deck;
+	}
+	for (int row = 0; row < 2; ++row) d->grid->setRowStretch(row, row < (count + 1) / 2 ? 1 : 0);
+	d->name_sides();
+	d->apply_crossfader();
+}
+
+int snurra_dj::deck_count() const {
+	return int(d->decks.size());
 }
 
 void snurra_dj::set_crossfader(double position) {

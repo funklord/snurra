@@ -560,7 +560,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		const float most = float(frames) / float(m_rate);
 		m_trim_now += std::clamp(trim - m_trim_now, -most, most);
 	}
-	const float level = m_level.load(std::memory_order_relaxed) * m_trim_now;
+	const float level = m_level.load(std::memory_order_relaxed) * m_trim_now * m_mix.load(std::memory_order_relaxed);
 	const float target = playing ? level : 0.0f;
 	const float step = 1.0f / (0.005f * float(m_rate));   /* 5 ms from silence to full */
 	const bool ended = m_ended_generation.load(std::memory_order_acquire) == int64_t(m_seen_generation);

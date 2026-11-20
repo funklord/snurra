@@ -13,7 +13,7 @@ QByteArray encode(const message &m) {
 	QDataStream out(&payload, QIODevice::WriteOnly);
 	out.setVersion(QDataStream::Qt_6_0);
 	out << quint8(m.type) << m.token << quint8(m.side) << m.states << m.frame << m.path << m.index << m.time << m.fade
-	    << m.started << m.stopped;
+	    << m.started << m.stopped << m.deck;
 	QByteArray framed;
 	QDataStream head(&framed, QIODevice::WriteOnly);
 	head << quint32(payload.size());
@@ -39,7 +39,7 @@ QList<message> decode(QByteArray &buffer) {
 		quint8 type = 0;
 		quint8 side = 0;
 		in >> type >> m.token >> side >> m.states >> m.frame >> m.path >> m.index >> m.time >> m.fade >> m.started
-		   >> m.stopped;
+		   >> m.stopped >> m.deck;
 		m.type = type_t(type);
 		m.side = side_t(side);
 		buffer.remove(0, 4 + size);
@@ -69,6 +69,9 @@ QStringList peer_sockets(const QString &own) {
 
 bool any_peer_alive(const QString &own) {
 	for (const QString &path : peer_sockets(own)) {
+		/* A deck view is no window of tiles: a file opened beside one is
+		 * still the first, with its controls, playing. */
+		if (path.endsWith(QLatin1String(DECKS_SUFFIX))) continue;
 		QLocalSocket probe;
 		probe.connectToServer(path);
 		if (probe.waitForConnected(100)) return true;

@@ -38,6 +38,7 @@
 
 #include "snurra/beats.h"
 #include "snurra/deck.h"
+#include "snurra/timeline.h"
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
 #include "snurra/subtitles.h"
@@ -1670,19 +1671,38 @@ snurra_tile::~snurra_tile() {
 	if (m_owner) m_owner->retire(m_deck);
 }
 
-snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_state &state,
-                                   std::shared_ptr<snurra_bytes> bytes, QWidget *parent,
-                                   std::shared_ptr<snurra_bytes> peak_bytes) {
+snurra_deck::start_t snurra_tile::start_for(const snurra_tile_state &state, int rate) {
 	snurra_deck::start_t start;
-	start.source = state.source;
-	start.bytes = std::move(bytes);
-	start.rate = engine.rate();
-	start.fallback_length = snurra_us_to_frames(state.duration_us, start.rate);
-	start.anchor_frame = snurra_us_to_frames(state.position_us, start.rate);
+	start.source = state.sound_source();
+	start.rate = rate;
+	start.fallback_length = snurra_us_to_frames(state.duration_us, rate);
+	start.anchor_frame = snurra_us_to_frames(state.position_now(state.sampled_at_us), rate);
 	start.anchor_us = state.sampled_at_us;
 	start.playing = state.playing;
 	start.level = float(state.level) / 100;
 	start.audio_track = state.audio_track;
+	if (!state.player.empty()) {
+		const std::vector<snurra_tile_state> player = state.player;
+		start.open = [player](int rate, std::function<bool()> interrupted) {
+			return snurra_open_timeline(player, rate, std::move(interrupted));
+		};
+	}
+	return start;
+}
+
+void snurra_tile::retire_deck_at(int64_t at_us) {
+	if (!m_owner) return;
+	m_owner->retire(m_deck, at_us);
+	m_owner = nullptr;
+}
+
+snurra_tile *snurra_tile::embedded(snurra_engine &engine, const snurra_tile_state &state,
+                                   std::shared_ptr<snurra_bytes> bytes, QWidget *parent,
+                                   std::shared_ptr<snurra_bytes> peak_bytes, bool taking) {
+	snurra_deck::start_t start = start_for(state, engine.rate());
+	if (bytes) start.source = state.source;   /* a hint at the bytes' kind */
+	start.bytes = std::move(bytes);
+	start.held = start.anchored = taking && state.playing;
 	snurra_tile *tile = new snurra_tile(state, engine.add(start), parent);
 	tile->m_owner = &engine;
 	/* A second read the host allows: the waveform's, the picture's and

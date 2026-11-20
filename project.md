@@ -1127,7 +1127,37 @@ alike.
    trim, which a deck applies in its callback; and a waveform of the
    whole mix.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
-   player handed onto a deck and pulled off it, gapless.
+   player handed onto a deck and pulled off it, gapless. **Built
+   2026-11-20.** `snurra_dj` takes two decks or four (`set_deck_count`,
+   `--decks 4`; A and B above C and D, A and C on the crossfader's left)
+   and, in the player, listens on `<pid>.decks.sock` (`listen`). It
+   answers WHERE with its frame and its deck count, so a window knows a
+   deck view from a window; a tile let go over it is offered to it with
+   the point (`message::deck`, else `frame`), and lands on the deck under
+   that point -- the tile, or with Shift the whole player, which arrives
+   as one tile holding the group (`snurra_player_state`: as long as its
+   timeline, at the group's time). On Wayland a deck takes the tile's
+   drag and asks its window, as a window does (MERGE_INTO with the deck).
+   The handover is the window's own -- held silent and in step, READY,
+   COMMIT, faded in -- with its times moved into `wire.h` so both sides
+   share them. A deck's title dragged out of the window opens a window
+   of its own that takes it (ADOPT, as a pulled-out tile). The crossfader
+   is a gain of its own in the deck now (`set_mix`): it was `fade()`,
+   which a handover's fade-in would have overwritten. An embedded tile
+   can hand its deck a retire time (`retire_deck_at`), so a deck given
+   away sounds on through its fade. A deck view does not count as a
+   player already running, so a file opened beside one still opens
+   first and playing. Tested between real processes
+   (`tiles_go_onto_decks_and_back_out_in_step`: a playing tile onto deck
+   C of four, its position carried within 2 ms and the crossfade taken,
+   the empty window gone; a train of two onto deck A as one player at
+   the group's time; deck C out into a window that plays on); taking the
+   first tile alone in place of the whole player, or ignoring RELEASE,
+   fails it. Seen in Xvfb at 1100 x 760 with two tones on A and B: the
+   four decks in two rows, the crossfader's ends "A C" and "B D", the
+   browser under them. **Not yet:** a window joining a deck view's tile back into a
+   train of its own (it opens as a tile holding its player), and the
+   deck view's own look at four decks on a small screen.
 4. A train unfolded onto the decks, its automation driving them, a hand
    taking over.
 5. Moves on the decks written back into the train.

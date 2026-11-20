@@ -39,35 +39,14 @@
 #include "snurra/source.h"
 #include "snurra/tile.h"
 
+using namespace snurra_wire::timing;
+using snurra_wire::TILE_MIME;
+
 namespace {
-
-/* How long a giver waits for READY: a peer already running answers in
- * milliseconds; a process started to adopt a tile needs to start first. */
-constexpr int READY_WAIT_MS = 2000;
-constexpr int ADOPT_WAIT_MS = 8000;
-
-/*
- * The crossfade a handover makes. Both sides play the same samples in
- * step, so it is not heard as a fade at all if they are; if they are a
- * little apart, a short one keeps the comb filtering brief.
- */
-constexpr qint64 CROSSFADE_US = 50000;
-
-/* Slack for a COMMIT to cross the socket before its moment arrives. */
-constexpr qint64 COMMIT_MARGIN_US = 20000;
-
-/* How long a taker waits to fall in step before saying READY anyway, and
- * after READY for a COMMIT before fading in on its own. */
-constexpr int IN_STEP_WAIT_MS = 500;
-constexpr int COMMIT_WAIT_MS = 2000;
 
 QString new_token() {
 	return QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
-
-/* The MIME type of a tile in a drag: its process's socket, a newline,
- * and its index there. */
-const char *const TILE_MIME = "application/x-snurra-tile";
 
 bool can_place_windows() {
 	/* X11 lets a program move its own windows and read others'; Wayland
@@ -243,24 +222,9 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 		}
 		return first;
 	}
-	snurra_deck::start_t start;
-	start.source = state.sound_source();
-	start.rate = m_engine->rate();
-	start.fallback_length = snurra_us_to_frames(state.duration_us, start.rate);
-	start.anchor_frame = snurra_us_to_frames(state.position_now(state.sampled_at_us), start.rate);
-	start.anchor_us = state.sampled_at_us;
-	start.playing = state.playing;
-	start.level = float(state.level) / 100;
+	snurra_deck::start_t start = snurra_tile::start_for(state, m_engine->rate());
 	start.held = held;
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
-	start.audio_track = state.audio_track;
-	/* A player in the tile (project.md sec 3f): its output is the track. */
-	if (!state.player.empty()) {
-		const std::vector<snurra_tile_state> player = state.player;
-		start.open = [player](int rate, std::function<bool()> interrupted) {
-			return snurra_open_timeline(player, rate, std::move(interrupted));
-		};
-	}
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
@@ -1024,11 +988,13 @@ void snurra_node::leave_if_empty() {
 /* ---- giving ------------------------------------------------------------ */
 
 void snurra_node::offer(QLocalSocket *socket, const QString &token, snurra_wire::side_t side,
-                        const QList<snurra_tile *> &tiles) {
+                        const QList<snurra_tile *> &tiles, int deck, const QPoint &at) {
 	snurra_wire::message m;
 	m.type = snurra_wire::OFFER;
 	m.token = token;
 	m.side = side;
+	m.deck = deck;
+	if (!at.isNull()) m.frame = QRect(at, QSize(1, 1));
 	pending_give give;
 	give.socket = socket;
 	for (snurra_tile *tile : tiles) {
@@ -1043,14 +1009,14 @@ void snurra_node::offer(QLocalSocket *socket, const QString &token, snurra_wire:
 	send(socket, m);
 }
 
-void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side, int index) {
+void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side, int index, int deck, const QPoint &at) {
 	if (m_tiles.isEmpty() || index >= m_tiles.size()) return;
 	QLocalSocket *socket = new QLocalSocket(this);
 	watch(socket);
 	const QString token = new_token();
 	const QList<snurra_tile *> tiles = index < 0 ? m_tiles : QList<snurra_tile *>{ m_tiles.at(index) };
-	connect(socket, &QLocalSocket::connected, this, [this, socket, token, side, tiles] {
-		offer(socket, token, side, tiles);
+	connect(socket, &QLocalSocket::connected, this, [this, socket, token, side, tiles, deck, at] {
+		offer(socket, token, side, tiles, deck, at);
 	});
 	connect(socket, &QLocalSocket::errorOccurred, this, [socket] { socket->deleteLater(); });
 	socket->connectToServer(peer);
@@ -1253,7 +1219,12 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		break;
 	}
 	case snurra_wire::HERE:
-		if (!m.path.isEmpty()) m_peer_frames.insert(m.path, m.frame);
+		if (!m.path.isEmpty()) {
+			m_peer_frames.insert(m.path, m.frame);
+			/* A deck view says how many decks it has; a window, none. */
+			if (m.index > 0) m_peer_decks.insert(m.path, m.index);
+			else m_peer_decks.remove(m.path);
+		}
 		socket->disconnectFromServer();
 		break;
 	case snurra_wire::OFFER:
@@ -1285,7 +1256,7 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		break;
 	}
 	case snurra_wire::MERGE_INTO:
-		merge_into(m.path, m.side, m.index);
+		merge_into(m.path, m.side, m.index, m.deck);
 		break;
 	case snurra_wire::RELEASE:
 		release(m.index, m.frame.topLeft());
@@ -1722,6 +1693,15 @@ void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 	mark(QRect(), QRect());
 	hint_drop(false);
 	if (from.isNull()) return;
+
+	/* Let go over a deck view (project.md sec 3f): onto the deck there --
+	 * this tile, or with Shift the whole player, the sum of its tiles. */
+	for (auto it = m_peer_decks.constBegin(); it != m_peer_decks.constEnd(); ++it) {
+		if (!m_peer_frames.value(it.key()).contains(global)) continue;
+		const bool whole = m_tiles.size() == 1 || (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier);
+		merge_into(it.key(), snurra_wire::RIGHT, whole ? -1 : int(m_tiles.indexOf(tile)), -1, global);
+		return;
+	}
 
 	/* In a group, a tile dropped outside the window is pulled out there;
 	 * on another of its tiles, the two trade places. */

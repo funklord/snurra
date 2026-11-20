@@ -27,6 +27,41 @@
  */
 namespace snurra_wire {
 
+/* A handover's times, the same on both sides: a window's and a deck
+ * view's (snurra_node, snurra_dj). */
+namespace timing {
+
+/* How long a giver waits for READY: a peer already running answers in
+ * milliseconds; a process started to adopt a tile needs to start first. */
+inline constexpr int READY_WAIT_MS = 2000;
+inline constexpr int ADOPT_WAIT_MS = 8000;
+
+/*
+ * The crossfade a handover makes. Both sides play the same samples in
+ * step, so it is not heard as a fade at all if they are; if they are a
+ * little apart, a short one keeps the comb filtering brief.
+ */
+inline constexpr qint64 CROSSFADE_US = 50000;
+
+/* Slack for a COMMIT to cross the socket before its moment arrives. */
+inline constexpr qint64 COMMIT_MARGIN_US = 20000;
+
+/* How long a taker waits to fall in step before saying READY anyway, and
+ * after READY for a COMMIT before fading in on its own. */
+inline constexpr int IN_STEP_WAIT_MS = 500;
+inline constexpr int COMMIT_WAIT_MS = 2000;
+
+}
+
+/* The MIME type of a tile in a drag: its process's socket, a newline,
+ * and its index there. */
+inline constexpr const char *TILE_MIME = "application/x-snurra-tile";
+
+/* A deck view's socket ends so (snurra_dj::listen), a window's in
+ * ".sock" alone: both are peers, and only a window is a player already
+ * running (any_peer_alive). */
+inline constexpr const char *DECKS_SUFFIX = ".decks.sock";
+
 enum type_t : quint8 {
 	WHERE = 1,     /* -> HERE: the window's frame on screen */
 	HERE,
@@ -60,6 +95,10 @@ struct message {
 	qint64 fade = 0;      /* COMMIT: the crossfade's length */
 	qint64 started = 0;   /* STATUS_IS: the last crossfade taken, its start */
 	qint64 stopped = 0;   /* and its end, when the giver fell silent */
+	/* OFFER, MERGE_INTO: the deck of a deck view meant (project.md sec
+	 * 3f), -1 none -- then an OFFER's `frame` holds the point it was let
+	 * go at, which the deck view finds its deck under. */
+	qint32 deck = -1;
 };
 
 QByteArray encode(const message &m);

@@ -140,6 +140,7 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption playlist(QStringLiteral("playlist"), QStringLiteral("Play the files a playlist names (.m3u, .pls), as a train."),
 	                                  QStringLiteral("file"));
 	const QCommandLineOption dj(QStringLiteral("dj"), QStringLiteral("Open the DJ player: two decks, a crossfader and the music under them."));
+	const QCommandLineOption decks(QStringLiteral("decks"), QStringLiteral("The DJ player's decks: 2 or 4."), QStringLiteral("count"));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
 	const QCommandLineOption audio_file(QStringList{ QStringLiteral("audiofile"), QStringLiteral("audio-file") },
 	                                    QStringLiteral("The sound, from a file or URL of its own beside the picture's."),
@@ -149,7 +150,7 @@ int main(int argc, char *argv[]) {
 	                                       QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, audio_file, chapters_file, dj });
+	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -166,7 +167,7 @@ int main(int argc, char *argv[]) {
 	/* The DJ player (embed.h 3), as a window of its own; with files, the
 	 * first two on its decks. On a phone it is the app (the holder,
 	 * 2026-11-13: one static screen, the browser under the decks). */
-	bool as_dj = parser.isSet(dj);
+	bool as_dj = parser.isSet(dj) || parser.isSet(decks);
 #ifdef Q_OS_ANDROID
 	as_dj = as_dj || parser.positionalArguments().isEmpty();
 #endif
@@ -176,8 +177,12 @@ int main(int argc, char *argv[]) {
 		/* The estate's music in its browser, where a node answers. */
 		if (snurra_library *browser = player->findChild<snurra_library *>()) snurra_estate_offer(browser);
 		player->setWindowTitle(QStringLiteral("snurra -- DJ"));
+		if (parser.isSet(decks)) player->set_deck_count(parser.value(decks).toInt());
+		/* On the wire (project.md sec 3f): windows of tiles hand theirs onto
+		 * its decks, and its decks out into windows. */
+		player->listen();
 		const QStringList given = parser.positionalArguments();
-		for (int deck = 0; deck < 2 && deck < given.size(); ++deck) {
+		for (int deck = 0; deck < player->deck_count() && deck < given.size(); ++deck) {
 			snurra_media media;
 			/* A name with a scheme as it is -- tone:440, fuzznet:ROOT, a URL --
 			 * which made absolute was a file under the current folder, and

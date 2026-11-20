@@ -121,6 +121,12 @@ struct snurra_tile_state;
 std::unique_ptr<snurra_source> snurra_open_timeline(const std::vector<snurra_tile_state> &states, int rate,
                                                     std::function<bool()> interrupted = nullptr);
 
+/* `states` as one tile holding them as its player: as long as their
+ * timeline, standing where the group stands -- the time of the tile
+ * playing -- at that tile's sample, playing where it plays. What a whole
+ * player handed onto a deck becomes (project.md sec 3f, step 3). */
+snurra_tile_state snurra_player_state(const std::vector<snurra_tile_state> &states, int rate);
+
 /*
  * A train's overlap between a track and the next (project.md sec 3b, steps
  * 3 and 6), in frames out at `rate`: lengths in frames out, tempos as the

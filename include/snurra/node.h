@@ -48,8 +48,10 @@ public:
 	snurra_tile *add_tile(const snurra_tile_state &state, bool held = false);
 
 	/* Hands every tile -- or the one at `index` -- to the process at
-	 * `peer`, to its right or below. */
-	void merge_into(const QString &peer, snurra_wire::side_t side, int index = -1);
+	 * `peer`, to its right or below; or, where `peer` is a deck view
+	 * (project.md sec 3f), onto its deck `deck`, or the deck under `at`. */
+	void merge_into(const QString &peer, snurra_wire::side_t side, int index = -1, int deck = -1,
+	                const QPoint &at = QPoint());
 
 	/* Pulls one tile out into a new process, placed at `at`. */
 	void release(int index, const QPoint &at);
@@ -114,7 +116,7 @@ private:
 	void handle(QLocalSocket *socket, const snurra_wire::message &m);
 	void send(QLocalSocket *socket, const snurra_wire::message &m);
 	void offer(QLocalSocket *socket, const QString &token, snurra_wire::side_t side,
-	           const QList<snurra_tile *> &tiles);
+	           const QList<snurra_tile *> &tiles, int deck = -1, const QPoint &at = QPoint());
 	void take(QLocalSocket *socket, const snurra_wire::message &m);
 	void complete_give(QLocalSocket *socket, const snurra_wire::message &ready);
 	void check_ready(const QString &token);
@@ -206,6 +208,7 @@ private:
 	QHash<QString, pending_give> m_giving;
 	QHash<QString, pending_take> m_taking;
 	QHash<QString, QRect> m_peer_frames;
+	QHash<QString, int> m_peer_decks;   /* a deck view's decks, by its socket */
 	QString m_adopt_token;
 	QPoint m_adopt_at;
 	QPoint m_drag_from;

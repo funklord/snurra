@@ -40,7 +40,7 @@
 
 /* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj.
  * 4: snurra_player's position_ms, length_ms, state_of and ended(). */
-#define SNURRA_EMBED_VERSION 4
+#define SNURRA_EMBED_VERSION 5
 
 /* One thing to play. */
 struct snurra_media {
@@ -126,11 +126,26 @@ public:
 	/* Stops at once and cleanly, as snurra_player does. */
 	~snurra_dj() override;
 
-	/* `media` onto deck 0 (A) or 1 (B), paused, in place of what it had.
-	 * False when there is nothing to read, or no such deck. */
+	/* `media` onto deck 0 (A) or 1 (B) -- or, with four, 2 (C) or 3 (D) --
+	 * paused, in place of what it had. False when there is nothing to
+	 * read, or no such deck. */
 	bool load(int deck, const snurra_media &media);
 	/* What each deck has, empty where nothing. */
 	QString loaded(int deck) const;
+
+	/* (5) Two decks or four (project.md sec 3f), A and B above C and D;
+	 * A and C on the crossfader's left, B and D on its right. Two by
+	 * default. Taking away C and D unloads them. */
+	void set_deck_count(int count);
+	int deck_count() const;
+
+	/* (5) On the wire as a deck view (project.md sec 3f): snurra's own
+	 * windows of tiles hand a tile -- or with Shift a whole player -- onto
+	 * the deck it is let go over, gapless, and a deck's title dragged out
+	 * of this window opens it in a window of its own. The player's; a
+	 * host need not. False where the socket cannot be made. */
+	bool listen();
+	QString socket_path() const;
 
 	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
 	void set_crossfader(double position);

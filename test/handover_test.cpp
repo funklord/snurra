@@ -55,6 +55,7 @@ private slots:
 	void audiofile_gives_the_first_file_its_sound();
 	void a_chapters_file_gives_the_first_file_its_tracklist();
 	void a_tile_plays_a_player_and_the_wire_carries_it();
+	void tiles_go_onto_decks_and_back_out_in_step();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1493,6 +1494,86 @@ void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
 	QCOMPARE(snurra_wire::decode(deep).size(), 1);
 	QByteArray too_deep = nested(SNURRA_PLAYER_DEPTH + 1);
 	QCOMPARE(snurra_wire::decode(too_deep).size(), 0);
+}
+
+/*
+ * The deck view on the wire (project.md sec 3f, step 3), between real
+ * processes: a window's playing tile handed onto deck C of a four-deck
+ * view plays on there in step -- the position the giver's own, carried
+ * across, the crossfade taken -- and the window, empty, goes; a whole
+ * player of two handed onto deck A is one tile holding both, standing at
+ * the group's time; and deck C pulled out opens a window of its own that
+ * plays on, the deck left empty.
+ */
+void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
+	QProcess *decks = start({ QStringLiteral("--decks"), QStringLiteral("4") });
+	QVERIFY(decks->waitForStarted());
+	const QString deck_socket = m_dir->filePath(QStringLiteral("%1.decks.sock").arg(decks->processId()));
+	QVERIFY(wait_for_socket(deck_socket));
+	QCOMPARE(ask(deck_socket, status_request()).index, 4);
+
+	QProcess *window = start({ QStringLiteral("one.flac") });
+	QVERIFY(window->waitForStarted());
+	QVERIFY(wait_for_socket(socket_of(window)));
+	QTest::qWait(300);
+	const snurra_tile_state given = ask(socket_of(window), status_request()).states.value(0);
+	QVERIFY(given.playing);
+	snurra_wire::message merge;
+	merge.type = snurra_wire::MERGE_INTO;
+	merge.path = deck_socket;
+	merge.index = -1;
+	merge.deck = 2;
+	tell(socket_of(window), merge);
+	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 1, 5000);
+	QTRY_VERIFY_WITH_TIMEOUT(ask(deck_socket, status_request()).stopped > 0, 3000);
+	const snurra_wire::message taken = ask(deck_socket, status_request());
+	const snurra_tile_state moved = taken.states.first();
+	QCOMPARE(moved.column, 2);
+	QCOMPARE(moved.source, QStringLiteral("one.flac"));
+	QVERIFY(moved.playing);
+	QVERIFY(taken.started <= taken.stopped);
+	const qint64 expected = given.position_now(moved.sampled_at_us);
+	QVERIFY2(qAbs(moved.position_us - expected) <= 2000,
+	         qPrintable(QStringLiteral("position %1 us, expected %2").arg(moved.position_us).arg(expected)));
+	QVERIFY2(window->waitForFinished(5000), "the window, empty, stayed");
+
+	/* A whole player: a train of two onto deck A. */
+	QProcess *train = start({ QStringLiteral("a.flac"), QStringLiteral("b.flac") });
+	QVERIFY(train->waitForStarted());
+	QVERIFY(wait_for_socket(socket_of(train)));
+	QTest::qWait(300);
+	QCOMPARE(ask(socket_of(train), status_request()).states.size(), 2);
+	merge.deck = 0;
+	tell(socket_of(train), merge);
+	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 2, 5000);
+	snurra_tile_state player;
+	for (const snurra_tile_state &state : ask(deck_socket, status_request()).states)
+		if (state.column == 0) player = state;
+	QCOMPARE(int(player.player.size()), 2);
+	QVERIFY(player.playing);
+	QVERIFY(player.duration_us > 180000000);   /* two stand-ins' length, less their crossing */
+	QVERIFY(train->waitForFinished(5000));
+
+	/* Deck C out into a window of its own. */
+	snurra_wire::message release;
+	release.type = snurra_wire::RELEASE;
+	release.index = 2;
+	release.frame = QRect(40, 40, 1, 1);
+	tell(deck_socket, release);
+	QString adopted;
+	QElapsedTimer waited;
+	waited.start();
+	while (adopted.isEmpty() && waited.elapsed() < 10000) {
+		for (const QString &path : sockets()) {
+			if (path == deck_socket) continue;
+			const snurra_wire::message status = ask(path, status_request(), 500);
+			if (status.states.size() == 1 && status.states.first().source == QStringLiteral("one.flac")) adopted = path;
+		}
+		QTest::qWait(100);
+	}
+	QVERIFY2(!adopted.isEmpty(), "no window took deck C");
+	QVERIFY(ask(adopted, status_request()).states.first().playing);
+	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 1, 5000);
 }
 
 /*
