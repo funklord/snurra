@@ -29,30 +29,32 @@ the bytes come from. So the library's centre is a **byte source that may
 still be arriving** -- read at an offset, saying which ranges it holds --
 and everything above it knows nothing of SFTP or fuzznet.
 
-## 1a. State (folded 2026-11-20)
+## 1a. State (folded 2026-11-21)
 
-- Level with origin at the run's last commit. Since the 2026-11-19
-  fold: a live stream shows as live and takes no seek (bbd9d84); snurra
-  has its own icon, installed into hicolor (7f46785); mplayer's
-  `-shuffle` (40f7746), `-audiofile` / mpv's `--audio-file=` (be4761b)
-  and mpv's `--chapters-file` (720a6cf) are taken -- the last two are
-  what hydra hands players, told in its inbox (20261120T1625Z). A film
-  keeps a Wayland screen on through the portal (d26b97c), and `make
-  check-mk` links again after two days broken (ad878e0).
-- Loudness matching is on by default at -14 LUFS (holder, 2026-11-18).
-  Knobs turn by holding and moving up or down; the EQ is one line drawn
-  across its three bands; tiles are as wide as their time on the
-  timeline, a train's next tile dragged comes in on a beat, and a width
-  the person set is kept (e4e1257).
-- The suite takes about 240 s on a quiet machine, so `TEST_TIMEOUT` is
-  600 s (84293dd). Read the suite's exit code, not its FAIL lines. Its
-  test binary runs one function when named, but QtTest fails every
-  class that lacks the name, so name one function per run.
-- Waiting on the holder: a Wayland compositor (weston) for testing, an
-  AcoustID key, the phone (install, a fuzznet node of its own, the fold
-  cover layout, whether Android gets its own FFmpeg), moving a joined
-  window, the cross-process drop's entry point, an About window's place,
-  controller mappings (sec 3f), and qtkit's remote (sec 3).
+- Level with origin at the run's last commit. **Decks and the train,
+  sec 3f, built 2026-11-20/21:** the timeline as data with channels
+  seated; a deck plays a player (nested, its tracks' EQ, trim, beat and
+  waveform); the deck view on the wire with 2 or 4 decks, arranged and
+  sided as the person's controller; a player unfolded across the decks
+  and conducted, a hand taking over, rides and moves written back, a
+  deck started by hand, folded back, unpacked into a window; MIDI in with
+  learning by Alt-hold, both ends named, each player its own (an
+  emergency mix), 14-bit, browse and load; listeners as plugs on decks
+  and on a window's tiles, several, chosen. The day's new tests passed
+  under ASan and UBSan.
+- Earlier the same day: live streams shown as live, an icon, -shuffle,
+  -audiofile, --chapters-file, Wayland idle via the portal.
+- The suite takes some 4 to 5 minutes on a quiet machine
+  (`TEST_TIMEOUT` 600 s). Read its exit code, not its FAIL lines. Its
+  test binary runs one function when named, but QtTest fails every class
+  that lacks the name -- read the named class's line. `make check-mk`
+  is not part of `make test`; run it after a change to the build lists
+  or the fuzznet pin.
+- Waiting on the holder: a real screen and speaker trial, a Wayland
+  compositor (weston), the AcoustID key, the phone (install, a node of
+  its own, the fold cover, Android's FFmpeg), moving a joined window, the
+  cross-process drop's entry point, an About window's place, Mixxx's
+  mappings (with their JavaScript or not), and qtkit's remote (sec 3).
 
 ## 2. Decided
 
