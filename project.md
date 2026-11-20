@@ -1019,7 +1019,14 @@ alike.
 **The order it is built in**, each step usable before the next:
 
 1. `snurra_timeline`: the window's timeline as data, the window drawing
-   it; nothing heard changes (the suite is the proof).
+   it; nothing heard changes (the suite is the proof). **Built
+   2026-11-20** (`timeline.h`): lanes by row, each a begin and tiles of
+   length, tempo, offset, chosen overlap and grid; `start`, `overlap`,
+   `at` and `time_of`, with the train's two overlap functions moved in
+   beside them. The window takes a snapshot of its tiles
+   (`snurra_node::timeline`) and asks it. The suite passed whole on it,
+   and `a_timeline_places_its_tiles` holds the model alone -- with the
+   overlaps left out of `start` it fails.
 2. A timeline as a source, so a deck plays a player's output -- a
    channel with a prepared mix.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole

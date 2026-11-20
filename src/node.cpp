@@ -572,80 +572,22 @@ void snurra_node::drop_tile(snurra_tile *tile) {
 	fit_to_drawers();
 }
 
-/*
- * Trains (project.md sec 3b): tiles side by side in a row play as one
- * sequence. When a playing tile comes within reach of its end, the next in
- * its row is started at frame 0 on the exact moment the playing one
- * reaches its length less the overlap, and the two cross over that
- * overlap along a quarter circle -- two different tracks, so equal power,
- * where a handover's identical signals cross in straight lines. The
- * controls follow what plays: out on the next tile as it is started, in on
- * the one before once it has ended. A tile stopped before its next began
- * takes the next back.
- *
- * The overlap is 5 s, or $SNURRA_TRAIN_OVERLAP_MS, and never more than
- * half of either tile -- a decision taken from the aims (a DJ mix's
- * crossfade). Where both tracks have a beat (step 6) it is whole bars of
- * the first, moved by less than a beat so the next one's first beat falls
- * on a beat of the first: a DJ brings the next record in on the beat.
- * The tempos are not matched here -- sync is the DJ's own choice (sec 4)
- * -- so two tempos apart drift through the overlap from in phase.
- */
-int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, double tempo, double next_tempo,
-                             const snurra_beat_grid *grid, const snurra_beat_grid *next_grid, int64_t chosen) {
-	const QByteArray wanted = qgetenv("SNURRA_TRAIN_OVERLAP_MS");
-	const qint64 overlap_us = wanted.isEmpty() ? 5000000 : qint64(wanted.toLongLong()) * 1000;
-	const int64_t room = std::min(length / 2, next_length / 2);
-	/* Dragged to: where it was put, snapped then or not. */
-	if (chosen >= 0) return std::clamp<int64_t>(chosen, std::min<int64_t>(1, room), std::max<int64_t>(1, room));
-	const int64_t plain = std::min(snurra_us_to_frames(overlap_us, rate), room);
-	if (plain <= 0 || !grid || !next_grid || !grid->valid() || !next_grid->valid() || tempo <= 0 || next_tempo <= 0)
-		return plain;
-	/* In frames out: a beat of the first, and the next one's first beat
-	 * after it starts. */
-	const double beat = grid->period / tempo;
-	const double bar = 4 * beat;
-	const double whole = std::max(1.0, std::round(double(plain) / bar)) * bar;
-	const double next_first = next_grid->first / next_tempo;
-	/* The overlap is length + next_first - (the first's beat k, out): the
-	 * k that comes nearest the whole bars. */
-	const double k = std::round(((double(length) + next_first - whole) * tempo - grid->first) / grid->period);
-	double snapped = double(length) + next_first - (grid->first + k * grid->period) / tempo;
-	while (snapped > double(room)) snapped -= beat;
-	while (snapped <= 0) snapped += beat;
-	if (snapped > double(room)) return plain;   /* no beat of it fits */
-	return std::llround(snapped);
-}
-
-int64_t snurra_overlap_on_beat(int64_t chosen, int64_t length, int64_t next_length, double tempo, double next_tempo,
-                               const snurra_beat_grid *grid, const snurra_beat_grid *next_grid) {
-	const int64_t room = std::min(length / 2, next_length / 2);
-	chosen = std::clamp<int64_t>(chosen, std::min<int64_t>(1, room), std::max<int64_t>(1, room));
-	if (!grid || !next_grid || !grid->valid() || !next_grid->valid() || tempo <= 0 || next_tempo <= 0) return chosen;
-	/* As snurra_train_overlap: overlap = length + next_first - (beat k of
-	 * the first, out), the k nearest what was chosen -- a beat, not bars:
-	 * the hand chose the bar. */
-	const double beat = grid->period / tempo;
-	const double next_first = next_grid->first / next_tempo;
-	const double k = std::round(((double(length) + next_first - double(chosen)) * tempo - grid->first) / grid->period);
-	double snapped = double(length) + next_first - (grid->first + k * grid->period) / tempo;
-	while (snapped > double(room)) snapped -= beat;
-	while (snapped < beat && snapped + beat <= double(room)) snapped += beat;
-	if (snapped <= 0 || snapped > double(room)) return chosen;   /* no beat of it fits */
-	return std::llround(snapped);
-}
-
 /* The overlap between `tile` and `next` on their lane's timeline: the
  * one the train plays and every seek counts with -- `next`'s own where it
  * was dragged to come in. */
 int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
 	if (!next) return 0;
-	const snurra_beat_grid grid = tile->beats();
-	const snurra_beat_grid next_grid = next->beats();
-	const qint64 chosen_us = next->state().overlap_us;
-	return snurra_train_overlap(timeline_length(tile), timeline_length(next), m_engine->rate(), tile->deck()->tempo(),
-	                            next->deck()->tempo(), &grid, &next_grid,
-	                            chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1);
+	const QList<snurra_tile *> tiles = lane(tile->row());
+	const int index = int(tiles.indexOf(tile));
+	if (index < 0 || index + 1 >= tiles.size() || tiles.at(index + 1) != next) {
+		/* Not neighbours on one lane: as the two would cross. */
+		const snurra_beat_grid grid = tile->beats(), next_grid = next->beats();
+		const qint64 chosen_us = next->state().overlap_us;
+		return snurra_train_overlap(timeline_length(tile), timeline_length(next), m_engine->rate(), tile->deck()->tempo(),
+		                            next->deck()->tempo(), &grid, &next_grid,
+		                            chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1);
+	}
+	return timeline().overlap(tile->row(), index);
 }
 
 void snurra_node::run_trains() {
@@ -770,19 +712,36 @@ int64_t snurra_node::lane_begin(int row) const {
 }
 
 int64_t snurra_node::lane_start(snurra_tile *tile) const {
-	const QList<snurra_tile *> tiles = lane(tile->row());
-	int64_t start = lane_begin(tile->row());
-	for (int i = 0; i < tiles.size() && tiles.at(i) != tile; ++i) {
-		const int64_t length = timeline_length(tiles.at(i));
-		start += length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
-	}
-	return start;
+	return timeline().start(tile->row(), int(lane(tile->row()).indexOf(tile)));
 }
 
 /* A tile's length on its lane's timeline, in frames out: its track's
  * length at its tempo. */
 int64_t snurra_node::timeline_length(snurra_tile *tile) const {
-	return int64_t(double(tile->length_frames()) / tile->deck()->tempo());
+	snurra_timeline_tile one;
+	one.length = tile->length_frames();
+	one.tempo = tile->deck()->tempo();
+	return snurra_timeline::length_out(one);
+}
+
+snurra_timeline snurra_node::timeline() const {
+	snurra_timeline made(m_engine->rate());
+	for (int row : rows()) {
+		const QList<snurra_tile *> tiles = lane(row);
+		snurra_timeline_lane &lane = made.lanes[row];
+		lane.begin = snurra_us_to_frames(tiles.first()->lane_start_us(), m_engine->rate());
+		for (snurra_tile *tile : tiles) {
+			snurra_timeline_tile one;
+			one.length = tile->length_frames();
+			one.tempo = tile->deck()->tempo();
+			one.offset = snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+			const qint64 chosen_us = tile->state().overlap_us;
+			one.chosen_overlap = chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1;
+			one.grid = tile->beats();
+			lane.tiles.push_back(one);
+		}
+	}
+	return made;
 }
 
 void snurra_node::play_group(snurra_tile *from, bool playing) {
@@ -831,31 +790,11 @@ QList<int> snurra_node::rows() const {
 }
 
 snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame, int64_t *wait) const {
-	const QList<snurra_tile *> tiles = lane(row);
-	int64_t start = lane_begin(row);
-	if (wait) *wait = 0;
-	/* Before a late lane begins: its first tile, from its start, after the
-	 * wait -- a start on the shared clock still to come (deck.h). */
-	if (!tiles.isEmpty() && time < start) {
-		frame = std::max<int64_t>(0, snurra_us_to_frames(tiles.first()->offset_us(), m_engine->rate()));
-		if (wait) *wait = start - time;
-		return tiles.first();
-	}
-	for (int i = 0; i < tiles.size(); ++i) {
-		const int64_t length = timeline_length(tiles.at(i));
-		const int64_t own = length - overlap(tiles.at(i), i + 1 < tiles.size() ? tiles.at(i + 1) : nullptr);
-		/* Inside an overlap belongs to the next: a seek into a crossfade
-		 * comes in on the track it goes to. A length not known yet is
-		 * taken as long enough. */
-		if (length <= 0 || time < start + own) {
-			const double tempo = tiles.at(i)->deck()->tempo();
-			frame = std::max<int64_t>(0, std::llround(double(time - start) * tempo)
-			                                     + snurra_us_to_frames(tiles.at(i)->offset_us(), m_engine->rate()));
-			return tiles.at(i);
-		}
-		start += own;
-	}
-	return nullptr;
+	const snurra_timeline::place found = timeline().at(row, time);
+	if (wait) *wait = found.wait;
+	if (found.index < 0) return nullptr;
+	frame = found.frame;
+	return lane(row).at(found.index);
 }
 
 void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
@@ -1011,8 +950,7 @@ int64_t snurra_node::snapped_begin(int row, int64_t begin) const {
 /* The group's time where `tile` is now: its place in its lane, less how
  * far a nudge put its track ahead of the lane. */
 int64_t snurra_node::time_of(snurra_tile *tile) const {
-	return lane_start(tile)
-	       + std::llround(double(tile->frame_now() - snurra_us_to_frames(tile->offset_us(), m_engine->rate())) / tile->deck()->tempo());
+	return timeline().time_of(tile->row(), int(lane(tile->row()).indexOf(tile)), tile->frame_now());
 }
 
 /*

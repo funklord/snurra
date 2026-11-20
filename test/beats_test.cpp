@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "snurra/beats.h"
+#include "snurra/timeline.h"
 #include "snurra/fingerprint.h"
 #include "snurra/library.h"
 #include "snurra/node.h"
@@ -116,6 +117,7 @@ class beats_test : public QObject {
 	Q_OBJECT
 
 private slots:
+	void a_timeline_places_its_tiles();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -208,6 +210,53 @@ void beats_test::a_trains_overlap_brings_the_next_in_on_the_beat() {
 	QCOMPARE(snurra_train_overlap(length, next_length, RATE, tempo, next_tempo, &grid, &next_grid, on_beat), on_beat);
 	/* No grid, as it was put. */
 	QCOMPARE(snurra_overlap_on_beat(chosen, length, next_length, tempo, next_tempo, &none, &next_grid), chosen);
+}
+
+/*
+ * The timeline as data (project.md sec 3f): a train of three -- 60 s at
+ * tempo 1, 30 s at 1.5 (20 s out), 40 s -- crossing over the plain 5 s,
+ * and a lane beside it coming in at 10 s, its track nudged 2 s ahead. Each
+ * tile comes in where the one before less the overlap ends; a time inside
+ * an overlap is the next tile's; before a late lane, its first tile waits;
+ * past the end, nothing; and time_of undoes at.
+ */
+void beats_test::a_timeline_places_its_tiles() {
+	snurra_timeline timeline(RATE);
+	snurra_timeline_lane &train = timeline.lanes[0];
+	for (const auto &tile : { std::pair<double, double>{ 60, 1 }, { 30, 1.5 }, { 40, 1 } }) {
+		snurra_timeline_tile one;
+		one.length = int64_t(tile.first * RATE);
+		one.tempo = tile.second;
+		train.tiles.push_back(one);
+	}
+	snurra_timeline_lane &late = timeline.lanes[3];   /* rows need not follow on */
+	late.begin = 10 * RATE;
+	snurra_timeline_tile nudged;
+	nudged.length = 50 * RATE;
+	nudged.offset = 2 * RATE;
+	late.tiles.push_back(nudged);
+
+	QCOMPARE(timeline.overlap(0, 0), int64_t(5 * RATE));
+	QCOMPARE(timeline.overlap(0, 2), int64_t(0));
+	QCOMPARE(timeline.start(0, 0), int64_t(0));
+	QCOMPARE(timeline.start(0, 1), int64_t(55 * RATE));
+	QCOMPARE(timeline.start(0, 2), int64_t(70 * RATE));   /* 55 + 20 out - 5 */
+	/* In the first overlap: the second tile's, 1 s in out, 1.5 s of its track. */
+	const snurra_timeline::place crossing = timeline.at(0, 56 * RATE);
+	QCOMPARE(crossing.index, 1);
+	QCOMPARE(crossing.frame, int64_t(1.5 * RATE));
+	QCOMPARE(timeline.time_of(0, crossing.index, crossing.frame), int64_t(56 * RATE));
+	QCOMPARE(timeline.at(0, 54 * RATE).index, 0);
+	QCOMPARE(timeline.at(0, 110 * RATE).index, -1);
+	/* Before the late lane: its first tile, from its offset, after a wait. */
+	const snurra_timeline::place before = timeline.at(3, 4 * RATE);
+	QCOMPARE(before.index, 0);
+	QCOMPARE(before.frame, int64_t(2 * RATE));
+	QCOMPARE(before.wait, int64_t(6 * RATE));
+	const snurra_timeline::place inside = timeline.at(3, 15 * RATE);
+	QCOMPARE(inside.frame, int64_t(7 * RATE));
+	QCOMPARE(timeline.time_of(3, 0, inside.frame), int64_t(15 * RATE));
+	QCOMPARE(timeline.at(7, 0).index, -1);   /* no such lane */
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

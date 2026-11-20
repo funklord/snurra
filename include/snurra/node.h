@@ -7,6 +7,7 @@
 #include <QWidget>
 
 #include "snurra/tile_state.h"
+#include "snurra/timeline.h"
 #include "snurra/wire.h"
 
 class QGridLayout;
@@ -17,26 +18,6 @@ class snurra_engine;
 class snurra_tile;
 class snurra_marker;
 struct snurra_beat_grid;
-
-/*
- * A train's overlap between a tile and the next (project.md sec 3b, steps
- * 3 and 6), in frames out at `rate`: lengths in frames out, tempos as the
- * decks', grids in each track's frames. 5 s ($SNURRA_TRAIN_OVERLAP_MS),
- * never more than half either; where both have a beat, the whole bars of
- * the first nearest that, then moved by less than a beat so the next
- * one's first beat falls on one of the first's -- the two in phase as
- * they cross.
- */
-int64_t snurra_train_overlap(int64_t length, int64_t next_length, int rate, double tempo = 1, double next_tempo = 1,
-                             const snurra_beat_grid *grid = nullptr, const snurra_beat_grid *next_grid = nullptr,
-                             int64_t chosen = -1);
-/* `chosen`, an overlap dragged to, the next one's first beat moved onto the
- * nearest beat of the first -- by less than half a beat, within half the
- * shorter, at least one beat -- or as it was where either has no beat.
- * Placed so by snurra_node when a later tile of a train is dragged; then
- * passed to snurra_train_overlap as `chosen`, which keeps it. */
-int64_t snurra_overlap_on_beat(int64_t chosen, int64_t length, int64_t next_length, double tempo, double next_tempo,
-                               const snurra_beat_grid *grid, const snurra_beat_grid *next_grid);
 
 /*
  * One snurra process: its window, the tiles in it, and its side of every
@@ -197,6 +178,9 @@ private:
 	int64_t time_of(snurra_tile *tile) const;
 	int64_t group_time(snurra_tile *from) const;
 	int64_t timeline_length(snurra_tile *tile) const;
+	/* The group's timeline as data (project.md sec 3f), from the tiles as
+	 * they are now -- what every place on it is counted from. */
+	snurra_timeline timeline() const;
 	void nudge_lane(snurra_tile *tile, qint64 delta_us);
 public:
 	/* Sync (project.md sec 4): `tile`'s tempo set so its beat runs at the
