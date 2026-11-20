@@ -360,6 +360,7 @@ public:
 	int64_t frame_of(int track, int64_t time) const;
 	void place(int64_t time, qint64 at_us);
 	void load_track(int track, int64_t frame);
+	void keep_moves(int deck);
 	void start_track(int track, qint64 at_us);
 	void automate(int track, int64_t time);
 	void conduct();
@@ -742,6 +743,8 @@ bool snurra_dj_private::fold() {
 	holder.sampled_at_us = at;
 	holder.playing = playing;
 	holder.controls = true;
+	for (int deck = 0; deck < decks.size(); ++deck) keep_moves(deck);
+	holder.player = score->states;
 	/* Out over the moment the folded deck comes in. */
 	for (int deck = 0; deck < decks.size(); ++deck) {
 		if (deck >= int(score->on_deck.size()) || score->on_deck[size_t(deck)] < 0 || !decks[deck]->tile) continue;
@@ -810,11 +813,28 @@ void snurra_dj_private::place(int64_t time, qint64 at_us) {
 	}
 }
 
+/* What the hand changed on a conducted deck -- its EQ, tempo, key lock and
+ * key -- written back into the player's track as it leaves the deck, so a
+ * fold keeps it (sec 3f, step 5). */
+void snurra_dj_private::keep_moves(int deck) {
+	if (!score || deck < 0 || deck >= decks.size() || deck >= int(score->on_deck.size())) return;
+	const int track = score->on_deck[size_t(deck)];
+	snurra_tile *tile = decks[deck]->tile;
+	if (track < 0 || !tile) return;
+	snurra_tile_state &kept = score->states[size_t(track)];
+	const snurra_tile_state now = tile->state();
+	for (int band = 0; band < 3; ++band) kept.eq_db[band] = now.eq_db[band];
+	kept.tempo = now.tempo;
+	kept.key_lock = now.key_lock;
+	kept.key_shift = now.key_shift;
+}
+
 void snurra_dj_private::load_track(int track, int64_t frame) {
 	const int deck = score->channel[size_t(track)];
 	if (deck >= decks.size()) return;
 	snurra_tile *tile = decks[deck]->tile;
 	if (!tile || score->on_deck[size_t(deck)] != track) {
+		keep_moves(deck);
 		unload(deck);
 		snurra_tile_state state = score->states[size_t(track)];
 		state.row = 0;
@@ -1269,6 +1289,7 @@ void snurra_dj_private::anchor(listener_t &one) {
 	one.mirror->set_key_lock(tile->state().key_lock);
 	one.mirror->set_key_shift(tile->state().key_shift);
 	one.mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
+	one.mirror->set_trim(deck->trim());
 	one.playing = tile->playing();
 	if (!one.playing) {
 		one.mirror->set_playing(false);
@@ -1298,6 +1319,9 @@ void snurra_dj_private::follow_taps() {
 		one->mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
 		one->mirror->set_key_lock(tile->state().key_lock);
 		one->mirror->set_key_shift(tile->state().key_shift);
+		/* The level match too: a cue hears the deck after its gain, as the
+		 * room does, and before its fader. */
+		one->mirror->set_trim(tile->deck()->trim());
 	}
 }
 

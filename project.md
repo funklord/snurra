@@ -1224,7 +1224,12 @@ alike.
    50 while playing: the envelope ends its ride at half, then 1 as it
    was, the fader back at 100; not written, it fails). **Not yet:** a
    crossfade done by hand on the channel faders becoming the overlap, a
-   deck started by hand becoming where its track comes in. **And folded
+   deck started by hand becoming where its track comes in. **And the
+   rest of the hand's moves:** a conducted deck's EQ, tempo, key lock and
+   key as the hand left them are written into its track in the player
+   when the track leaves the deck and when the decks are folded
+   (`keep_moves`); tested by a band cut and one killed on a conducted
+   deck, found in the folded player (without it, it fails). **And folded
    back** (`snurra_dj::fold`, a conducted deck's "Fold back into one
    deck"): the conducting ends and deck A holds the player again, as
    edited -- its rides in its envelopes -- where it stands, crossing over
@@ -1305,7 +1310,10 @@ alike.
    at 440 Hz with its fader down and the crossfader all on B (1320 Hz);
    plugged into A it hears 440, moved to B 1320, unplugged nothing; a
    mirror at the deck's fader, or an old mirror left sounding, fails it.
-   A deck's socket is a control, `ch_N_listen`, so a controller's cue
+   The mirror takes the deck's level-match trim as well: a cue hears the
+   deck after its gain staging, as the room does, and before its fader
+   (tested by a trim of a half on A, heard at half in the headphones;
+   without it, full). A deck's socket is a control, `ch_N_listen`, so a controller's cue
    button learned onto it is a plug with a fixed place: pressed, the
    first listener's plug goes there, pressed again out
    (`a_controller_learned_by_holding_moves_the_deck` learns a note onto

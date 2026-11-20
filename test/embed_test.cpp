@@ -1513,6 +1513,9 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 		return place ? place->findChild<snurra_tile *>() : nullptr;
 	};
 	tile_of(0)->set_level(0);
+	/* The level match's trim on A, as an analysis would set it: heard in
+	 * the headphones as in the room, before the fader. */
+	tile_of(0)->deck()->set_trim(0.5f);
 	dj.set_crossfader(1);
 	tile_of(0)->set_playing(true);
 	tile_of(1)->set_playing(true);
@@ -1557,7 +1560,8 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 	QCOMPARE(dj.plugged(0), 0);
 	QTest::qWait(700);
 	QVERIFY(heard(hz, rms));
-	QVERIFY2(rms > 0.1 && qAbs(hz - 440) < 20, qPrintable(QStringLiteral("plugged into A: %1 Hz at %2").arg(hz).arg(rms)));
+	/* A tone of 0.2 is 0.141 rms; at the trim's half, 0.071. */
+	QVERIFY2(qAbs(rms - 0.0707) < 0.01 && qAbs(hz - 440) < 20, qPrintable(QStringLiteral("plugged into A: %1 Hz at %2").arg(hz).arg(rms)));
 	dj.plug(0, 1);
 	QVERIFY(!listen->isChecked());
 	QTest::qWait(700);
@@ -1637,6 +1641,8 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 
 	/* Folded back: deck A holds the player again, as edited -- the ride
 	 * in its first track's envelope -- where it stood, and B is empty. */
+	/* A move of the EQ by hand on the conducted deck is the track's too. */
+	tile->set_eq(-6, 0, SNURRA_EQ_KILL);
 	const qint64 before = tile->state().position_us;
 	QToolButton *fold = nullptr;
 	for (QToolButton *button : place->findChildren<QToolButton *>())
@@ -1650,6 +1656,8 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 	QVERIFY(folded && folded->playing());
 	QCOMPARE(int(folded->state().player.size()), 2);
 	QCOMPARE(folded->state().player[0].envelope, envelope);
+	QCOMPARE(folded->state().player[0].eq_db[0], -6.0f);
+	QCOMPARE(folded->state().player[0].eq_db[2], SNURRA_EQ_KILL);
 	QVERIFY2(folded->state().position_us > before && folded->state().position_us < before + 1500000,
 	         qPrintable(QStringLiteral("folded at %1 us, was at %2").arg(folded->state().position_us).arg(before)));
 	QVERIFY(!dj.fold());
