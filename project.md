@@ -1085,7 +1085,10 @@ controllers have. Only an arrangement chosen is written
 (`decks/arrangement`); with two decks only, those named sit where named.
 Tested in `the_decks_sit_as_the_person_arranged_them` (default grid,
 "C A B D" in one row, kept and read again, two of them in place, the
-default writing nothing); with the arrangement ignored, it fails. **Each
+default writing nothing); with the arrangement ignored, it fails. Each
+deck's side button begins with its letter ("A: left (default)"): a loaded
+deck shows its track, not its name, and seen in Xvfb arranged C A B D
+nothing said which was which. **Each
 deck's side of the crossfader, 2026-11-20** (built): a small button on
 each deck goes from its default -- A and C left, B and D right, shown as
 "left (default)" -- to left, right and thru (out of the crossfader's
@@ -1236,8 +1239,9 @@ alike.
    its fade and let go restores it. Without the hold, or without the
    automation, it fails. A started track's tile says playing from the
    moment it is started, a lead before it sounds -- as a train's next
-   does. **Not yet:** the fader drawn moving with the automation, and a
-   hand on the crossfader recorded (step 5).
+   does. **Not yet:** the fader drawn moving with the automation. (A
+   hand on the crossfader is not recorded: the crossfader is the hand's,
+   never automated, above.)
 5. Moves on the decks written back into the train. **First part built
    2026-11-20**: a fader ridden on a conducted deck -- held, moved, let
    go -- is recorded against the track's own frames (a point each 50 ms
@@ -1330,8 +1334,9 @@ alike.
    moved by either half, the two read as one value of 0 to 16383 and
    given on as a bend's, so a 14-bit pitch fader is not stepped in
    128ths (tested by feeding the controller the halves in turn; with the
-   finer half ignored, it fails). **Not yet:** a layout of slots the
-   person arranges, HID and Android MIDI, and Mixxx's
+   finer half ignored, it fails). **Not yet:** slots other than the
+   decks and their strips (effect units, a browse knob) -- the decks'
+   own are arranged and sided below -- HID and Android MIDI, and Mixxx's
    mappings (whether their JavaScript too is the holder's). A
    window manager that takes Alt-drag to move windows (many on X11) may
    take the press before snurra sees it; a second gesture may be wanted

@@ -1568,9 +1568,9 @@ void embed_test::each_deck_has_its_side_of_the_crossfader() {
 			QVERIFY(dj.load(deck, media));
 		}
 		QVERIFY(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).childKeys().filter(QStringLiteral("decks")).isEmpty());
-		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("left (default)"));
+		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("C: left (default)"));
 		for (int click = 0; click < 3; ++click) side_button(dj, 2)->click();   /* left, right, thru */
-		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("thru"));
+		QCOMPARE(side_button(dj, 2)->text(), QStringLiteral("C: thru"));
 		side_button(dj, 3)->click();   /* left */
 		dj.set_crossfader(-1);
 		QCOMPARE(mix_of(dj, 0), 1.0f);
@@ -1588,9 +1588,9 @@ void embed_test::each_deck_has_its_side_of_the_crossfader() {
 	QVERIFY(!settings.contains(QStringLiteral("decks/A/crossfader")));
 	snurra_dj again;
 	again.set_deck_count(4);
-	QCOMPARE(side_button(again, 2)->text(), QStringLiteral("thru"));
+	QCOMPARE(side_button(again, 2)->text(), QStringLiteral("C: thru"));
 	for (int click = 0; click < 3; ++click) side_button(again, 3)->click();   /* right, thru, default */
-	QCOMPARE(side_button(again, 3)->text(), QStringLiteral("right (default)"));
+	QCOMPARE(side_button(again, 3)->text(), QStringLiteral("D: right (default)"));
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/D/crossfader")));
 }
 

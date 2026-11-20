@@ -452,7 +452,11 @@ public:
 			if (side != THRU) on[side] << QString(QChar(QLatin1Char(char('A' + i))));
 			const bool chosen = i < chosen_sides.size() && !chosen_sides[i].isEmpty();
 			const QString word = side == LEFT ? snurra_dj::tr("left") : side == RIGHT ? snurra_dj::tr("right") : snurra_dj::tr("thru");
-			decks[i]->side->setText(chosen ? word : snurra_dj::tr("%1 (default)").arg(word));
+			/* The deck's letter first: a loaded deck shows its track, not
+			 * its name, and decks can be arranged in any order. */
+			const QString letter(QChar(QLatin1Char(char('A' + i))));
+			decks[i]->side->setText(chosen ? snurra_dj::tr("%1: %2").arg(letter, word)
+			                               : snurra_dj::tr("%1: %2 (default)").arg(letter, word));
 		}
 		left_side->setText(on[LEFT].join(QLatin1Char(' ')));
 		right_side->setText(on[RIGHT].join(QLatin1Char(' ')));
