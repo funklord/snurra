@@ -84,6 +84,7 @@ private slots:
 	void a_controller_learned_by_holding_moves_the_deck();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_player_unfolds_across_the_decks();
+	void a_fader_ridden_is_written_into_the_track();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
@@ -1263,6 +1264,35 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	send(1, 120);
 	QTest::qWait(100);
 	QCOMPARE(tile->level(), before);
+
+	/* A cue button: a note learned onto deck A's socket plugs the
+	 * listener in there, and out again. */
+	QCOMPARE(dj.add_listener(QStringLiteral("null")), 0);
+	QToolButton *socket = nullptr;
+	for (QToolButton *button : place->findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Listen here")) socket = button;
+	QVERIFY(socket && socket->isVisible());
+	QCOMPARE(socket->property("snurra_control").toString(), QStringLiteral("ch_1_listen"));
+	auto note = [sender, out](int number) {
+		snd_seq_event_t event;
+		snd_seq_ev_clear(&event);
+		snd_seq_ev_set_source(&event, out);
+		snd_seq_ev_set_subs(&event);
+		snd_seq_ev_set_direct(&event);
+		snd_seq_ev_set_noteon(&event, 0, number, 100);
+		snd_seq_event_output_direct(sender, &event);
+		snd_seq_ev_set_noteoff(&event, 0, number, 0);
+		snd_seq_event_output_direct(sender, &event);
+		QTest::qWait(30);
+	};
+	QTest::mousePress(socket, Qt::LeftButton, Qt::AltModifier, socket->rect().center());
+	note(48);
+	QTest::mouseRelease(socket, Qt::LeftButton, Qt::AltModifier, socket->rect().center());
+	QCOMPARE(dj.plugged(0), -1);
+	note(48);
+	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), 0, 2000);
+	note(48);
+	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), -1, 2000);
 	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
 }
 
@@ -1343,6 +1373,73 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 	QTest::qWait(700);
 	QVERIFY(heard(hz, rms));
 	QVERIFY2(rms < 1e-4, qPrintable(QStringLiteral("unplugged: %1").arg(rms)));
+}
+
+/*
+ * Moves on the decks written back (project.md sec 3f, step 5): a player
+ * of two unfolded, deck A's fader held and pulled from 100 to 50 while it
+ * plays. Let go, the ride is A's track's envelope -- ending at half --
+ * and the fader is back at 100, so the automation plays the move.
+ */
+void embed_test::a_fader_ridden_is_written_into_the_track() {
+	QTemporaryDir runtime;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.listen());
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("ride");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	for (int i = 0; i < 2; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(330 + 110 * i);
+		tone.duration_us = 6000000;
+		tone.column = i;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("2 tracks"), 3000);
+	QVERIFY(dj.unfold(0));
+	/* After the tile that held the player has gone, which it does in the
+	 * event loop: found before, it is the one found. */
+	QTest::qWait(300);
+	QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	snurra_tile *tile = place->findChild<snurra_tile *>();
+	QVERIFY(tile && tile->playing());
+	QCOMPARE(dj.loaded(0), QStringLiteral("tone:330"));
+	QSlider *level = nullptr;
+	for (QSlider *slider : place->findChildren<QSlider *>())
+		if (slider->accessibleName() == QLatin1String("Level")) level = slider;
+	QVERIFY(level);
+	emit level->sliderPressed();
+	for (int value = 100; value >= 50; value -= 5) {
+		level->setValue(value);
+		QTest::qWait(60);
+	}
+	QTest::qWait(100);
+	emit level->sliderReleased();
+	const QList<QPair<qint64, float>> envelope = tile->state().envelope;
+	QVERIFY2(envelope.size() >= 4, qPrintable(QString::number(envelope.size())));
+	QVERIFY2(envelope.size() <= snurra_deck::ENVELOPE_POINTS, qPrintable(QString::number(envelope.size())));
+	/* The ride's last point at half, then back to what was there. */
+	QVERIFY2(qAbs(envelope.at(envelope.size() - 2).second - 0.5f) < 0.06f, qPrintable(QString::number(envelope.at(envelope.size() - 2).second)));
+	QCOMPARE(envelope.last().second, 1.0f);
+	QCOMPARE(tile->level(), 100);
+	for (int i = 1; i < envelope.size(); ++i) QVERIFY(envelope[i].first > envelope[i - 1].first);
 }
 
 /*

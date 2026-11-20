@@ -1197,7 +1197,21 @@ alike.
    moment it is started, a lead before it sounds -- as a train's next
    does. **Not yet:** the fader drawn moving with the automation, and a
    hand on the crossfader recorded (step 5).
-5. Moves on the decks written back into the train.
+5. Moves on the decks written back into the train. **First part built
+   2026-11-20**: a fader ridden on a conducted deck -- held, moved, let
+   go -- is recorded against the track's own frames (a point each 50 ms
+   or each move) and, when let go, written into that track's envelope in
+   the player: the ride where it was, the envelope as it was on either
+   side, thinned to the deck's 64 points; the fader goes back where the
+   hand found it, so the automation plays the move from then on, at the
+   gains heard (the ride's level over the level found). Tested in
+   `a_fader_ridden_is_written_into_the_track` (a fader pulled from 100 to
+   50 while playing: the envelope ends its ride at half, then 1 as it
+   was, the fader back at 100; not written, it fails). **Not yet:** a
+   crossfade done by hand on the channel faders becoming the overlap, a
+   deck started by hand becoming where its track comes in, and the
+   player so edited taken back out whole (a deck pulled out takes its
+   track, with its envelope).
 6. Slots and the person's layout; controllers: MIDI in, bound to slots.
    **First part built 2026-11-20** (`midi.h`, the deck view's
    `take_controllers`, on in the player's `--dj`): MIDI in through
@@ -1254,10 +1268,14 @@ alike.
    at 440 Hz with its fader down and the crossfader all on B (1320 Hz);
    plugged into A it hears 440, moved to B 1320, unplugged nothing; a
    mirror at the deck's fader, or an old mirror left sounding, fails it.
-   **Not yet:** sockets anywhere but a deck (a player's sum, a nested
-   player's track, a window's tile), a second listener chosen on screen,
-   and a hardware cue button bound to its slot's plug (the controls'
-   names would be `ch_N_listen`).
+   A deck's socket is a control, `ch_N_listen`, so a controller's cue
+   button learned onto it is a plug with a fixed place: pressed, the
+   first listener's plug goes there, pressed again out
+   (`a_controller_learned_by_holding_moves_the_deck` learns a note onto
+   deck A's socket and plugs and unplugs with it; with the control
+   ignored, it fails). **Not yet:** sockets anywhere but a deck (a
+   player's sum, a nested player's track, a window's tile), and a second
+   listener chosen on screen.
 
 **Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
 plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which

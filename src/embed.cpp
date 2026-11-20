@@ -302,6 +302,15 @@ public:
 		std::vector<bool> started;               /* by track */
 		std::vector<int> stage;                  /* by track: 0 its fade in set, 1 its fade out */
 		std::vector<bool> held;                  /* by deck: a hand on its fader */
+		/* By deck: a fader ridden while held -- the level the hand found,
+		 * and (track frame, gain) as it moved -- written into the track's
+		 * envelope when let go (step 5). */
+		struct ride_t {
+			int track = -1;
+			int level = 100;
+			std::vector<std::pair<int64_t, float>> points;
+		};
+		std::vector<ride_t> rides;
 		QTimer *timer = nullptr;
 	};
 	std::unique_ptr<score_t> score;
@@ -680,6 +689,7 @@ bool snurra_dj_private::unfold(int deck) {
 	made->stage.assign(tracks, -1);
 	made->on_deck.assign(size_t(decks.size()), -1);
 	made->held.assign(size_t(decks.size()), false);
+	made->rides.assign(size_t(decks.size()), score_t::ride_t{});
 
 	/* Over in step: the decks start a lead from now where the player is
 	 * then, and the deck that held it fades out over the same moment. */
@@ -833,6 +843,17 @@ void snurra_dj_private::automate(int track, int64_t time) {
 void snurra_dj_private::conduct() {
 	if (!score || !score->playing) return;
 	const qint64 now = snurra_clock_us();
+	/* A ride, as it goes: a point each 50 ms or each move of the fader. */
+	for (int deck = 0; deck < decks.size() && deck < int(score->rides.size()); ++deck) {
+		score_t::ride_t &ride = score->rides[size_t(deck)];
+		snurra_tile *tile = decks[deck]->tile;
+		if (!score->held[size_t(deck)] || ride.track < 0 || !tile || score->on_deck[size_t(deck)] != ride.track) continue;
+		const int64_t frame = tile->frame_now();
+		const float gain = ride.level > 0 ? std::clamp(float(tile->level()) / float(ride.level), 0.0f, 1.0f) : 0.0f;
+		if (ride.points.empty() || frame - ride.points.back().first >= snurra_us_to_frames(50000, engine->rate())
+		    || gain != ride.points.back().second)
+			if (ride.points.empty() || frame > ride.points.back().first) ride.points.emplace_back(frame, gain);
+	}
 	const int64_t time = score_time(now);
 	const int64_t lead = snurra_us_to_frames(1500000, engine->rate());
 	bool left = false;
@@ -875,12 +896,57 @@ void snurra_dj_private::hold(int deck, bool held) {
 	snurra_tile *tile = decks[deck]->tile;
 	const int track = score->on_deck[size_t(deck)];
 	if (!tile || track < 0) return;
+	score_t::ride_t &ride = score->rides[size_t(deck)];
 	if (held) {
 		tile->deck()->fade(0, 0, 1, 1);
 		tile->deck()->set_envelope({});
+		ride = score_t::ride_t{};
+		ride.track = track;
+		ride.level = tile->level();
 		return;
 	}
-	tile->set_envelope(tile->state().envelope);
+	/* Let go: the ride is the track's envelope there, the rest as it was,
+	 * and the fader back where the hand found it -- so the automation
+	 * plays the move from now on (sec 3f, step 5). */
+	if (ride.track == track && ride.points.size() >= 2) {
+		const int rate = engine->rate();
+		const QList<QPair<qint64, float>> was = score->states[size_t(track)].envelope;
+		auto gain_at = [&was](qint64 us) -> float {
+			if (was.isEmpty()) return 1.0f;
+			if (us <= was.first().first) return was.first().second;
+			if (us >= was.last().first) return was.last().second;
+			for (int i = 0; i + 1 < was.size(); ++i)
+				if (us < was[i + 1].first) {
+					const double t = double(us - was[i].first) / double(std::max<qint64>(1, was[i + 1].first - was[i].first));
+					return float(was[i].second + (was[i + 1].second - was[i].second) * t);
+				}
+			return was.last().second;
+		};
+		const qint64 first = qint64(snurra_frames_to_us(ride.points.front().first, rate));
+		const qint64 last = qint64(snurra_frames_to_us(ride.points.back().first, rate));
+		QList<QPair<qint64, float>> made;
+		for (const auto &point : was)
+			if (point.first < first) made << point;
+		if (first > 0) made << qMakePair(first - 1000, gain_at(first - 1000));
+		/* Room for the ride within the deck's points: every n-th, the
+		 * last always. */
+		const int room = std::max(2, snurra_deck::ENVELOPE_POINTS - int(made.size()) - 2
+		                                     - int(std::count_if(was.begin(), was.end(), [last](const auto &p) { return p.first > last; })));
+		const size_t step = std::max<size_t>(1, (ride.points.size() + size_t(room) - 1) / size_t(room));
+		for (size_t i = 0; i < ride.points.size(); i += step)
+			made << qMakePair(qint64(snurra_frames_to_us(ride.points[i].first, rate)), ride.points[i].second);
+		if ((ride.points.size() - 1) % step != 0)
+			made << qMakePair(last, ride.points.back().second);
+		made << qMakePair(last + 1000, gain_at(last + 1000));
+		for (const auto &point : was)
+			if (point.first > last + 1000) made << point;
+		score->states[size_t(track)].envelope = made;
+		tile->set_level(ride.level);
+		tile->set_envelope(made);
+	} else {
+		tile->set_envelope(tile->state().envelope);
+	}
+	ride = score_t::ride_t{};
 	score->stage[size_t(track)] = -1;
 	automate(track, score_time(snurra_clock_us()));
 }
@@ -1099,6 +1165,9 @@ void snurra_dj_private::name_controls(int deck) {
 		else if (said == QLatin1String("EQ")) control_widget(widget, slot + QStringLiteral("eq"));
 		else if (said == QLatin1String("Play") || said == QLatin1String("Pause")) control_widget(widget, slot + QStringLiteral("play"));
 	}
+	/* The deck's own socket: a cue button on a controller is a plug with
+	 * a fixed place (sec 3f). */
+	control_widget(decks[deck]->listen, slot + QStringLiteral("listen"));
 }
 
 void snurra_dj_private::start_learning(const QString &control) {
@@ -1154,6 +1223,12 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 	const QString what = control.section(QLatin1Char('_'), 2);
 	snurra_tile *tile = deck >= 0 && deck < decks.size() ? decks[deck]->tile : nullptr;
 	if (!tile) return;
+	if (what == QLatin1String("listen")) {
+		if (off || listeners.empty()) return;
+		const int chosen = std::min(chosen_listener, int(listeners.size()) - 1);
+		plug(chosen, listeners[size_t(chosen)]->deck == deck ? -1 : deck);
+		return;
+	}
 	if (what == QLatin1String("play") || what == QLatin1String("cue") || what == QLatin1String("sync")) {
 		if (off) return;   /* on the press, not the release */
 		if (what == QLatin1String("play")) tile->request_playing(!tile->playing());
