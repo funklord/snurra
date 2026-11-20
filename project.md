@@ -1054,6 +1054,27 @@ example.")
   (about 64, or 1 and 127), a 14-bit pair (CC n and n + 32), pitch bend.
   A control in no slot offers to make one. The gesture is the same for
   MIDI, HID and a key.
+- **Named on both ends, so a mapping reads as text** (the holder,
+  2026-11-20: "we wanna be able to name the controls on both ends, so
+  they can be reasoned about in text as well ch_1_gain -> ch_a_gain etc.
+  So they are readable instead of just numbers (which we do allow) but
+  we allow (re-)naming, the name is just an alias for controller
+  index"). A hardware control has its index -- port, MIDI channel,
+  message, number -- and the person may give it a name, an alias of that
+  index: `ch_a_gain`. snurra's receiving controls are named from their
+  slots, `ch_1_gain`, renamable the same way. A binding is one line,
+  `ch_a_gain -> ch_1_gain`, either side written by name or by number.
+- **A name belongs to its player's process.** A second player -- an
+  emergency one, a prepared mix for when something technical or human
+  goes wrong, its play and stop on a button of their own -- is a process
+  of its own, not a prefix in the first's names (the holder, correcting
+  `main_*` and `emergency_*` the same day: "that player is a separate
+  process ... they can't live in the same namespace"). Each player is
+  known by its name on the wire (sec 3b's sockets), its controls named
+  within it, and a binding says which player it reaches. How a
+  controller reaches a second process -- each subscribing to the device,
+  which ALSA's sequencer allows, or one passing it on over the wire -- is
+  settled with step 6.
 
 **2 or 4 decks**, a choice in the view: two layouts of slots. The phone gets the cut-down one:
 two decks, the controls that fit (sec 3b's fold-cover measures stand).
