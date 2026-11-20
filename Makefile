@@ -278,8 +278,13 @@ $(MK_BUILD_DIR)/moc_%.cpp: $(SNURRA_INCLUDE)/snurra/%.h
 	$(MOC) $< -o $@
 
 # The player's own, beside the library's lists: the estate (app/) and the
-# fuzznet calls it is built on, compiled as C -- as app/fuzznet.pri does.
-MK_FZN_SRCS := $(wildcard fuzznet/local/*.c) fuzznet/hex/hex.c fuzznet/constant_time/constant_time.c
+# fuzznet calls it is built on, compiled as C -- the same files as
+# app/fuzznet.pri names. The wire code joined that list with the pin at
+# f1a6bbd (2026-11-18) and not this one, and nothing built from this list
+# linked until 2026-11-20: keep the two together.
+MK_FZN_SRCS := $(wildcard fuzznet/local/*.c) fuzznet/hex/hex.c fuzznet/constant_time/constant_time.c \
+               fuzznet/wire/status_message.c fuzznet/wire/generated/situ.c \
+               fuzznet/wire/generated/files_local.c fuzznet/wire/generated/status.c
 MK_FZN_OBJS := $(patsubst fuzznet/%.c,$(MK_BUILD_DIR)/fzn/%.o,$(MK_FZN_SRCS))
 $(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
 	@mkdir -p $(@D)

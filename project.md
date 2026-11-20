@@ -62,7 +62,10 @@ and everything above it knows nothing of SFTP or fuzznet.
   2026-11-12: `snurra.pri` compiles the library into the consumer, moc
   included, and `snurra.mk` derives its lists from the tree; `make
   check-mk` builds the player from the `.mk` alone and runs the tests
-  against it ($SNURRA_BIN). Headers are in `include/snurra/` and included
+  against it ($SNURRA_BIN). `make test` does not run it, so it stopped
+  linking unseen when the fuzznet pin brought wire code (f1a6bbd,
+  2026-11-18) into `app/fuzznet.pri` and not the Makefile's list; put
+  right 2026-11-20. Run it after moving the pin. Headers are in `include/snurra/` and included
   as `"snurra/deck.h"`, measured against the consumers first: BeerSSH has
   a `wire.h` and fuzzypickles a `clock.h`, which a bare `src/` on their
   include path would have made a matter of include order.
