@@ -130,6 +130,8 @@ public:
 	/* Track frames a frame out (1: as recorded), and key lock (sec 4). */
 	void set_tempo(float tempo);
 	float tempo() const { return m_state.tempo; }
+	/* How far the tempo goes either way, as a fraction: 0.16. */
+	static constexpr double tempo_range() { return TEMPO_RANGE / 1000.0; }
 	void set_key_lock(bool on);
 	/* The key moved on its own, in semitones (deck.h); its dial follows. */
 	void set_key_shift(int semitones);

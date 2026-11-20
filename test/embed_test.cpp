@@ -29,11 +29,14 @@
 #include <QScopeGuard>
 #include <QtTest>
 
+#include <alsa/asoundlib.h>
+
 #include <memory>
 
 #include "snurra/clock.h"
 #include "snurra/engine.h"
 #include "snurra/embed.h"
+#include "snurra/midi.h"
 #include "snurra/wire.h"
 #include "snurra/node.h"
 #include "snurra/beats.h"
@@ -74,6 +77,8 @@ private slots:
 	void the_tempo_reaches_16_and_snaps_to_the_middle();
 	void a_dark_desktop_is_found_where_it_is_written();
 	void a_jump_while_playing_lands_exactly_its_step_on();
+	void the_control_moved_is_told_from_the_noise();
+	void a_controller_learned_by_holding_moves_the_deck();
 	void a_player_unfolds_across_the_decks();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
@@ -1100,6 +1105,161 @@ void embed_test::a_jump_while_playing_lands_exactly_its_step_on() {
 	const double deck_off_ms = double(deck->frame_now() - deck_expected) * 1000 / deck_rate;
 	qInfo("a deck after the jump: %.1f ms off where it would be", deck_off_ms);
 	QVERIFY2(std::abs(deck_off_ms) < 5, qPrintable(QStringLiteral("a deck %1 ms off its step").arg(deck_off_ms)));
+}
+
+/*
+ * Learning which control the hand moves (project.md sec 3f): a pot that
+ * chatters untouched is set aside, the knob turned is bound and called
+ * absolute; a note is a button; an encoder stepping about 64 relative; a
+ * controller with its partner 32 above one fine control; two knobs at
+ * once, or nothing, bind nothing and say so -- and only at the end.
+ */
+void embed_test::the_control_moved_is_told_from_the_noise() {
+	qint64 now = 1000000000;
+	auto event = [&now](int number, int value, snurra_midi_event::kind_t kind = snurra_midi_event::cc) {
+		snurra_midi_event made;
+		made.port = QStringLiteral("Controller:Port 1");
+		made.number = number;
+		made.value = value;
+		made.kind = kind;
+		made.at_us = (now += 10000);
+		return made;
+	};
+	snurra_midi_learn learn;
+	for (int i = 0; i < 30; ++i) learn.see(event(1, 40 + (i % 3) * 7));   /* a worn pot, untouched, wandering 14 */
+	learn.start(now);
+	QCOMPARE(learn.decide(false).state, snurra_midi_learn::verdict::waiting);
+	for (int i = 0; i < 10; ++i) {
+		learn.see(event(1, 40 + (i % 3) * 7));
+		learn.see(event(7, i * 8));
+	}
+	snurra_midi_learn::verdict found = learn.decide(false);
+	QCOMPARE(found.state, snurra_midi_learn::verdict::clear);
+	QCOMPARE(found.control, QStringLiteral("Controller:Port 1/ch1/cc7"));
+	QCOMPARE(found.kind, snurra_control_kind::absolute);
+	learn.stop();
+
+	learn.start(now);
+	learn.see(event(36, 100, snurra_midi_event::note_on));
+	found = learn.decide(false);
+	QCOMPARE(found.kind, snurra_control_kind::button);
+	QCOMPARE(found.control, QStringLiteral("Controller:Port 1/ch1/note36"));
+	learn.stop();
+
+	learn.start(now);
+	for (int i = 0; i < 6; ++i) learn.see(event(20, i % 2 ? 65 : 63));
+	QCOMPARE(learn.decide(false).kind, snurra_control_kind::relative);
+	learn.stop();
+
+	learn.start(now);
+	for (int i = 0; i < 8; ++i) {
+		learn.see(event(2, i * 15));
+		learn.see(event(34, (i * 37) % 128));
+	}
+	found = learn.decide(false);
+	QCOMPARE(found.kind, snurra_control_kind::fine);
+	QCOMPARE(found.control, QStringLiteral("Controller:Port 1/ch1/cc2"));
+	learn.stop();
+
+	learn.start(now);
+	for (int i = 0; i < 8; ++i) {
+		learn.see(event(7, i * 15));
+		learn.see(event(10, 127 - i * 15));
+	}
+	QCOMPARE(learn.decide(false).state, snurra_midi_learn::verdict::waiting);
+	QCOMPARE(learn.decide(true).state, snurra_midi_learn::verdict::unsure);
+	learn.stop();
+	learn.start(now);
+	QCOMPARE(learn.decide(true).state, snurra_midi_learn::verdict::unsure);
+	learn.stop();
+
+	/* The bindings as text, a name the person gave read back through it. */
+	snurra_bindings bindings;
+	bindings.set_alias(QStringLiteral("Controller:Port 1/ch1/cc7"), QStringLiteral("ch_a_gain"));
+	bindings.bind(QStringLiteral("Controller:Port 1/ch1/cc7"), QStringLiteral("ch_1_level"), snurra_control_kind::absolute);
+	bindings.bind(QStringLiteral("Controller:Port 1/ch1/note36"), QStringLiteral("ch_1_play"), snurra_control_kind::button);
+	const QStringList text = bindings.lines();
+	QVERIFY2(text.contains(QStringLiteral("ch_a_gain -> ch_1_level (absolute)")), qPrintable(text.join(QLatin1Char('|'))));
+	snurra_bindings again;
+	again.set_alias(QStringLiteral("Controller:Port 1/ch1/cc7"), QStringLiteral("ch_a_gain"));
+	QVERIFY(again.read(text));
+	snurra_control_kind kind = snurra_control_kind::absolute;
+	QCOMPARE(again.control_for(QStringLiteral("Controller:Port 1/ch1/note36"), &kind), QStringLiteral("ch_1_play"));
+	QCOMPARE(kind, snurra_control_kind::button);
+	QCOMPARE(again.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")), QStringLiteral("ch_1_level"));
+	QVERIFY(!again.read({ QStringLiteral("not a binding") }));
+	/* Bound again elsewhere, a control leaves its old hardware control. */
+	again.bind(QStringLiteral("Controller:Port 1/ch1/cc8"), QStringLiteral("ch_1_level"), snurra_control_kind::absolute);
+	QVERIFY(again.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")).isEmpty());
+}
+
+/*
+ * The whole way, through ALSA's sequencer (skipped without one): a
+ * sender of the test's own, deck A's level held with Alt while a worn pot
+ * chatters and a fader moves -- the fader is bound, and then moves the
+ * level; the pot moves nothing. The binding is kept in the settings.
+ */
+void embed_test::a_controller_learned_by_holding_moves_the_deck() {
+	snd_seq_t *sender = nullptr;
+	if (snd_seq_open(&sender, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) QSKIP("no ALSA sequencer");
+	auto close_sender = qScopeGuard([sender] { snd_seq_close(sender); });
+	snd_seq_set_client_name(sender, "snurra test controller");
+	/* Not exported: snurra connects to it only as told, so no event comes
+	 * twice. */
+	const int out = snd_seq_create_simple_port(sender, "fader", SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_NO_EXPORT,
+	                                           SND_SEQ_PORT_TYPE_MIDI_GENERIC);
+	QVERIFY(out >= 0);
+
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QVERIFY(dj.take_controllers());
+	snurra_midi_in *in = dj.findChild<snurra_midi_in *>();
+	QVERIFY(in);
+	QVERIFY(snd_seq_connect_to(sender, out, in->client(), in->port()) >= 0);
+	auto send = [sender, out](int number, int value) {
+		snd_seq_event_t event;
+		snd_seq_ev_clear(&event);
+		snd_seq_ev_set_source(&event, out);
+		snd_seq_ev_set_subs(&event);
+		snd_seq_ev_set_direct(&event);
+		snd_seq_ev_set_controller(&event, 0, number, value);
+		snd_seq_event_output_direct(sender, &event);
+		QTest::qWait(10);
+	};
+	QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	snurra_tile *tile = place->findChild<snurra_tile *>();
+	QSlider *level = nullptr;
+	for (QSlider *slider : place->findChildren<QSlider *>())
+		if (slider->accessibleName() == QLatin1String("Level")) level = slider;
+	QVERIFY(level);
+	QCOMPARE(level->property("snurra_control").toString(), QStringLiteral("ch_1_level"));
+
+	for (int i = 0; i < 20; ++i) send(1, 40 + (i % 3) * 7);   /* the worn pot, wandering 14 */
+	QTest::mousePress(level, Qt::LeftButton, Qt::AltModifier, level->rect().center());
+	for (int i = 0; i < 12; ++i) {
+		send(1, 40 + (i % 3) * 7);
+		send(7, 10 + i * 8);
+	}
+	QTest::mouseRelease(level, Qt::LeftButton, Qt::AltModifier, level->rect().center());
+	snurra_bindings kept;
+	kept.load();
+	const QString fader = QStringLiteral("snurra test controller:fader/ch1/cc7");
+	QVERIFY2(kept.control_for(fader) == QLatin1String("ch_1_level"), qPrintable(kept.lines().join(QLatin1Char('|'))));
+	QVERIFY(kept.control_for(QStringLiteral("snurra test controller:fader/ch1/cc1")).isEmpty());
+
+	send(7, 32);
+	QTRY_COMPARE_WITH_TIMEOUT(tile->level(), 25, 2000);
+	const int before = tile->level();
+	send(1, 120);
+	QTest::qWait(100);
+	QCOMPARE(tile->level(), before);
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
 }
 
 /*

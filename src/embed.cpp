@@ -8,6 +8,9 @@
 #include <QHash>
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QToolTip>
+#include <QCursor>
+#include <QMouseEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
@@ -29,6 +32,7 @@
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/library.h"
+#include "snurra/midi.h"
 #include "snurra/theme.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
@@ -291,6 +295,20 @@ public:
 		QTimer *timer = nullptr;
 	};
 	std::unique_ptr<score_t> score;
+
+	/* ---- controllers (sec 3f, step 6) ---- */
+	snurra_midi_in *midi = nullptr;
+	snurra_bindings bindings;
+	snurra_midi_learn learn;
+	QString learning;            /* the control the hand holds, while learning */
+	QTimer *learn_timer = nullptr;
+	QObject *learn_filter = nullptr;
+	void name_controls(int deck);
+	void control_widget(QWidget *widget, const QString &name);
+	void received(const snurra_midi_event &event);
+	void apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event);
+	void start_learning(const QString &control);
+	void finish_learning(bool final);
 	bool unfold(int deck);
 	void end_score();
 	int64_t score_time(qint64 us) const;
@@ -979,6 +997,171 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 		if (server && !q->window()->frameGeometry().contains(global)) release(deck, global);
 	});
 	apply_crossfader();
+	name_controls(deck);
+}
+
+/*
+ * Controllers (project.md sec 3f, step 6). The deck view's controls are
+ * named by their slot -- ch_1_play ... ch_4_eq_high, crossfader -- and a
+ * binding moves one from a hardware control. Alt held with the pointer
+ * pressed on a control listens; the one hardware control moved clearly
+ * binds to it (snurra_midi_learn), and nothing binds while unsure.
+ */
+namespace {
+
+class event_hook : public QObject {
+public:
+	explicit event_hook(std::function<bool(QObject *, QEvent *)> hook, QObject *parent) : QObject(parent), m_hook(std::move(hook)) {}
+	bool eventFilter(QObject *watched, QEvent *event) override { return m_hook(watched, event); }
+
+private:
+	std::function<bool(QObject *, QEvent *)> m_hook;
+};
+
+const char *const CONTROL_PROPERTY = "snurra_control";
+
+}   // namespace
+
+void snurra_dj_private::control_widget(QWidget *widget, const QString &name) {
+	if (!widget) return;
+	widget->setProperty(CONTROL_PROPERTY, name);
+	if (!learn_filter) {
+		learn_filter = new event_hook(
+		        [this](QObject *watched, QEvent *event) {
+			        QWidget *widget = qobject_cast<QWidget *>(watched);
+			        const QString name = widget ? widget->property(CONTROL_PROPERTY).toString() : QString();
+			        if (name.isEmpty() || !midi) return false;
+			        if (event->type() == QEvent::MouseButtonPress
+			            && (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier)) {
+				        QString control = name;
+				        /* The EQ is one line over three bands: the band under the hand. */
+				        if (control.endsWith(QLatin1String("_eq"))) {
+					        const int third = int(3 * static_cast<QMouseEvent *>(event)->position().x() / std::max(1, widget->width()));
+					        control += third <= 0 ? QStringLiteral("_low") : third == 1 ? QStringLiteral("_mid") : QStringLiteral("_high");
+				        }
+				        start_learning(control);
+				        return true;   /* a learn, not a move of the control */
+			        }
+			        if (event->type() == QEvent::MouseButtonRelease && !learning.isEmpty()) {
+				        finish_learning(true);
+				        return true;
+			        }
+			        return false;
+		        },
+		        q);
+	}
+	widget->installEventFilter(learn_filter);
+}
+
+void snurra_dj_private::name_controls(int deck) {
+	snurra_tile *tile = deck < decks.size() ? decks[deck]->tile : nullptr;
+	if (!tile) return;
+	const QString slot = QStringLiteral("ch_%1_").arg(deck + 1);
+	/* By what each says it is, which names stay put however a deck looks. */
+	for (QWidget *widget : tile->findChildren<QWidget *>()) {
+		const QString said = widget->accessibleName();
+		if (said == QLatin1String("Level")) control_widget(widget, slot + QStringLiteral("level"));
+		else if (said == QLatin1String("Tempo")) control_widget(widget, slot + QStringLiteral("tempo"));
+		else if (said == QLatin1String("Cue")) control_widget(widget, slot + QStringLiteral("cue"));
+		else if (said == QLatin1String("Sync")) control_widget(widget, slot + QStringLiteral("sync"));
+		else if (said == QLatin1String("EQ")) control_widget(widget, slot + QStringLiteral("eq"));
+		else if (said == QLatin1String("Play") || said == QLatin1String("Pause")) control_widget(widget, slot + QStringLiteral("play"));
+	}
+}
+
+void snurra_dj_private::start_learning(const QString &control) {
+	learning = control;
+	learn.start(snurra_clock_us());
+	if (!learn_timer) {
+		learn_timer = new QTimer(q);
+		learn_timer->setInterval(20);
+		QObject::connect(learn_timer, &QTimer::timeout, q, [this] { finish_learning(false); });
+	}
+	learn_timer->start();
+	QToolTip::showText(QCursor::pos(), snurra_dj::tr("Move the control for %1").arg(control), q);
+}
+
+void snurra_dj_private::finish_learning(bool final) {
+	if (learning.isEmpty()) return;
+	const snurra_midi_learn::verdict found = learn.decide(final);
+	if (found.state == snurra_midi_learn::verdict::waiting) return;
+	if (found.state == snurra_midi_learn::verdict::clear) {
+		bindings.bind(found.control, learning, found.kind);
+		bindings.save();
+		QToolTip::showText(QCursor::pos(), QStringLiteral("%1 -> %2").arg(bindings.name_of(found.control), learning), q);
+	} else {
+		QToolTip::showText(QCursor::pos(), found.why, q);
+	}
+	learning.clear();
+	learn.stop();
+	if (learn_timer) learn_timer->stop();
+}
+
+void snurra_dj_private::received(const snurra_midi_event &event) {
+	learn.see(event);
+	if (!learning.isEmpty()) return;   /* while learning, nothing moves */
+	snurra_control_kind kind = snurra_control_kind::absolute;
+	const QString control = bindings.control_for(event.control(), &kind);
+	if (!control.isEmpty()) apply(control, kind, event);
+}
+
+void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event) {
+	/* A press, a position 0 to 1, or a step, by what the control is. */
+	const bool off = event.kind == snurra_midi_event::note_off || (event.kind == snurra_midi_event::cc && event.value < 64);
+	double at = event.kind == snurra_midi_event::bend ? event.value / 16383.0 : event.value / 127.0;
+	int step = 0;
+	if (kind == snurra_control_kind::relative) step = event.value >= 64 ? event.value - (event.value >= 96 ? 128 : 64) : event.value;
+	const bool relative = kind == snurra_control_kind::relative;
+	at = std::clamp(at, 0.0, 1.0);
+	if (control == QLatin1String("crossfader")) {
+		q->set_crossfader(relative ? position + step / 64.0 : at * 2 - 1);
+		return;
+	}
+	if (!control.startsWith(QLatin1String("ch_"))) return;
+	const int deck = control.section(QLatin1Char('_'), 1, 1).toInt() - 1;
+	const QString what = control.section(QLatin1Char('_'), 2);
+	snurra_tile *tile = deck >= 0 && deck < decks.size() ? decks[deck]->tile : nullptr;
+	if (!tile) return;
+	if (what == QLatin1String("play") || what == QLatin1String("cue") || what == QLatin1String("sync")) {
+		if (off) return;   /* on the press, not the release */
+		if (what == QLatin1String("play")) tile->request_playing(!tile->playing());
+		else if (what == QLatin1String("cue")) tile->cue();
+		else emit tile->sync_requested(tile);
+		return;
+	}
+	if (what == QLatin1String("level")) {
+		tile->set_level(relative ? tile->level() + step : int(std::lround(at * 100)));
+	} else if (what == QLatin1String("tempo")) {
+		/* The deck's own range, +-16 %, the middle 1. */
+		const double range = snurra_tile::tempo_range();
+		tile->set_tempo(float(relative ? tile->tempo() + step * 0.001 : 1 + (at * 2 - 1) * range));
+	} else if (what.startsWith(QLatin1String("eq_"))) {
+		const int band = what == QLatin1String("eq_low") ? 0 : what == QLatin1String("eq_mid") ? 1 : 2;
+		float db[3] = { tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2] };
+		if (relative) {
+			db[band] = std::clamp((db[band] <= SNURRA_EQ_KILL ? -24.0f : db[band]) + 0.5f * float(step), -24.0f, 6.0f);
+		} else {
+			/* A DJ mixer's knob: all the way down kills, the middle is
+			 * flat, all the way up +6 dB. */
+			db[band] = at <= 0.0 ? SNURRA_EQ_KILL : at <= 0.5 ? float(-24.0 * (1 - 2 * at)) : float(12.0 * (at - 0.5));
+		}
+		tile->set_eq(db[0], db[1], db[2]);
+	}
+}
+
+bool snurra_dj::take_controllers() {
+	if (d->midi) return true;
+	d->midi = new snurra_midi_in(this);
+	if (!d->midi->open()) {
+		delete d->midi;
+		d->midi = nullptr;
+		return false;
+	}
+	d->bindings.load();
+	connect(d->midi, &snurra_midi_in::received, this, [this](const snurra_midi_event &event) { d->received(event); });
+	d->control_widget(d->crossfader, QStringLiteral("crossfader"));
+	for (int i = 0; i < d->decks.size(); ++i) d->name_controls(i);
+	return true;
 }
 
 QString snurra_dj::loaded(int deck) const {

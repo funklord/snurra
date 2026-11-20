@@ -181,6 +181,9 @@ int main(int argc, char *argv[]) {
 		/* On the wire (project.md sec 3f): windows of tiles hand theirs onto
 		 * its decks, and its decks out into windows. */
 		player->listen();
+		/* MIDI controllers, bound as the person chose; Alt held on a
+		 * control learns one (project.md sec 3f). */
+		player->take_controllers();
 		const QStringList given = parser.positionalArguments();
 		for (int deck = 0; deck < player->deck_count() && deck < given.size(); ++deck) {
 			snurra_media media;

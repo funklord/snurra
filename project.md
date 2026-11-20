@@ -1189,6 +1189,41 @@ alike.
    hand on the crossfader recorded (step 5).
 5. Moves on the decks written back into the train.
 6. Slots and the person's layout; controllers: MIDI in, bound to slots.
+   **First part built 2026-11-20** (`midi.h`, the deck view's
+   `take_controllers`, on in the player's `--dj`): MIDI in through
+   ALSA's sequencer -- a client "snurra" connected from every port that
+   sends, and from each that appears (the system's announcements), clock
+   and active sensing never read. The deck view's controls are named by
+   slot, `ch_1_play` ... `ch_4_eq_high` and `crossfader`, each widget
+   found by what it says it is. A hardware control is named by its index,
+   "<client:port>/ch<n>/cc<n>" (or `note<n>`, `bend`), by the port's name
+   so a replug keeps it. **Learning:** Alt held with the pointer pressed
+   on a control listens (the EQ's band is the third under the pointer);
+   what moved in the second before is chatter and set aside unless it now
+   moves far more; a binding is made as soon as exactly one control moved
+   plainly -- a note, or a run of four or more over 12 of 127 -- and on
+   letting go, two or none bind nothing and say so. The same movement says
+   what it is: button, absolute, relative (about 64, or 1 and 127), fine
+   (a controller and its partner 32 above), bend. A binding is a line,
+   `ch_a_gain -> ch_1_level (absolute)`, either side an alias or an
+   index; only bindings and names the person made are written
+   (`controllers/` in the settings). Applied: a button on its press (play,
+   cue, sync), a level 0 to 100, a tempo over the deck's +-16 %, an EQ
+   knob killing at its bottom, flat at its middle, +6 dB at its top, a
+   relative step adding. Tested pure (`the_control_moved_is_told_from_the_noise`)
+   and the whole way through the sequencer
+   (`a_controller_learned_by_holding_moves_the_deck`: a sender of the
+   test's own, deck A's level held with Alt while a pot wandering 14 of
+   127 chatters and a fader moves -- the fader bound and then moving the
+   level, the pot moving nothing); without the chatter rule both fail,
+   the second binding the pot. **Not yet:** renaming snurra's controls,
+   a layout of slots the person arranges, a 14-bit control's fine half
+   read (its coarse half moves it), HID and Android MIDI, a second
+   player's controls (the emergency player's, its own process), and
+   Mixxx's mappings (whether their JavaScript too is the holder's). A
+   window manager that takes Alt-drag to move windows (many on X11) may
+   take the press before snurra sees it; a second gesture may be wanted
+   there.
 
 7. Taps and listeners: a listener's output, the sockets, the plug moved.
 

@@ -157,6 +157,14 @@ public:
 	 * four decks at once. A tune loaded by hand ends it. */
 	bool unfold(int deck);
 
+	/* (5) Controllers (project.md sec 3f): MIDI in, the decks' controls
+	 * named ch_1_play ... ch_4_eq_high and crossfader, bound as the
+	 * person chose (the settings' `controllers/`), and a binding learned
+	 * by holding Alt and the pointer on a control and moving the hardware
+	 * control meant. False where there is no MIDI (not Linux, no
+	 * sequencer). */
+	bool take_controllers();
+
 	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
 	void set_crossfader(double position);
 	double crossfader() const;
