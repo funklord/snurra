@@ -963,6 +963,8 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		install(deck, tile, snurra_title_of(state.source));
 		score->on_deck[size_t(deck)] = track;
 		decks[deck]->fold->show();
+		/* The automation seen moving under the hand's fader. */
+		tile->set_show_heard(true);
 		/* Its play and seek are the player's, not its own. */
 		tile->set_grouped(true);
 		QObject::connect(tile, &snurra_tile::play_requested, q, [this, deck](snurra_tile *, bool playing) {

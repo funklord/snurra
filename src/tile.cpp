@@ -23,6 +23,7 @@
 #include <QSlider>
 #include <QStyle>
 #include <QLibrary>
+#include <QProgressBar>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -1034,6 +1035,14 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	loud->addWidget(speaker);
 	loud->addWidget(m_level, 1);
 	strip->addLayout(loud);
+	m_heard = new QProgressBar(m_controls);
+	m_heard->setAccessibleName(tr("Heard"));
+	m_heard->setToolTip(tr("What is heard of it: the level with the automation's fades and envelope"));
+	m_heard->setRange(0, 100);
+	m_heard->setTextVisible(false);
+	m_heard->setMaximumHeight(fontMetrics().height() / 4 + 2);
+	m_heard->hide();
+	strip->addWidget(m_heard);
 	/* The tempo, +-16 % in tenths of a per cent -- the holder's 12 to 16,
 	 * "8 % was never enough"; Mixxx offers 16 -- and key lock: off, as a
 	 * turntable, the pitch moves with the tempo; on, it stays (sec 4).
@@ -1924,6 +1933,10 @@ void snurra_tile::set_listen_available(bool available) {
 	if (m_listen) m_listen->setVisible(available);
 }
 
+void snurra_tile::set_show_heard(bool show) {
+	if (m_heard) m_heard->setVisible(show);
+}
+
 void snurra_tile::set_listened(bool listened) {
 	if (!m_listen) return;
 	m_listen->blockSignals(true);
@@ -2191,6 +2204,7 @@ void snurra_tile::follow_player_beat() {
 
 void snurra_tile::tick() {
 	follow_player_beat();
+	if (m_heard && m_heard->isVisible()) m_heard->setValue(int(std::lround(100 * std::min(1.0f, m_deck->heard_gain()))));
 	/* The length once the source has said it; a dummy until then. */
 	const int64_t length = m_deck->length();
 	if (length > 0 && frames_to_us(length, m_deck->rate()) != m_state.duration_us) {

@@ -576,6 +576,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 	}
 	const int64_t first = m_speed ? int64_t(std::floor(m_stretch.position())) : m_position;
 	int64_t advanced = 0;
+	float last_gain = 0;
 	for (int i = 0; i < frames; ++i) {
 		if (m_slew < target) m_slew = std::min(target, m_slew + step);
 		else if (m_slew > target) m_slew = std::max(target, m_slew - step);
@@ -617,6 +618,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		/* Rising over a cut's tail, as it falls (keep_tail). */
 		if (m_tail_at < m_tail_len && i >= m_tail_from)
 			gain *= std::min(1.0f, float(m_tail_at + (i - m_tail_from)) / float(m_tail_len));
+		last_gain = gain;
 		if (eq_asked || m_eq_wet > 0) {
 			m_eq_wet += std::clamp((eq_asked ? 1.0f : 0.0f) - m_eq_wet, -eq_step, eq_step);
 			for (int band = 0; band < 3; ++band)
@@ -648,6 +650,7 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		m_tail_from = 0;
 	}
 
+	m_heard_gain.store(advanced > 0 ? last_gain : 0.0f, std::memory_order_relaxed);
 	m_published_sequence.fetch_add(1, std::memory_order_acq_rel);
 	m_published_frame.store(first, std::memory_order_relaxed);
 	m_published_us.store(present_us, std::memory_order_relaxed);

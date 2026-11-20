@@ -170,6 +170,10 @@ public:
 	 * sec 3f): its "listen" socket shown; and whether the plug is in. */
 	void set_listen_available(bool available);
 	void set_listened(bool listened);
+	/* A meter under its level of what is heard of it -- the automation's
+	 * fades and envelope on top of the hand's level -- where a player
+	 * drives it (sec 3f: the fader seen moving with the automation). */
+	void set_show_heard(bool show);
 	/* Its film's picture closed when it is found, though the controls are
 	 * open (the DJ player's decks); its button opens it. Asked before the
 	 * picture is found, as right after the tile is made. */
@@ -346,6 +350,7 @@ private:
 	QPair<double, double> m_crossfade{ 0, 0 };   /* a train's: in and out, of the track */
 	QToolButton *m_play;
 	QToolButton *m_listen = nullptr;
+	class QProgressBar *m_heard = nullptr;
 	QSlider *m_position;
 	QSlider *m_level;
 	QSlider *m_tempo = nullptr;

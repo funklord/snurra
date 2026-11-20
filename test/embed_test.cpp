@@ -32,6 +32,7 @@
 #include <cstring>
 #include <QComboBox>
 #include <QGridLayout>
+#include <QProgressBar>
 #include <QtTest>
 
 #include <alsa/asoundlib.h>
@@ -2026,6 +2027,15 @@ void embed_test::a_player_unfolds_across_the_decks() {
 	         qPrintable(QStringLiteral("B at %1 us").arg(tile_of(1)->state().position_us)));
 	QCOMPARE(tile_of(1)->deck()->fade_from(), 0.0f);
 	QCOMPARE(tile_of(0)->deck()->fade_to(), 0.0f);
+	/* And seen: each conducted deck's meter shows what is heard of it --
+	 * B part of the way in, A part of the way out. */
+	auto meter = [](snurra_tile *tile) {
+		for (QProgressBar *bar : tile->window()->findChildren<QProgressBar *>())
+			if (bar->accessibleName() == QLatin1String("Heard") && tile->isAncestorOf(bar) && bar->isVisible()) return bar->value();
+		return -1;
+	};
+	QVERIFY2(meter(tile_of(1)) > 5 && meter(tile_of(1)) < 95, qPrintable(QStringLiteral("B heard at %1").arg(meter(tile_of(1)))));
+	QVERIFY2(meter(tile_of(0)) > 5 && meter(tile_of(0)) < 95, qPrintable(QStringLiteral("A heard at %1").arg(meter(tile_of(0)))));
 
 	/* A hand on B's fader: no automation while held, back when let go. */
 	QSlider *level = nullptr;

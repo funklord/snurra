@@ -1239,9 +1239,15 @@ alike.
    its fade and let go restores it. Without the hold, or without the
    automation, it fails. A started track's tile says playing from the
    moment it is started, a lead before it sounds -- as a train's next
-   does. **Not yet:** the fader drawn moving with the automation. (A
-   hand on the crossfader is not recorded: the crossfader is the hand's,
-   never automated, above.)
+   does. **The automation seen, 2026-11-21:** a conducted deck shows a
+   thin meter under its fader of what is heard of it -- the gain the
+   deck's callback last gave a frame (`heard_gain`: level, trim, mix,
+   fade and envelope together) -- so the automation is seen moving while
+   the hand's fader stays where the hand left it, and a hand taking over
+   sees what it takes over from; tested mid-crossfade in the unfold test
+   (B's meter part of the way in, A's part of the way out; with the gain
+   never published, it fails). (A hand on the crossfader is not
+   recorded: the crossfader is the hand's, never automated, above.)
 5. Moves on the decks written back into the train. **First part built
    2026-11-20**: a fader ridden on a conducted deck -- held, moved, let
    go -- is recorded against the track's own frames (a point each 50 ms

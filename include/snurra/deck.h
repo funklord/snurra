@@ -102,6 +102,10 @@ public:
 	 * uses: a deck crossed over by a handover keeps its side's gain. */
 	void set_mix(float mix) { m_mix.store(mix, std::memory_order_relaxed); }
 	float mix() const { return m_mix.load(std::memory_order_relaxed); }
+	/* The gain the callback last gave a frame -- level, trim, mix, fade
+	 * and envelope together: what is heard of it, for a meter that shows
+	 * the automation moving (project.md sec 3f). 0 while silent. */
+	float heard_gain() const { return m_heard_gain.load(std::memory_order_relaxed); }
 	/* A gain under the level, the tune's own (the level match): moved
 	 * toward at one unit of gain a second -- half a second from -6 dB to
 	 * none -- so one that arrives while it plays is heard as a short fade
@@ -272,6 +276,7 @@ private:
 	std::atomic<bool> m_playing;
 	std::atomic<float> m_level;
 	std::atomic<float> m_mix{ 1 };
+	std::atomic<float> m_heard_gain{ 0 };
 	std::atomic<float> m_trim{ 1 };
 	float m_trim_now = -1;   /* the callback's: where the trim has got to; -1 before the first */
 	std::atomic<float> m_eq_db[3] = { 0, 0, 0 };   /* asked: low, mid, high */
