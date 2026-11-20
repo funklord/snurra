@@ -52,7 +52,7 @@ and everything above it knows nothing of SFTP or fuzznet.
   AcoustID key, the phone (install, a fuzznet node of its own, the fold
   cover layout, whether Android gets its own FFmpeg), moving a joined
   window, the cross-process drop's entry point, an About window's place,
-  headphone pre-listen, and qtkit's remote (sec 3).
+  controller mappings (sec 3f), and qtkit's remote (sec 3).
 
 ## 2. Decided
 
@@ -308,13 +308,8 @@ and everything above it knows nothing of SFTP or fuzznet.
   CI. Waits on qtkit being published; then the player (not snurra.pri,
   whose hosts keep their own palettes) takes it.
 
-- **Open, the holder's (2026-11-20): headphone pre-listen.** The DJ
-  player has two decks, a crossfader and sync, but no way to hear the
-  next tune before the room does -- a cue bus to a second output, the
-  one DJ basic absent. Sec 3a makes each suite feature a decision of its
-  own, so it is not built. Best guess, if wanted: a per-deck cue button
-  routing that deck to a second output named as `--output` names one
-  (`--cue alsa:hw:1`), the engine already taking any device's period.
+- ~~Headphone pre-listen.~~ **Settled by the holder 2026-11-20**: a plug
+  moved between taps, many listeners at once (sec 3f).
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
@@ -963,7 +958,57 @@ player, whose output is the sum of all its decks.
   inner deck view -- is heard a read-ahead late. Live hands belong on the
   outermost level; nested levels play prepared. Measured when built.
 
-**2 or 4 decks**, a choice in the view. The phone gets the cut-down one:
+**Pre-listen is a plug, not a channel button** (the holder, 2026-11-20:
+"headphone prelistening is supposed to be more about running around
+with a plug and plugging yourself into different points. So you click
+on some 'pre-listen here' button (tiny which are everywhere relevant)
+and then your prelistening jumps to there ... in this way multiple
+pre-listeners can work on the same mix too.")
+
+- **Every point in the tree is a tap**: a tile's track, a deck, a
+  player's sum, a nested player inside a deck -- wherever a "listen
+  here" makes sense, a tiny one, the plug's socket.
+- **A listener is an output with a plug in one tap at a time**: clicking
+  a socket moves that listener's plug there, and its headphones hear
+  that point and nothing else, while the room hears the master.
+- **Listeners are many**: each its own output -- a second ALSA device, a
+  controller's second pair, and later another process or device -- each
+  plugged in its own place, so two people prepare on one mix at once.
+  Which listener a click moves is the one the clicking hand belongs to:
+  on one screen, the chosen listener; on a controller, the listener it
+  is bound to.
+- A tap hears its point as the master would hear it, before the room's
+  fader and crossfader where it is a deck's -- what a DJ checks on cue.
+
+**A layout that matches the hardware in front of you** (the holder,
+2026-11-20: "we must not forget the user who will want to configure
+snurra exactly according to the layout they see in front of them on a HW
+controller. Auto generated controls can't be mapped to hardware for
+example.")
+
+- **Two layers, kept apart.** The tree above -- decks a train unfolded
+  onto, players inside decks, a socket on every tap -- is made and
+  unmade as the music moves, so none of it has a name that lasts. A
+  controller binds to what lasts: **slots**, laid out by the person to
+  match their controller -- deck 1 to 4, a channel strip each (fader,
+  EQ, gain, a cue button), the crossfader, the effect units, the browse
+  knob, the listeners' plugs.
+- **The tree is put into the slots, never bound to directly.** Deck
+  slot 1 shows and controls whatever deck the train has unfolded onto
+  it, or the player a person loaded there; when that changes, the knob
+  under the hand still means "deck 1's tempo". A slot with nothing in it
+  is a slot, not an absence.
+- **The person's layout is what is saved** -- which slots exist, in
+  which order and place on screen, which deck slot sits on which side of
+  the crossfader -- and a controller's mapping names slots and their
+  controls ("deck 2 / tempo"), the same names in MIDI learn, in a mapping
+  file and on the wire. Automatic things only ever fill slots.
+- **A hardware cue button is a plug with a fixed place**: it moves its
+  listener's plug to its slot's tap, so the dynamic "listen here"
+  sockets and a controller's fixed buttons are one mechanism.
+- The phone's cut-down view is a layout of fewer slots, not other code.
+
+**2 or 4 decks**, a choice in the view: two layouts of slots. The phone gets the cut-down one:
 two decks, the controls that fit (sec 3b's fold-cover measures stand).
 **Hardware control on the desktop**: every deck and mixer control is a
 typed control (sec 3a kept the string bus out; a name per control is
@@ -982,12 +1027,13 @@ alike.
 4. A train unfolded onto the decks, its automation driving them, a hand
    taking over.
 5. Moves on the decks written back into the train.
-6. Controllers: MIDI in, the typed controls named.
+6. Slots and the person's layout; controllers: MIDI in, bound to slots.
+
+7. Taps and listeners: a listener's output, the sockets, the plug moved.
 
 **Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
 plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which
-this player does not link) -- and whether headphone pre-listen comes with
-the decks (sec 3) or after. Neither blocks steps 1 to 5.
+this player does not link). It blocks only step 6.
 
 ## 4. State
 
