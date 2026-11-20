@@ -71,6 +71,7 @@ private slots:
 	void the_full_screen_picture_takes_the_players_keys();
 	void a_url_plays_with_its_picture();
 	void a_live_stream_counts_up_and_does_not_seek();
+	void a_films_sound_can_come_from_a_file_of_its_own();
 	void a_url_that_never_answers_lets_the_window_close();
 	void an_hls_stream_plays_and_seeks_data();
 	void an_hls_stream_plays_and_seeks();
@@ -687,6 +688,37 @@ void video_test::a_live_stream_counts_up_and_does_not_seek() {
 	QTest::qWait(300);
 	QVERIFY2(tile->state().position_us < before + 2000000, "a live stream was sought");
 	QVERIFY(tile->state().position_us >= before);
+}
+
+/*
+ * mplayer's -audiofile: a film's picture from one file and its sound from
+ * another, as a site serves them. The picture is the film's (3 s); the
+ * deck plays the sound file, so the tile's length is the sound's (5 s).
+ */
+void video_test::a_films_sound_can_come_from_a_file_of_its_own() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString film = QStringLiteral("picture.mkv");
+	QVERIFY(make(film, { QStringLiteral("-c:v"), QStringLiteral("mpeg4") }, 0));
+	const QString sound = m_dir.filePath(QStringLiteral("sound.wav"));
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                         QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=f=880:d=5"), sound });
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = m_dir.filePath(film);
+	state.sound = sound;
+	state.duration_us = 180000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
+	QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->state().duration_us - 5000000) < 50000, 5000);
+	QVERIFY(!tile->deck()->failed());
+	QCOMPARE(tile->state().sound, sound);
 }
 
 /*

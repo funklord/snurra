@@ -141,9 +141,12 @@ int main(int argc, char *argv[]) {
 	                                  QStringLiteral("file"));
 	const QCommandLineOption dj(QStringLiteral("dj"), QStringLiteral("Open the DJ player: two decks, a crossfader and the music under them."));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
+	const QCommandLineOption audio_file(QStringList{ QStringLiteral("audiofile"), QStringLiteral("audio-file") },
+	                                    QStringLiteral("The sound, from a file or URL of its own beside the picture's."),
+	                                    QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, dj });
+	                    playlist, loop, shuffle, audio_file, dj });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -243,6 +246,12 @@ int main(int argc, char *argv[]) {
 		/* The start, the full screen and the subtitles are the first
 		 * file's: a launch of several is a train, started at its head. */
 		if (column == 0) state.position_us = start_us;
+		/* mplayer's -audiofile, mpv's --audio-file: a site's film comes as
+		 * a picture and a sound, and hydra hands both over. */
+		if (column == 0 && parser.isSet(audio_file)) {
+			const QString sound = parser.value(audio_file);
+			state.sound = QFileInfo::exists(sound) ? QFileInfo(sound).absoluteFilePath() : sound;
+		}
 		/* Given to the deck as it opens, so the first block is heard at
 		 * them; the tile clamps both. */
 		if (parser.isSet(volume)) state.level = qBound(0, parser.value(volume).toInt(), 100);

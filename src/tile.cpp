@@ -1161,9 +1161,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	 * stream has no end to read to, and a file would be fetched twice
 	 * more. */
 	const bool url = snurra_is_url(state.source);
-	if (!url) read_peaks(nullptr);
+	/* The waveform and the beats are the sound's, which may be a stream
+	 * of its own beside the picture's (tile_state.h). */
+	if (!snurra_is_url(state.sound_source())) read_peaks(nullptr);
 	if (QFileInfo(state.source).isFile() || url) read_video(state.controls);
-	if (QFileInfo(state.source).isFile()) read_beats(nullptr);
+	if (QFileInfo(state.sound_source()).isFile()) read_beats(nullptr);
 	show_jumps();
 	/* Decided on from the next tick: the constructor's ran before the
 	 * picture's reader existed -- and a host's tile gets its readers
@@ -1185,7 +1187,7 @@ void snurra_tile::read_beats(std::shared_ptr<snurra_bytes> bytes) {
 	};
 	m_beats.reset();
 	if (bytes) m_beats = std::make_unique<snurra_beats>(std::move(bytes), m_state.source, m_deck->rate(), done);
-	else m_beats = std::make_unique<snurra_beats>(m_state.source, m_deck->rate(), done, m_state.audio_track);
+	else m_beats = std::make_unique<snurra_beats>(m_state.sound_source(), m_deck->rate(), done, m_state.audio_track);
 }
 
 /*
@@ -1578,7 +1580,7 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 	};
 	m_peaks.reset();   /* the last reader stopped before the next begins */
 	if (bytes) m_peaks = std::make_unique<snurra_peaks>(std::move(bytes), m_state.source, m_deck->rate(), COLUMNS, piece);
-	else m_peaks = std::make_unique<snurra_peaks>(m_state.source, m_deck->rate(), COLUMNS, piece, m_state.audio_track);
+	else m_peaks = std::make_unique<snurra_peaks>(m_state.sound_source(), m_deck->rate(), COLUMNS, piece, m_state.audio_track);
 }
 
 snurra_tile::~snurra_tile() {

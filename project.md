@@ -1353,6 +1353,19 @@ controls; each tile very compact but resizeable).
   Content-Length but no ranges, FFmpeg takes the stream for seekable and
   the sound fails to open -- a server that sizes a body and ignores
   ranges, not a radio; not chased.
+- **A film's sound from a file of its own, 2026-11-20** (mplayer's
+  `-audiofile`, mpv's `--audio-file=`): a site serves a film as a
+  picture stream and a sound stream, and hydra hands players both --
+  for snurra it muxed them first, since snurra stopped on the option
+  (hydra's `player_launcher.cpp`). The tile state carries `sound`
+  beside `source`, through handovers too; the deck, the waveform and
+  the beats read the sound, the picture its source. Given to the first
+  file of a launch, as `-ss` and `-sub` are. Tested by a 3 s film with a
+  5 s sound file -- the picture shown, the length the sound's
+  (`a_films_sound_can_come_from_a_file_of_its_own`) -- and by both
+  spellings arriving in the first tile's state over the wire
+  (`audiofile_gives_the_first_file_its_sound`); with the deck on the
+  source again, or the option dropped, each fails.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

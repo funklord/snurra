@@ -48,6 +48,7 @@ private slots:
 	void mplayers_options_say_where_and_how_it_plays();
 	void a_playlist_is_a_train_of_what_it_names();
 	void shuffle_plays_the_files_in_another_order();
+	void audiofile_gives_the_first_file_its_sound();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1373,6 +1374,25 @@ void handover_test::shuffle_plays_the_files_in_another_order() {
 		QVERIFY(a->waitForFinished(5000));
 	}
 	QVERIFY2(reordered > 0, "-shuffle played the files in the order given, twice");
+}
+
+/*
+ * mplayer's -audiofile and mpv's --audio-file=: the first file's sound
+ * from a file of its own, carried in the tile's state over the wire.
+ */
+void handover_test::audiofile_gives_the_first_file_its_sound() {
+	const QString sound = QStringLiteral("http://127.0.0.1:1/sound.webm");
+	for (const QStringList &option : { QStringList{ QStringLiteral("-audiofile"), sound },
+	                                   QStringList{ QStringLiteral("--audio-file=") + sound } }) {
+		QProcess *a = start(QStringList{ QStringLiteral("--paused") } + option
+		                    + QStringList{ QStringLiteral("a.flac"), QStringLiteral("b.flac") });
+		QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+		QList<snurra_tile_state> states;
+		QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 2, 5000);
+		for (const snurra_tile_state &state : states) QCOMPARE(state.sound, state.column == 0 ? sound : QString());
+		a->terminate();
+		QVERIFY(a->waitForFinished(5000));
+	}
 }
 
 /*

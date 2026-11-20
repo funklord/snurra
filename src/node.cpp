@@ -244,7 +244,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 		return first;
 	}
 	snurra_deck::start_t start;
-	start.source = state.source;
+	start.source = state.sound_source();
 	start.rate = m_engine->rate();
 	start.fallback_length = snurra_us_to_frames(state.duration_us, start.rate);
 	start.anchor_frame = snurra_us_to_frames(state.position_now(state.sampled_at_us), start.rate);
