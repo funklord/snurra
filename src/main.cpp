@@ -1,6 +1,8 @@
 #include <QApplication>
 
+#include <algorithm>
 #include <cstdio>
+#include <random>
 
 #ifndef SNURRA_VERSION_TEXT
 #define SNURRA_VERSION_TEXT "unknown"   /* built without VERSION's word */
@@ -139,8 +141,9 @@ int main(int argc, char *argv[]) {
 	                                  QStringLiteral("file"));
 	const QCommandLineOption dj(QStringLiteral("dj"), QStringLiteral("Open the DJ player: two decks, a crossfader and the music under them."));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
+	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, dj });
+	                    playlist, loop, shuffle, dj });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -220,6 +223,9 @@ int main(int argc, char *argv[]) {
 	for (const QString &name : parser.values(playlist)) files << snurra_playlist(name);
 	for (const QString &name : parser.positionalArguments())
 		files << (snurra_is_playlist(name) && QFileInfo(name).isFile() ? snurra_playlist(name) : QStringList{ name });
+	/* mplayer's -shuffle, as `mplayer -shuffle *.mp3` is typed: the train
+	 * in a random order, the playlists' files among the rest. */
+	if (parser.isSet(shuffle)) std::shuffle(files.begin(), files.end(), std::mt19937(std::random_device{}()));
 	qint64 start_us = 0;
 	if (parser.isSet(start_at) && (start_us = parse_time_us(parser.value(start_at))) < 0) {
 		std::fprintf(stderr, "snurra: -ss takes seconds, m:ss or h:mm:ss, not \"%s\"\n", qPrintable(parser.value(start_at)));

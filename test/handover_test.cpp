@@ -15,6 +15,7 @@
 #include <QMimeData>
 #include <QUrl>
 #include <QMap>
+#include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
 
@@ -46,6 +47,7 @@ private slots:
 	void mplayers_keys_drive_the_tile();
 	void mplayers_options_say_where_and_how_it_plays();
 	void a_playlist_is_a_train_of_what_it_names();
+	void shuffle_plays_the_files_in_another_order();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1346,6 +1348,31 @@ void handover_test::a_playlist_is_a_train_of_what_it_names() {
 	QCOMPARE(train.values(), radio + mix);
 	a->terminate();
 	QVERIFY(a->waitForFinished(5000));
+}
+
+/*
+ * mplayer's -shuffle: the same files, in a random order. Eight names, so
+ * the order given comes back by chance once in 40320; twice in a row, never.
+ */
+void handover_test::shuffle_plays_the_files_in_another_order() {
+	QStringList given;
+	for (int i = 0; i < 8; ++i) given << QStringLiteral("%1.flac").arg(QChar('a' + i));
+	int reordered = 0;
+	for (int run = 0; run < 2; ++run) {
+		QProcess *a = start(QStringList{ QStringLiteral("--paused"), QStringLiteral("-shuffle") } + given);
+		QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+		QList<snurra_tile_state> states;
+		QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 8, 5000);
+		QMap<int, QString> train;
+		for (const snurra_tile_state &state : states) train.insert(state.column, QFileInfo(state.source).fileName());
+		QStringList sorted = train.values();
+		sorted.sort();
+		QCOMPARE(sorted, given);
+		if (train.values() != given) ++reordered;
+		a->terminate();
+		QVERIFY(a->waitForFinished(5000));
+	}
+	QVERIFY2(reordered > 0, "-shuffle played the files in the order given, twice");
 }
 
 /*

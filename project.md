@@ -1255,7 +1255,12 @@ controls; each tile very compact but resizeable).
   tick; `ended()` now waits for the seek, as `last_rendered` does. Played
   at its end -- every lane past its last tile -- a group plays again from
   the start, as Winamp's play after the end does, where it played
-  nothing.
+  nothing. `-shuffle` (2026-11-20, as `mplayer -shuffle *.mp3` is
+  typed) puts the train in a random order once, playlists' files among
+  the rest; `-loop` plays that order again rather than a new one, which
+  mplayer would shuffle afresh -- not yet asked for
+  (`shuffle_plays_the_files_in_another_order`, eight names twice; with
+  the shuffle out it fails).
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;
