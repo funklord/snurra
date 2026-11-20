@@ -29,21 +29,28 @@ the bytes come from. So the library's centre is a **byte source that may
 still be arriving** -- read at an offset, saying which ranges it holds --
 and everything above it knows nothing of SFTP or fuzznet.
 
-## 1a. State (folded 2026-11-19, on winding down)
+## 1a. State (folded 2026-11-20)
 
-- Level with origin at 84293dd. Loudness matching is on by default at
-  -14 LUFS (holder, 2026-11-18). Knobs turn by holding and moving up or
-  down; the EQ is one line drawn across its three bands; tiles are as
-  wide as their time on the timeline, a train's next tile dragged comes
-  in on a beat, and a width the person set is kept (e4e1257).
+- Level with origin at the run's last commit. Since the 2026-11-19
+  fold: a live stream shows as live and takes no seek (bbd9d84); snurra
+  has its own icon, installed into hicolor (7f46785); mplayer's
+  `-shuffle` (40f7746), `-audiofile` / mpv's `--audio-file=` (be4761b)
+  and mpv's `--chapters-file` (720a6cf) are taken -- the last two are
+  what hydra hands players, told in its inbox (20261120T1625Z).
+- Loudness matching is on by default at -14 LUFS (holder, 2026-11-18).
+  Knobs turn by holding and moving up or down; the EQ is one line drawn
+  across its three bands; tiles are as wide as their time on the
+  timeline, a train's next tile dragged comes in on a beat, and a width
+  the person set is kept (e4e1257).
 - The suite takes about 240 s on a quiet machine, so `TEST_TIMEOUT` is
-  600 s (84293dd). e4e1257 was pushed on a run killed at the old 300 s
-  under load 38 -- no test failed, four classes never ran; the rerun
-  passed whole. Read the suite's exit code, not its FAIL lines.
+  600 s (84293dd). Read the suite's exit code, not its FAIL lines. Its
+  test binary runs one function when named, but QtTest fails every
+  class that lacks the name, so name one function per run.
 - Waiting on the holder: a Wayland compositor (weston) for testing, an
   AcoustID key, the phone (install, a fuzznet node of its own, the fold
   cover layout, whether Android gets its own FFmpeg), moving a joined
-  window, and the cross-process drop's entry point.
+  window, the cross-process drop's entry point, an About window's place,
+  headphone pre-listen, and qtkit's remote (sec 3).
 
 ## 2. Decided
 
@@ -295,6 +302,14 @@ and everything above it knows nothing of SFTP or fuzznet.
   is public, so a submodule at a local path would break every clone and
   CI. Waits on qtkit being published; then the player (not snurra.pri,
   whose hosts keep their own palettes) takes it.
+
+- **Open, the holder's (2026-11-20): headphone pre-listen.** The DJ
+  player has two decks, a crossfader and sync, but no way to hear the
+  next tune before the room does -- a cue bus to a second output, the
+  one DJ basic absent. Sec 3a makes each suite feature a decision of its
+  own, so it is not built. Best guess, if wanted: a per-deck cue button
+  routing that deck to a second output named as `--output` names one
+  (`--cue alsa:hw:1`), the engine already taking any device's period.
 
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
