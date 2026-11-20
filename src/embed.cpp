@@ -199,6 +199,13 @@ public:
 		listen->setAutoRaise(true);
 		listen->hide();
 		column->addWidget(listen, 0, Qt::AlignRight);
+		/* A deck in a player unfolded: gather it back into one deck. */
+		fold = new QToolButton(this);
+		fold->setText(QObject::tr("Fold back into one deck"));
+		fold->setAccessibleName(fold->text());
+		fold->setAutoRaise(true);
+		fold->hide();
+		column->addWidget(fold, 0, Qt::AlignLeft);
 		/* A deck holding a whole player: spread it over the decks. */
 		unfold = new QToolButton(this);
 		unfold->setText(QObject::tr("Unfold across the decks"));
@@ -218,6 +225,7 @@ public:
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
 	QToolButton *listen;
+	QToolButton *fold;
 	QToolButton *unfold;
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
@@ -351,6 +359,7 @@ public:
 	void start_learning(const QString &control);
 	void finish_learning(bool final);
 	bool unfold(int deck);
+	bool fold();
 	void end_score();
 	int64_t score_time(qint64 us) const;
 	qint64 score_us(int64_t time) const;
@@ -714,7 +723,52 @@ bool snurra_dj_private::unfold(int deck) {
 	return true;
 }
 
+/*
+ * The other way (sec 3f): the conducted decks folded back into one deck
+ * holding the player -- as edited, its rides in its envelopes -- standing
+ * where the player stands, crossing over on the shared clock as unfold
+ * did. From there a pull out of the window takes the player whole, and
+ * an empty window unpacks it into tiles again.
+ */
+bool snurra_dj_private::fold() {
+	if (!score || score->states.empty()) return false;
+	const int rate = engine->rate();
+	const qint64 now = snurra_clock_us();
+	const qint64 period_us = qint64(engine->period()) * 1000000 / rate;
+	const qint64 at = now + engine->latency_us() + period_us + 100000;
+	const bool playing = score->playing;
+	const int64_t time = score_time(at);
+	snurra_tile_state holder;
+	holder.player = score->states;
+	holder.source = QObject::tr("%n tracks", nullptr, int(score->states.size()));
+	int64_t length = 0;
+	for (int64_t end : score->end) length = std::max(length, end);
+	holder.duration_us = snurra_frames_to_us(length, rate);
+	holder.position_us = snurra_frames_to_us(time, rate);
+	holder.sampled_at_us = at;
+	holder.playing = playing;
+	holder.controls = true;
+	/* Out over the moment the folded deck comes in. */
+	for (int deck = 0; deck < decks.size(); ++deck) {
+		if (deck >= int(score->on_deck.size()) || score->on_deck[size_t(deck)] < 0 || !decks[deck]->tile) continue;
+		snurra_tile *tile = decks[deck]->tile;
+		if (tile->playing()) {
+			tile->deck()->fade(at, CROSSFADE_US, 1, 0);
+			tile->retire_deck_at(at + CROSSFADE_US + period_us);
+			detach(deck);
+		} else {
+			unload(deck);
+		}
+	}
+	end_score();
+	snurra_tile *tile = snurra_tile::embedded(*engine, holder, nullptr, decks[0], nullptr, playing);
+	if (playing) tile->deck()->fade(at, CROSSFADE_US, 0, 1);
+	install(0, tile, holder.source);
+	return true;
+}
+
 void snurra_dj_private::end_score() {
+	for (dj_deck *deck : decks) deck->fold->hide();
 	if (!score) return;
 	if (score->timer) score->timer->deleteLater();
 	for (int i = 0; i < decks.size(); ++i)
@@ -778,6 +832,7 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		tile = snurra_tile::embedded(*engine, state, nullptr, decks[deck]);
 		install(deck, tile, snurra_title_of(state.source));
 		score->on_deck[size_t(deck)] = track;
+		decks[deck]->fold->show();
 		/* Its play and seek are the player's, not its own. */
 		tile->set_grouped(true);
 		QObject::connect(tile, &snurra_tile::play_requested, q, [this](snurra_tile *, bool playing) {
@@ -984,6 +1039,10 @@ bool snurra_dj::listen() {
 
 bool snurra_dj::unfold(int deck) {
 	return d->unfold(deck);
+}
+
+bool snurra_dj::fold() {
+	return d->fold();
 }
 
 QString snurra_dj::socket_path() const {
@@ -1405,6 +1464,7 @@ void snurra_dj::set_deck_count(int count) {
 		 * the handover is its to make -- the tile, or with Shift the whole
 		 * player -- onto this deck. */
 		connect(deck->unfold, &QToolButton::clicked, this, [this, i] { unfold(i); });
+		connect(deck->fold, &QToolButton::clicked, this, [this] { fold(); });
 		connect(deck->listen, &QToolButton::toggled, this, [this, i](bool on) { d->plug(d->chosen_listener, on ? i : -1); });
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
 			if (!d->server || giver.isEmpty()) return;

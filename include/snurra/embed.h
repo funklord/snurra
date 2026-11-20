@@ -156,6 +156,10 @@ public:
 	 * them. False where the deck holds no player, or one needing more than
 	 * four decks at once. A tune loaded by hand ends it. */
 	bool unfold(int deck);
+	/* (5) And back: the decks of an unfolded player gathered onto deck A
+	 * as one player again, as edited, where it stands. False where no
+	 * player is unfolded. */
+	bool fold();
 
 	/* (5) Controllers (project.md sec 3f): MIDI in, the decks' controls
 	 * named ch_1_play ... ch_4_eq_high and crossfader, bound as the

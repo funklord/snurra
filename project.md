@@ -1209,9 +1209,18 @@ alike.
    50 while playing: the envelope ends its ride at half, then 1 as it
    was, the fader back at 100; not written, it fails). **Not yet:** a
    crossfade done by hand on the channel faders becoming the overlap, a
-   deck started by hand becoming where its track comes in, and the
-   player so edited taken back out whole (a deck pulled out takes its
-   track, with its envelope).
+   deck started by hand becoming where its track comes in. **And folded
+   back** (`snurra_dj::fold`, a conducted deck's "Fold back into one
+   deck"): the conducting ends and deck A holds the player again, as
+   edited -- its rides in its envelopes -- where it stands, crossing over
+   on the shared clock as unfold did; pulled out from there it is the
+   whole player, and an empty window unpacks it into tiles. So the round
+   trip is whole: a train dropped onto a deck, unfolded and played by
+   hand, folded, taken out, edited as tiles. Tested at the end of the
+   ride's test: folded, deck A holds both tracks with the first's ride in
+   its envelope, standing past where the track stood and within the
+   crossing, deck B empty; folded from where nothing is unfolded, false;
+   folded at 0, it fails.
 6. Slots and the person's layout; controllers: MIDI in, bound to slots.
    **First part built 2026-11-20** (`midi.h`, the deck view's
    `take_controllers`, on in the player's `--dj`): MIDI in through

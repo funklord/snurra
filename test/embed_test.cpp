@@ -1440,6 +1440,25 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 	QCOMPARE(envelope.last().second, 1.0f);
 	QCOMPARE(tile->level(), 100);
 	for (int i = 1; i < envelope.size(); ++i) QVERIFY(envelope[i].first > envelope[i - 1].first);
+
+	/* Folded back: deck A holds the player again, as edited -- the ride
+	 * in its first track's envelope -- where it stood, and B is empty. */
+	const qint64 before = tile->state().position_us;
+	QToolButton *fold = nullptr;
+	for (QToolButton *button : place->findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Fold back into one deck") && button->isVisible()) fold = button;
+	QVERIFY2(fold, "no Fold on a conducted deck");
+	fold->click();
+	QCOMPARE(dj.loaded(0), QStringLiteral("2 tracks"));
+	QVERIFY(dj.loaded(1).isEmpty());
+	QTest::qWait(300);
+	snurra_tile *folded = place->findChild<snurra_tile *>();
+	QVERIFY(folded && folded->playing());
+	QCOMPARE(int(folded->state().player.size()), 2);
+	QCOMPARE(folded->state().player[0].envelope, envelope);
+	QVERIFY2(folded->state().position_us > before && folded->state().position_us < before + 1500000,
+	         qPrintable(QStringLiteral("folded at %1 us, was at %2").arg(folded->state().position_us).arg(before)));
+	QVERIFY(!dj.fold());
 }
 
 /*
