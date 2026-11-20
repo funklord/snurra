@@ -118,6 +118,7 @@ class beats_test : public QObject {
 
 private slots:
 	void a_timeline_places_its_tiles();
+	void channels_are_seated_so_none_overlaps();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -214,49 +215,124 @@ void beats_test::a_trains_overlap_brings_the_next_in_on_the_beat() {
 
 /*
  * The timeline as data (project.md sec 3f): a train of three -- 60 s at
- * tempo 1, 30 s at 1.5 (20 s out), 40 s -- crossing over the plain 5 s,
- * and a lane beside it coming in at 10 s, its track nudged 2 s ahead. Each
- * tile comes in where the one before less the overlap ends; a time inside
- * an overlap is the next tile's; before a late lane, its first tile waits;
- * past the end, nothing; and time_of undoes at.
+ * tempo 1, 30 s at 1.5 (20 s out), 40 s -- each following the one before
+ * over the plain 5 s, and a free track coming in at 10 s, nudged 2 s
+ * ahead. Each follower comes in where the one before less the overlap
+ * ends; a time inside an overlap is the next track's; before a late
+ * track, it waits; past the end, nothing; and time_of undoes at.
  */
 void beats_test::a_timeline_places_its_tiles() {
 	snurra_timeline timeline(RATE);
-	snurra_timeline_lane &train = timeline.lanes[0];
-	for (const auto &tile : { std::pair<double, double>{ 60, 1 }, { 30, 1.5 }, { 40, 1 } }) {
-		snurra_timeline_tile one;
-		one.length = int64_t(tile.first * RATE);
-		one.tempo = tile.second;
-		train.tiles.push_back(one);
+	int previous = -1;
+	for (const auto &spec : { std::pair<double, double>{ 60, 1 }, { 30, 1.5 }, { 40, 1 } }) {
+		snurra_timeline_track one;
+		one.length = int64_t(spec.first * RATE);
+		one.tempo = spec.second;
+		one.follows = previous;
+		previous = int(timeline.tracks.size());
+		timeline.tracks.push_back(one);
 	}
-	snurra_timeline_lane &late = timeline.lanes[3];   /* rows need not follow on */
-	late.begin = 10 * RATE;
-	snurra_timeline_tile nudged;
-	nudged.length = 50 * RATE;
-	nudged.offset = 2 * RATE;
-	late.tiles.push_back(nudged);
+	snurra_timeline_track late;
+	late.length = 50 * RATE;
+	late.offset = 2 * RATE;
+	late.position = 10 * RATE;
+	timeline.tracks.push_back(late);
 
-	QCOMPARE(timeline.overlap(0, 0), int64_t(5 * RATE));
-	QCOMPARE(timeline.overlap(0, 2), int64_t(0));
-	QCOMPARE(timeline.start(0, 0), int64_t(0));
-	QCOMPARE(timeline.start(0, 1), int64_t(55 * RATE));
-	QCOMPARE(timeline.start(0, 2), int64_t(70 * RATE));   /* 55 + 20 out - 5 */
-	/* In the first overlap: the second tile's, 1 s in out, 1.5 s of its track. */
-	const snurra_timeline::place crossing = timeline.at(0, 56 * RATE);
-	QCOMPARE(crossing.index, 1);
+	QCOMPARE(timeline.train(1), (std::vector<int>{ 0, 1, 2 }));
+	QCOMPARE(timeline.train(3), (std::vector<int>{ 3 }));
+	QCOMPARE(timeline.overlap(0), int64_t(5 * RATE));
+	QCOMPARE(timeline.overlap(2), int64_t(0));
+	QCOMPARE(timeline.start(0), int64_t(0));
+	QCOMPARE(timeline.start(1), int64_t(55 * RATE));
+	QCOMPARE(timeline.start(2), int64_t(70 * RATE));   /* 55 + 20 out - 5 */
+	const std::vector<int> train = timeline.train(0);
+	/* In the first overlap: the second track's, 1 s in out, 1.5 s of it. */
+	const snurra_timeline::place crossing = timeline.at(train, 56 * RATE);
+	QCOMPARE(crossing.track, 1);
 	QCOMPARE(crossing.frame, int64_t(1.5 * RATE));
-	QCOMPARE(timeline.time_of(0, crossing.index, crossing.frame), int64_t(56 * RATE));
-	QCOMPARE(timeline.at(0, 54 * RATE).index, 0);
-	QCOMPARE(timeline.at(0, 110 * RATE).index, -1);
-	/* Before the late lane: its first tile, from its offset, after a wait. */
-	const snurra_timeline::place before = timeline.at(3, 4 * RATE);
-	QCOMPARE(before.index, 0);
+	QCOMPARE(timeline.time_of(crossing.track, crossing.frame), int64_t(56 * RATE));
+	QCOMPARE(timeline.at(train, 54 * RATE).track, 0);
+	QCOMPARE(timeline.at(train, 110 * RATE).track, -1);
+	/* Before the late track: from its offset, after a wait. */
+	const snurra_timeline::place before = timeline.at({ 3 }, 4 * RATE);
+	QCOMPARE(before.track, 3);
 	QCOMPARE(before.frame, int64_t(2 * RATE));
 	QCOMPARE(before.wait, int64_t(6 * RATE));
-	const snurra_timeline::place inside = timeline.at(3, 15 * RATE);
+	const snurra_timeline::place inside = timeline.at({ 3 }, 15 * RATE);
 	QCOMPARE(inside.frame, int64_t(7 * RATE));
-	QCOMPARE(timeline.time_of(3, 0, inside.frame), int64_t(15 * RATE));
-	QCOMPARE(timeline.at(7, 0).index, -1);   /* no such lane */
+	QCOMPARE(timeline.time_of(3, inside.frame), int64_t(15 * RATE));
+	QCOMPARE(timeline.at({}, 0).track, -1);
+}
+
+/*
+ * Channels seated, not stored (project.md sec 3f): a train alternates
+ * over two, its overlaps being at most half a track; a second train
+ * connected after the first changes which channel it starts on so that
+ * nothing ever sounds twice on one; trains at once take as many as sound together; a channel a
+ * track was on is kept where free; a pin is kept and, where it collides,
+ * named.
+ */
+void beats_test::channels_are_seated_so_none_overlaps() {
+	auto add = [](snurra_timeline &timeline, int follows, int64_t position = 0) {
+		snurra_timeline_track one;
+		one.length = 60 * RATE;
+		one.follows = follows;
+		one.position = position;
+		timeline.tracks.push_back(one);
+		return int(timeline.tracks.size()) - 1;
+	};
+	auto overlapping = [](const snurra_timeline &timeline, const snurra_timeline::seating &seated) {
+		for (size_t a = 0; a < timeline.tracks.size(); ++a)
+			for (size_t b = a + 1; b < timeline.tracks.size(); ++b)
+				if (seated.channel[a] == seated.channel[b] && timeline.start(int(a)) < timeline.end(int(b))
+				    && timeline.start(int(b)) < timeline.end(int(a)))
+					return true;
+		return false;
+	};
+	/* One train of five: 0 1 0 1 0. */
+	snurra_timeline one(RATE);
+	int previous = -1;
+	for (int i = 0; i < 5; ++i) previous = add(one, previous);
+	snurra_timeline::seating seated = one.seat();
+	QCOMPARE(seated.channel, (std::vector<int>{ 0, 1, 0, 1, 0 }));
+	QCOMPARE(seated.channels, 2);
+
+	/* A second train of three, on its own from 1000 s: it starts on 0.
+	 * Connected after the first, whose last sits on 0, it comes in while
+	 * that one still plays, so it starts on 1 and all of it flips. */
+	const int second = add(one, -1, 1000 * RATE);
+	add(one, second);
+	add(one, second + 1);
+	seated = one.seat();
+	QCOMPARE(seated.channel[size_t(second)], 0);
+	one.tracks[size_t(second)].follows = 4;
+	seated = one.seat();
+	QCOMPARE(std::vector<int>(seated.channel.begin() + second, seated.channel.end()), (std::vector<int>{ 1, 0, 1 }));
+	QCOMPARE(seated.channels, 2);
+	QVERIFY(!overlapping(one, seated));
+
+	/* Two trains at once, the second 10 s behind: never more than three
+	 * tracks sound together (at 65 s, the first's second and the
+	 * second's first two), so three channels, none shared while sounding. */
+	snurra_timeline both(RATE);
+	previous = -1;
+	for (int i = 0; i < 3; ++i) previous = add(both, previous);
+	previous = add(both, -1, 10 * RATE);
+	for (int i = 0; i < 2; ++i) previous = add(both, previous);
+	seated = both.seat();
+	QCOMPARE(seated.channels, 3);
+	QVERIFY(!overlapping(both, seated));
+
+	/* Where it was, kept while free -- a fourth channel taken for it rather
+	 * than the lowest -- and a pin kept, its collision named. */
+	both.tracks[3].was = 3;
+	seated = both.seat();
+	QCOMPARE(seated.channel[3], 3);
+	QVERIFY(!overlapping(both, seated));
+	both.tracks[1].pinned = 0;   /* on 0 while track 0 still plays there */
+	seated = both.seat();
+	QCOMPARE(seated.channel[1], 0);
+	QCOMPARE(seated.conflicts, std::vector<int>{ 1 });
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

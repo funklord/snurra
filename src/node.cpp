@@ -587,7 +587,7 @@ int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
 		                            next->deck()->tempo(), &grid, &next_grid,
 		                            chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1);
 	}
-	return timeline().overlap(tile->row(), index);
+	return timeline().overlap(int(ordered().indexOf(tile)));
 }
 
 void snurra_node::run_trains() {
@@ -712,13 +712,13 @@ int64_t snurra_node::lane_begin(int row) const {
 }
 
 int64_t snurra_node::lane_start(snurra_tile *tile) const {
-	return timeline().start(tile->row(), int(lane(tile->row()).indexOf(tile)));
+	return timeline().start(int(ordered().indexOf(tile)));
 }
 
 /* A tile's length on its lane's timeline, in frames out: its track's
  * length at its tempo. */
 int64_t snurra_node::timeline_length(snurra_tile *tile) const {
-	snurra_timeline_tile one;
+	snurra_timeline_track one;
 	one.length = tile->length_frames();
 	one.tempo = tile->deck()->tempo();
 	return snurra_timeline::length_out(one);
@@ -726,22 +726,31 @@ int64_t snurra_node::timeline_length(snurra_tile *tile) const {
 
 snurra_timeline snurra_node::timeline() const {
 	snurra_timeline made(m_engine->rate());
-	for (int row : rows()) {
-		const QList<snurra_tile *> tiles = lane(row);
-		snurra_timeline_lane &lane = made.lanes[row];
-		lane.begin = snurra_us_to_frames(tiles.first()->lane_start_us(), m_engine->rate());
-		for (snurra_tile *tile : tiles) {
-			snurra_timeline_tile one;
-			one.length = tile->length_frames();
-			one.tempo = tile->deck()->tempo();
-			one.offset = snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+	for (snurra_tile *tile : ordered()) {
+		const QList<snurra_tile *> tiles = lane(tile->row());
+		snurra_timeline_track one;
+		one.length = tile->length_frames();
+		one.tempo = tile->deck()->tempo();
+		one.offset = snurra_us_to_frames(tile->offset_us(), m_engine->rate());
+		one.grid = tile->beats();
+		/* A window's lane is a train: its first comes in at the lane's
+		 * begin, each after it follows the one before. */
+		if (tiles.first() == tile) {
+			one.position = snurra_us_to_frames(tile->lane_start_us(), m_engine->rate());
+		} else {
+			one.follows = int(made.tracks.size()) - 1;
 			const qint64 chosen_us = tile->state().overlap_us;
 			one.chosen_overlap = chosen_us >= 0 ? snurra_us_to_frames(chosen_us, m_engine->rate()) : -1;
-			one.grid = tile->beats();
-			lane.tiles.push_back(one);
 		}
+		made.tracks.push_back(one);
 	}
 	return made;
+}
+
+QList<snurra_tile *> snurra_node::ordered() const {
+	QList<snurra_tile *> order;
+	for (int row : rows()) order << lane(row);
+	return order;
 }
 
 void snurra_node::play_group(snurra_tile *from, bool playing) {
@@ -790,11 +799,16 @@ QList<int> snurra_node::rows() const {
 }
 
 snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame, int64_t *wait) const {
-	const snurra_timeline::place found = timeline().at(row, time);
+	if (wait) *wait = 0;
+	const QList<snurra_tile *> tiles = lane(row);
+	if (tiles.isEmpty()) return nullptr;
+	const QList<snurra_tile *> order = ordered();
+	const snurra_timeline made = timeline();
+	const snurra_timeline::place found = made.at(made.train(int(order.indexOf(tiles.first()))), time);
 	if (wait) *wait = found.wait;
-	if (found.index < 0) return nullptr;
+	if (found.track < 0) return nullptr;
 	frame = found.frame;
-	return lane(row).at(found.index);
+	return order.at(found.track);
 }
 
 void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
@@ -950,7 +964,7 @@ int64_t snurra_node::snapped_begin(int row, int64_t begin) const {
 /* The group's time where `tile` is now: its place in its lane, less how
  * far a nudge put its track ahead of the lane. */
 int64_t snurra_node::time_of(snurra_tile *tile) const {
-	return timeline().time_of(tile->row(), int(lane(tile->row()).indexOf(tile)), tile->frame_now());
+	return timeline().time_of(int(ordered().indexOf(tile)), tile->frame_now());
 }
 
 /*

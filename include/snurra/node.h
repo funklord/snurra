@@ -181,6 +181,9 @@ private:
 	/* The group's timeline as data (project.md sec 3f), from the tiles as
 	 * they are now -- what every place on it is counted from. */
 	snurra_timeline timeline() const;
+	/* The tiles in the timeline's order -- row by row, each lane in order
+	 * -- so a tile's index there is its track's. */
+	QList<snurra_tile *> ordered() const;
 	void nudge_lane(snurra_tile *tile, qint64 delta_us);
 public:
 	/* Sync (project.md sec 4): `tile`'s tempo set so its beat runs at the

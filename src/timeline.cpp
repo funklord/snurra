@@ -8,53 +8,79 @@
 
 #include "snurra/clock.h"
 
-int64_t snurra_timeline::length_out(const snurra_timeline_tile &tile) {
-	return int64_t(double(tile.length) / tile.tempo);
+int64_t snurra_timeline::length_out(const snurra_timeline_track &track) {
+	return int64_t(double(track.length) / track.tempo);
 }
 
-const snurra_timeline_tile *snurra_timeline::tile(int row, int index) const {
-	const auto lane = lanes.find(row);
-	if (lane == lanes.end() || index < 0 || index >= int(lane->second.tiles.size())) return nullptr;
-	return &lane->second.tiles[size_t(index)];
+const snurra_timeline_track *snurra_timeline::track(int index) const {
+	return index >= 0 && index < int(tracks.size()) ? &tracks[size_t(index)] : nullptr;
 }
 
-int64_t snurra_timeline::overlap(int row, int index) const {
-	const snurra_timeline_tile *one = tile(row, index);
-	const snurra_timeline_tile *next = tile(row, index + 1);
+int snurra_timeline::follower(int index) const {
+	for (int i = 0; i < int(tracks.size()); ++i)
+		if (tracks[size_t(i)].follows == index && index >= 0) return i;
+	return -1;
+}
+
+std::vector<int> snurra_timeline::train(int index) const {
+	std::vector<int> found;
+	if (!track(index)) return found;
+	/* Back to its first, then on; a connection in a ring is cut where it
+	 * comes round, so a mistake in the data cannot hang the player. */
+	int first = index;
+	for (size_t steps = 0; tracks[size_t(first)].follows >= 0 && track(tracks[size_t(first)].follows) && steps < tracks.size(); ++steps)
+		first = tracks[size_t(first)].follows;
+	for (int at = first; at >= 0 && found.size() < tracks.size(); at = follower(at)) {
+		if (std::find(found.begin(), found.end(), at) != found.end()) break;
+		found.push_back(at);
+	}
+	return found;
+}
+
+int64_t snurra_timeline::overlap(int index) const {
+	const snurra_timeline_track *one = track(index);
+	const int next_index = follower(index);
+	const snurra_timeline_track *next = track(next_index);
 	if (!one || !next) return 0;
 	return snurra_train_overlap(length_out(*one), length_out(*next), m_rate, one->tempo, next->tempo, &one->grid, &next->grid,
 	                            next->chosen_overlap);
 }
 
-int64_t snurra_timeline::start(int row, int index) const {
-	const auto lane = lanes.find(row);
-	if (lane == lanes.end()) return 0;
-	int64_t start = lane->second.begin;
-	for (int i = 0; i < index && i < int(lane->second.tiles.size()); ++i)
-		start += length_out(lane->second.tiles[size_t(i)]) - overlap(row, i);
+int64_t snurra_timeline::start(int index) const {
+	const std::vector<int> chain = train(index);
+	if (chain.empty()) return 0;
+	int64_t start = tracks[size_t(chain.front())].position;
+	for (int at : chain) {
+		if (at == index) break;
+		start += length_out(tracks[size_t(at)]) - overlap(at);
+	}
 	return start;
 }
 
-snurra_timeline::place snurra_timeline::at(int row, int64_t time) const {
+int64_t snurra_timeline::end(int index) const {
+	const snurra_timeline_track *one = track(index);
+	return one ? start(index) + length_out(*one) : 0;
+}
+
+snurra_timeline::place snurra_timeline::at(const std::vector<int> &chain, int64_t time) const {
 	place found;
-	const auto lane = lanes.find(row);
-	if (lane == lanes.end()) return found;
-	const std::vector<snurra_timeline_tile> &tiles = lane->second.tiles;
-	int64_t start = lane->second.begin;
-	/* Before a late lane begins: its first tile, from its start, after the
-	 * wait -- a start on the shared clock still to come (deck.h). */
-	if (!tiles.empty() && time < start) {
-		found.index = 0;
-		found.frame = std::max<int64_t>(0, tiles.front().offset);
+	if (chain.empty() || !track(chain.front())) return found;
+	int64_t start = this->start(chain.front());
+	/* Before a late train begins: its first track, from its start, after
+	 * the wait -- a start on the shared clock still to come (deck.h). */
+	if (time < start) {
+		found.track = chain.front();
+		found.frame = std::max<int64_t>(0, tracks[size_t(chain.front())].offset);
 		found.wait = start - time;
 		return found;
 	}
-	for (int i = 0; i < int(tiles.size()); ++i) {
-		const int64_t length = length_out(tiles[size_t(i)]);
-		const int64_t own = length - overlap(row, i);
+	for (int index : chain) {
+		const snurra_timeline_track &one = tracks[size_t(index)];
+		const int64_t length = length_out(one);
+		const int64_t own = length - overlap(index);
 		if (length <= 0 || time < start + own) {
-			found.index = i;
-			found.frame = std::max<int64_t>(0, std::llround(double(time - start) * tiles[size_t(i)].tempo) + tiles[size_t(i)].offset);
+			found.track = index;
+			found.frame = std::max<int64_t>(0, std::llround(double(time - start) * one.tempo) + one.offset);
 			return found;
 		}
 		start += own;
@@ -62,10 +88,56 @@ snurra_timeline::place snurra_timeline::at(int row, int64_t time) const {
 	return found;
 }
 
-int64_t snurra_timeline::time_of(int row, int index, int64_t frame) const {
-	const snurra_timeline_tile *one = tile(row, index);
+int64_t snurra_timeline::time_of(int index, int64_t frame) const {
+	const snurra_timeline_track *one = track(index);
 	if (!one) return 0;
-	return start(row, index) + std::llround(double(frame - one->offset) / one->tempo);
+	return start(index) + std::llround(double(frame - one->offset) / one->tempo);
+}
+
+snurra_timeline::seating snurra_timeline::seat() const {
+	seating seated;
+	seated.channel.assign(tracks.size(), -1);
+	std::vector<int> order(tracks.size());
+	std::vector<int64_t> starts(tracks.size()), ends(tracks.size());
+	for (size_t i = 0; i < tracks.size(); ++i) {
+		order[i] = int(i);
+		starts[i] = start(int(i));
+		/* A length not known yet holds its channel to the end of time. */
+		ends[i] = tracks[i].length > 0 ? starts[i] + length_out(tracks[i]) : INT64_MAX;
+	}
+	/* By when they come in; pinned first among equals, so a free track
+	 * gives way to a pin rather than taking its place. */
+	std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+		if (starts[size_t(a)] != starts[size_t(b)]) return starts[size_t(a)] < starts[size_t(b)];
+		return tracks[size_t(a)].pinned >= 0 && tracks[size_t(b)].pinned < 0;
+	});
+	std::vector<int64_t> busy_until;   /* by channel */
+	auto free_at = [&](int channel, int64_t when) {
+		return channel >= int(busy_until.size()) || busy_until[size_t(channel)] <= when;
+	};
+	auto take = [&](int channel, int index) {
+		if (channel >= int(busy_until.size())) busy_until.resize(size_t(channel) + 1, INT64_MIN);
+		busy_until[size_t(channel)] = std::max(busy_until[size_t(channel)], ends[size_t(index)]);
+		seated.channel[size_t(index)] = channel;
+	};
+	for (int index : order) {
+		const snurra_timeline_track &one = tracks[size_t(index)];
+		const int64_t when = starts[size_t(index)];
+		if (one.pinned >= 0) {
+			if (!free_at(one.pinned, when)) seated.conflicts.push_back(index);
+			take(one.pinned, index);
+			continue;
+		}
+		if (one.was >= 0 && free_at(one.was, when)) {
+			take(one.was, index);
+			continue;
+		}
+		int channel = 0;
+		while (!free_at(channel, when)) ++channel;
+		take(channel, index);
+	}
+	seated.channels = int(busy_until.size());
+	return seated;
 }
 
 /*

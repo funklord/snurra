@@ -2,32 +2,40 @@
 #define SNURRA_TIMELINE_H
 
 #include <cstdint>
-#include <map>
 #include <vector>
 
 #include "snurra/beats.h"
 
 /*
- * A player's timeline as data (project.md sec 3f): lanes of tiles, each
- * lane a train -- its tiles one after another, crossing over their
- * overlaps -- and the lanes a stack, played at once. A window draws it
- * (snurra_node), the decks will play it, and a deck will play one whole as
- * its source; so it knows nothing of widgets, processes or the clock.
+ * A player's timeline as data (project.md sec 3f): tracks, each placed
+ * where it comes in or connected after another, and the channels they are
+ * seated on. A window draws it (snurra_node), the decks will play it, and
+ * a deck will play one whole as its source; so it knows nothing of
+ * widgets, processes or the clock.
+ *
+ * A track is free -- it comes in at its `position` -- or follows another,
+ * coming in where that one ends less their overlap. Tracks so connected
+ * are a train. Channels are not stored on tracks but seated
+ * (snurra_timeline::seat): a channel never holds two tracks at once, so
+ * connecting two trains can move the second's onto other channels, and
+ * nothing ever overlaps on one.
  *
  * Times are frames out at `rate`, from the timeline's start; a track's own
- * frames are its tile's, at its tempo (frames of track a frame out).
+ * frames are its, at its tempo (frames of track a frame out). A track is
+ * named by its index in `tracks`.
  */
-struct snurra_timeline_tile {
+struct snurra_timeline_track {
 	int64_t length = 0;          /* the track's frames; 0 or less: not known yet */
 	double tempo = 1;
-	int64_t offset = 0;          /* track frames it is ahead of its lane (a nudge) */
-	int64_t chosen_overlap = -1; /* frames out across the tile before, where dragged to; -1 the train's own */
+	int64_t offset = 0;          /* track frames it is ahead of its place (a nudge) */
 	snurra_beat_grid grid;
-};
 
-struct snurra_timeline_lane {
-	int64_t begin = 0;           /* where the lane's first tile comes in */
-	std::vector<snurra_timeline_tile> tiles;
+	int64_t position = 0;        /* where it comes in, when it follows nothing */
+	int follows = -1;            /* the track it is connected after; -1 free */
+	int64_t chosen_overlap = -1; /* frames out across the one it follows, where dragged to; -1 the train's own */
+
+	int pinned = -1;             /* a channel the person put it on; -1 seated freely */
+	int was = -1;                /* the channel it sat on before, kept where it can be */
 };
 
 class snurra_timeline {
@@ -36,42 +44,62 @@ public:
 
 	int rate() const { return m_rate; }
 
-	/* Lanes by row: a window's rows need not run from 0 without a gap. */
-	std::map<int, snurra_timeline_lane> lanes;
+	std::vector<snurra_timeline_track> tracks;
 
-	/* A tile's length out: its track's at its tempo. */
-	static int64_t length_out(const snurra_timeline_tile &tile);
+	/* A track's length out: its track's at its tempo. */
+	static int64_t length_out(const snurra_timeline_track &track);
 
-	/* Frames out tile `index` of lane `row` crosses the next over; 0 for
-	 * the last. */
-	int64_t overlap(int row, int index) const;
+	/* The track connected after `track`, or -1. */
+	int follower(int track) const;
 
-	/* Where tile `index` of lane `row` comes in. */
-	int64_t start(int row, int index) const;
+	/* The train `track` is in, from its first track, in order. */
+	std::vector<int> train(int track) const;
 
-	/* What lane `row` plays at `time`: which tile (-1 none: past its end),
-	 * at which frame of its track, and how long until it begins where the
-	 * lane has not yet. Inside an overlap is the next tile's: a seek into a
-	 * crossfade comes in on the track it goes to. A length not known is
-	 * taken as long enough. */
+	/* Frames out `track` and its follower cross over; 0 where none. */
+	int64_t overlap(int track) const;
+
+	/* Where `track` comes in, and where it ends. */
+	int64_t start(int track) const;
+	int64_t end(int track) const;
+
+	/* What `train` (as train() gives it) plays at `time`: which of its
+	 * tracks (-1 none: past its end), at which frame of that track, and how
+	 * long until it begins where it has not yet. Inside an overlap is the
+	 * next track's: a seek into a crossfade comes in on the track it goes
+	 * to. A length not known is taken as long enough. */
 	struct place {
-		int index = -1;
+		int track = -1;
 		int64_t frame = 0;
 		int64_t wait = 0;
 	};
-	place at(int row, int64_t time) const;
+	place at(const std::vector<int> &train, int64_t time) const;
 
-	/* The time at which tile `index` of lane `row` is at `frame` of its
-	 * track. */
-	int64_t time_of(int row, int index, int64_t frame) const;
+	/* The time at which `track` is at `frame` of itself. */
+	int64_t time_of(int track, int64_t frame) const;
+
+	/*
+	 * Every track's channel, in time order: a pinned track on its pin, else
+	 * the channel it was on where that is free, else the lowest free one --
+	 * free meaning nothing still playing there when it comes in. Taken in
+	 * the order tracks come in, so the channels used are as few as the
+	 * most tracks ever sounding at once: a train, whose overlap is never
+	 * more than half of either track, alternates over two. A pin on a
+	 * channel not free is kept and named in `conflicts`.
+	 */
+	struct seating {
+		std::vector<int> channel;    /* by track */
+		std::vector<int> conflicts;  /* pinned tracks sharing a channel with one sounding */
+		int channels = 0;
+	};
+	seating seat() const;
 
 private:
-	const snurra_timeline_tile *tile(int row, int index) const;
+	const snurra_timeline_track *track(int index) const;
 	int m_rate;
 };
 
 /*
- * A train's overlap between a tile and the next (project.md sec 3b, steps
+ * A train's overlap between a track and the next (project.md sec 3b, steps
  * 3 and 6), in frames out at `rate`: lengths in frames out, tempos as the
  * decks', grids in each track's frames. 5 s ($SNURRA_TRAIN_OVERLAP_MS),
  * never more than half either; where both have a beat, the whole bars of

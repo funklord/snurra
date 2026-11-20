@@ -899,27 +899,57 @@ view is in a symbiosis with a single player train and that a single deck
 can also be the output endpoint for a player train/deck. Very trippy and
 recursive."
 
-**One thing underneath: a timeline.** A set is lanes of tiles -- each a
-track with its start, tempo, key, EQ, envelope, cue, offset -- and the
-overlaps between a lane's tiles, which is what a window's group already
-is (sec 3b). Today that timeline is computed by the window from its
-widgets (`snurra_node::lane_start`, `lay_out_timeline`); it becomes data
-of its own, `snurra_timeline`, which the window shows and the decks
-play. Everything below is that one model seen two ways, or one inside
-another.
+**One thing underneath: a timeline.** A set is tracks -- each with its
+start, tempo, key, EQ, envelope, cue, offset -- which a window's group
+already is (sec 3b). It was computed by the window from its widgets
+(`snurra_node::lane_start`, `lay_out_timeline`); it is data of its own,
+`snurra_timeline`, which the window shows and the decks play.
+Everything below is that one model seen two ways, or one inside another.
+
+**Channels, not ABAB** (the holder, 2026-11-20: "I feel like the ABABAB
+thing is going to be in the way ... we accept layout inversions half of
+the time" -- or the next track goes "onto a separate channel, on a lower
+vertical level (with reusable but non-overlapping tracks on each
+channel) each player has its own timeline and automation until they are
+connected in a train"; then, of connecting two trains: "that will force
+a modification on the track ordering of the second one, as they might
+start overlapping").
+
+- **A channel is a deck is a lane**, for good: channel 2 is deck 2 in
+  the deck view and the second lane in the timeline, so nothing swaps
+  sides. A channel never sounds two tracks at once; tracks on it may
+  have gaps between them and come back.
+- **A track is free or follows another.** Free, it comes in at its own
+  position; connected after another -- on any channel -- it comes in
+  where that one ends less their overlap. Tracks so connected are a
+  train; a train is a connection, not a layout. A window's lane today is
+  a train whose first track is free.
+- **Channels are seated, not stored** (`snurra_timeline::seat`): in the
+  order tracks come in, each takes its pin, else the channel it was on
+  where free, else the lowest free -- so the channels used are as few as
+  the most tracks ever sounding at once. A train alternates over two,
+  since an overlap is never more than half of either track (track 1 and
+  3 at most touch). Connecting two trains makes one; the only change is
+  that the second's alternation may flip -- the reordering the holder
+  foresaw, done whole and computed, so nothing overlaps. Trains at once
+  take as many channels as sound together: the 4-deck view's use.
+- **What is fixed while it moves:** the decks, which hardware binds
+  (below); a track sounding, which keeps its channel -- seating counts
+  from what plays, and a move it cannot avoid is a gapless handover; and
+  a pin, kept where put, a collision shown to the person
+  (`conflicts`), never moved behind their back.
+- **The crossfader is never automated.** A crossfade between channels is
+  their two faders' envelopes, which is what a train's crossfade already
+  is (two envelopes); the crossfader is left to the hand, whichever side
+  the music is on. That is what removes the inversion.
 
 **Symbiosis: the deck view is a view of one train, live, both ways.**
 
-- A train unfolds onto alternating decks: track 1 on A, 2 on B, 3 on A;
-  the next is loaded and cued on the free deck while the current plays.
-  A stack's lanes, up to four, go to four decks -- what the 4-deck
-  layout is for.
-- **The train's automation drives the decks**: a crossfade is the
-  crossfader moving over the overlap where the two envelopes mirror
-  (equal-power out and in), and each deck's channel fader where they do
-  not -- the faithful mapping for any shape, the crossfader then left
-  centred. A tile's envelope is its channel fader; tempo, key lock, key
-  and EQ go with the tile to its deck.
+- Each track plays on the deck its channel is: the next is loaded and
+  cued on its deck while the one before plays.
+- **The timeline's automation drives the decks**: a track's envelope is
+  its channel fader; tempo, key lock, key and EQ go with the track to its
+  deck. The crossfader stays the hand's (above).
 - **A hand takes over**, as a DAW's touch mode: a control touched on
   screen or on a controller leaves the automation while held, and
   follows it again when let go.
@@ -1043,7 +1073,14 @@ alike.
    beside them. The window takes a snapshot of its tiles
    (`snurra_node::timeline`) and asks it. The suite passed whole on it,
    and `a_timeline_places_its_tiles` holds the model alone -- with the
-   overlaps left out of `start` it fails.
+   overlaps left out of `start` it fails. **Reworked the same day** to
+   tracks free or following another, and channels seated (above): a
+   window's lane is a train whose first is free, so it asks as before.
+   `channels_are_seated_so_none_overlaps`: a train of five alternates
+   0 1 0 1 0; a second train connected after it flips to start on 1;
+   two trains 10 s apart take three channels, the most sounding at once;
+   a channel kept, a pin kept and its collision named -- with what still
+   sounds ignored, or the kept channel ignored, it fails.
 2. A timeline as a source, so a deck plays a player's output -- a
    channel with a prepared mix.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
