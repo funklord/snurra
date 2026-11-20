@@ -381,6 +381,8 @@ public:
 	void place(int64_t time, qint64 at_us);
 	void load_track(int track, int64_t frame);
 	void keep_moves(int deck);
+	bool start_now(int deck);
+	void retime();
 	void start_track(int track, qint64 at_us);
 	void automate(int track, int64_t time);
 	void conduct();
@@ -920,7 +922,9 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		decks[deck]->fold->show();
 		/* Its play and seek are the player's, not its own. */
 		tile->set_grouped(true);
-		QObject::connect(tile, &snurra_tile::play_requested, q, [this](snurra_tile *, bool playing) {
+		QObject::connect(tile, &snurra_tile::play_requested, q, [this, deck](snurra_tile *, bool playing) {
+			/* Shift with a cued deck's play: that deck in now, by hand. */
+			if (playing && (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier) && start_now(deck)) return;
 			if (!score || playing == score->playing) return;
 			const qint64 now = snurra_clock_us();
 			const int64_t time = score_time(now);
@@ -949,6 +953,51 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 	} else {
 		tile->hold_at(frame);
 	}
+}
+
+/* The score's times again from its states, after one has moved; the
+ * channels as they were -- decks do not change places mid-set. */
+void snurra_dj_private::retime() {
+	score->timeline = snurra_timeline_from(score->states, engine->rate());
+	for (size_t i = 0; i < score->states.size(); ++i) {
+		score->start[i] = score->timeline.start(int(i));
+		score->end[i] = score->timeline.end(int(i));
+		const int before = score->timeline.tracks[i].follows;
+		score->in[i] = before >= 0 ? score->timeline.overlap(before) : 0;
+		score->out[i] = score->timeline.overlap(int(i));
+		score->stage[i] = -1;
+	}
+}
+
+/*
+ * A deck started by hand (sec 3f, step 5: "a deck started becomes where
+ * its tile comes in"): the track cued on `deck` comes in now, and where
+ * it follows another, the overlap that brings it in now is written into
+ * the player -- where the train can say it: inside the one before, at
+ * most half of either. Elsewhere it starts all the same, unwritten.
+ */
+bool snurra_dj_private::start_now(int deck) {
+	if (!score || !score->playing || deck < 0 || deck >= int(score->on_deck.size())) return false;
+	const int track = score->on_deck[size_t(deck)];
+	if (track < 0 || score->started[size_t(track)]) return false;
+	const int rate = engine->rate();
+	const qint64 at = snurra_clock_us() + engine->latency_us() + 50000;
+	const int64_t time = score_time(at);
+	const int before = score->timeline.tracks[size_t(track)].follows;
+	if (before >= 0) {
+		const int64_t overlap = score->end[size_t(before)] - time;
+		const int64_t room = std::min(snurra_timeline::length_out(score->timeline.tracks[size_t(before)]),
+		                              snurra_timeline::length_out(score->timeline.tracks[size_t(track)]))
+		                     / 2;
+		if (overlap > 0 && overlap <= room) {
+			score->states[size_t(track)].overlap_us = snurra_frames_to_us(overlap, rate);
+			retime();
+		}
+	}
+	score->start[size_t(track)] = time;   /* now, written or not */
+	score->end[size_t(track)] = time + snurra_timeline::length_out(score->timeline.tracks[size_t(track)]);
+	start_track(track, at);
+	return true;
 }
 
 void snurra_dj_private::start_track(int track, qint64 at_us) {
@@ -1124,6 +1173,10 @@ bool snurra_dj::listen() {
 
 bool snurra_dj::unfold(int deck) {
 	return d->unfold(deck);
+}
+
+bool snurra_dj::start_now(int deck) {
+	return d->start_now(deck);
 }
 
 bool snurra_dj::fold() {

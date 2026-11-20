@@ -93,6 +93,7 @@ private slots:
 	void a_listener_plugs_into_a_windows_tile();
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
+	void a_deck_started_by_hand_is_where_its_track_comes_in();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
@@ -1755,6 +1756,72 @@ void embed_test::a_listener_plugs_into_a_windows_tile() {
 	QTRY_VERIFY_WITH_TIMEOUT(heard(hz, rms) && rms < 1e-4, 3000);
 	socket->click();
 	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), -1, 2000);
+}
+
+/*
+ * A deck started by hand (project.md sec 3f, step 5): two tones of 6 s,
+ * the second to come in at 5 s, crossing the first by 1 s, and cued on
+ * deck B until the conductor starts it a lead before. Started by hand at
+ * 3 s, it comes in then and plays from its start; folded, the player has
+ * it there -- crossing the first by some 3 s, not 1.
+ */
+void embed_test::a_deck_started_by_hand_is_where_its_track_comes_in() {
+	QTemporaryDir runtime;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.show();
+	QVERIFY(dj.listen());
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("by hand");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	for (int i = 0; i < 2; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(330 + 110 * i);
+		tone.duration_us = 6000000;
+		tone.column = i;
+		tone.overlap_us = i == 1 ? 1000000 : -1;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("2 tracks"), 3000);
+	QElapsedTimer since;
+	since.start();
+	QVERIFY(dj.unfold(0));
+	QVERIFY(!dj.start_now(0));   /* deck A's track has started already */
+	QTest::qWait(int(std::max<qint64>(0, 3000 - since.elapsed())));
+	QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b"));
+	snurra_tile *b = place->findChild<snurra_tile *>();
+	QVERIFY(b && !b->playing());
+	/* Where the player stands: deck A's track began with it. */
+	snurra_tile *a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(a && a->playing());
+	const qint64 player_at = a->state().position_now(snurra_clock_us());
+	QVERIFY(dj.start_now(1));
+	QVERIFY(!dj.start_now(1));   /* in now: nothing cued there */
+	QTest::qWait(500);
+	QVERIFY(b->playing());
+	QVERIFY2(qAbs(b->state().position_us - 450000) < 250000, qPrintable(QStringLiteral("B at %1 us").arg(b->state().position_us)));
+	QVERIFY(dj.fold());
+	QWidget *a_place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	QTest::qWait(300);
+	snurra_tile *folded = a_place->findChild<snurra_tile *>();
+	QVERIFY(folded && folded->state().player.size() == 2);
+	const qint64 overlap = folded->state().player[1].overlap_us;
+	/* Brought in a latency and 50 ms from the asking. */
+	const qint64 meant = 6000000 - (player_at + 60000);
+	QVERIFY2(qAbs(overlap - meant) < 250000, qPrintable(QStringLiteral("crossing %1 us, meant about %2").arg(overlap).arg(meant)));
 }
 
 /*

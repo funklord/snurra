@@ -160,6 +160,11 @@ public:
 	 * as one player again, as edited, where it stands. False where no
 	 * player is unfolded. */
 	bool fold();
+	/* (5) The track cued on `deck` of an unfolded player in now, by hand
+	 * -- Shift with the deck's play -- and where the train can say it,
+	 * where it comes in is written into the player. False where nothing
+	 * is cued there. */
+	bool start_now(int deck);
 
 	/* (5) Controllers (project.md sec 3f): MIDI in, the decks' controls
 	 * named ch_1_play ... ch_4_eq_high and crossfader, bound as the

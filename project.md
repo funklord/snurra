@@ -1240,8 +1240,17 @@ alike.
    `a_fader_ridden_is_written_into_the_track` (a fader pulled from 100 to
    50 while playing: the envelope ends its ride at half, then 1 as it
    was, the fader back at 100; not written, it fails). **Not yet:** a
-   crossfade done by hand on the channel faders becoming the overlap, a
-   deck started by hand becoming where its track comes in. **And the
+   crossfade done by hand on the channel faders becoming the overlap.
+   **A deck started by hand, 2026-11-20** (`snurra_dj::start_now`;
+   Shift with a cued deck's play): the track cued there comes in now
+   from its start, and where it follows another and the train can say
+   it -- inside the one before, at most half of either -- the overlap
+   that brings it in then is written into the player and the score's
+   times taken again (its channels kept: decks do not change places
+   mid-set); elsewhere it starts all the same, unwritten. Tested by two
+   6 s tones crossing 1 s, the second started by hand at 3 s: it plays
+   from its start, and folded the player has it crossing by some 2.8 s;
+   not written, it stays at 1 s and fails. **And the
    rest of the hand's moves:** a conducted deck's EQ, tempo, key lock and
    key as the hand left them are written into its track in the player
    when the track leaves the deck and when the decks are folded
