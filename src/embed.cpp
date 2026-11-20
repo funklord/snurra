@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QUuid>
 #include <QHash>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QToolTip>
@@ -389,6 +390,7 @@ public:
 	QGridLayout *grid = nullptr;
 	QSlider *crossfader = nullptr;
 	QLabel *left_side = nullptr, *right_side = nullptr;   /* which decks each end sends */
+	QComboBox *headphones = nullptr;   /* which listener a "listen" moves, with two or more */
 	snurra_library *browser = nullptr;
 	double position = 0;
 
@@ -1150,6 +1152,17 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	fader->addWidget(d->left_side);
 	fader->addWidget(d->crossfader, 2);
 	fader->addWidget(d->right_side);
+	d->headphones = new QComboBox(this);
+	d->headphones->setAccessibleName(tr("Headphones"));
+	d->headphones->setToolTip(tr("Whose headphones a deck's \"listen\" plugs in"));
+	d->headphones->hide();
+	fader->addWidget(d->headphones);
+	connect(d->headphones, &QComboBox::currentIndexChanged, this, [this](int index) {
+		if (index >= 0) {
+			d->chosen_listener = index;
+			d->show_plugs();
+		}
+	});
 	d->name_sides();
 	fader->addStretch(1);
 	column->addLayout(fader);
@@ -1484,6 +1497,17 @@ void snurra_dj_private::plug(int listener, int deck) {
 }
 
 void snurra_dj_private::show_plugs() {
+	/* With two listeners or more, which one a "listen" moves is chosen
+	 * by the crossfader: several people preparing on one mix (sec 3f). */
+	if (headphones) {
+		headphones->blockSignals(true);
+		while (headphones->count() > int(listeners.size())) headphones->removeItem(headphones->count() - 1);
+		while (headphones->count() < int(listeners.size()))
+			headphones->addItem(snurra_dj::tr("headphones %1").arg(headphones->count() + 1));
+		headphones->setCurrentIndex(std::min(chosen_listener, std::max(0, headphones->count() - 1)));
+		headphones->setVisible(listeners.size() > 1);
+		headphones->blockSignals(false);
+	}
 	for (int i = 0; i < decks.size(); ++i) {
 		decks[i]->listen->setVisible(!listeners.empty());
 		const bool here = chosen_listener < int(listeners.size()) && listeners[size_t(chosen_listener)]->deck == i;
@@ -1509,6 +1533,12 @@ int snurra_dj::add_listener(const QString &output) {
 
 void snurra_dj::plug(int listener, int deck) {
 	d->plug(listener, deck);
+}
+
+void snurra_dj::choose_listener(int listener) {
+	if (listener < 0 || listener >= int(d->listeners.size())) return;
+	d->chosen_listener = listener;
+	d->show_plugs();
 }
 
 int snurra_dj::plugged(int listener) const {

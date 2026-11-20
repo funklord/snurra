@@ -177,6 +177,9 @@ public:
 	int add_listener(const QString &output);
 	void plug(int listener, int deck);
 	int plugged(int listener) const;
+	/* Which listener a deck's "listen" moves -- chosen on screen by the
+	 * crossfader where there are two or more. */
+	void choose_listener(int listener);
 
 	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
 	void set_crossfader(double position);

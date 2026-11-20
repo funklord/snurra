@@ -30,6 +30,7 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <cstring>
+#include <QComboBox>
 #include <QtTest>
 
 #include <alsa/asoundlib.h>
@@ -1672,6 +1673,22 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 	QTest::qWait(700);
 	QVERIFY(heard(hz, rms));
 	QVERIFY2(rms < 1e-4, qPrintable(QStringLiteral("unplugged: %1").arg(rms)));
+
+	/* A second pair of headphones: chosen by the crossfader, the "listen"
+	 * moves that one's plug and leaves the first's. */
+	QComboBox *headphones = nullptr;
+	for (QComboBox *box : dj.findChildren<QComboBox *>())
+		if (box->accessibleName() == QLatin1String("Headphones")) headphones = box;
+	QVERIFY(headphones && !headphones->isVisible());
+	QCOMPARE(dj.add_listener(QStringLiteral("null")), 1);
+	QVERIFY(headphones->isVisible());
+	QCOMPARE(headphones->count(), 2);
+	dj.plug(0, 1);
+	headphones->setCurrentIndex(1);
+	QVERIFY(!listen->isChecked());
+	listen->click();
+	QCOMPARE(dj.plugged(1), 0);
+	QCOMPARE(dj.plugged(0), 1);
 }
 
 /*

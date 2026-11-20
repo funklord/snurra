@@ -1360,8 +1360,11 @@ alike.
    (`a_listener_plugs_into_a_windows_tile`: the socket appears, the
    headphones hear the tile's 440 Hz, silent when it pauses, the plug out
    when clicked again); ignoring LISTEN, or the tile's pause, fails it.
-   **Not yet:** sockets on a player's sum and a nested player's track,
-   and a second listener chosen on screen.
+   With two listeners or more, a chooser by the crossfader says whose
+   headphones a deck's "listen" moves (`choose_listener`); tested with a
+   second listener, chosen there, its plug moved and the first's left
+   (with the choice ignored, it fails). **Not yet:** sockets on a nested
+   player's track.
 
 **Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
 plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which
