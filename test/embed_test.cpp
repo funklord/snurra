@@ -1222,6 +1222,27 @@ void embed_test::the_control_moved_is_told_from_the_noise() {
 		QVERIFY(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).childGroups().contains(QStringLiteral("controllers")) == false
 		        || QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("controllers/bindings")).isNull());
 	}
+	/* A fine control: its two halves one value of 14 bits. */
+	{
+		QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+		QList<int> given;
+		snurra_controller controller(
+		        QString(), [&given](const QString &control, snurra_control_kind kind, const snurra_midi_event &moved) {
+			        QCOMPARE(control, QStringLiteral("ch_1_tempo"));
+			        QCOMPARE(kind, snurra_control_kind::fine);
+			        QCOMPARE(moved.kind, snurra_midi_event::bend);
+			        given << moved.value;
+		        },
+		        nullptr);
+		controller.bindings().bind(QStringLiteral("Controller:Port 1/ch1/cc2"), QStringLiteral("ch_1_tempo"), snurra_control_kind::fine);
+		controller.bindings().save();   /* it reads them again as events come */
+		controller.take(event(2, 64));
+		controller.take(event(34, 0));
+		controller.take(event(34, 127));
+		controller.take(event(2, 65));
+		QCOMPARE(given, (QList<int>{ 64 * 128, 64 * 128, 64 * 128 + 127, 65 * 128 + 127 }));
+		QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	}
 	/* Bound again elsewhere, a control leaves its old hardware control. */
 	again.bind(QStringLiteral("Controller:Port 1/ch1/cc8"), QStringLiteral("ch_1_level"), snurra_control_kind::absolute);
 	QVERIFY(again.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")).isEmpty());

@@ -513,11 +513,35 @@ void snurra_controller::received(const snurra_midi_event &event) {
 	}
 	snurra_control_kind kind = snurra_control_kind::absolute;
 	QString control = m_bindings.control_for(event.control(), &kind);
+	snurra_midi_event heard = event;
+	/* A fine control (a controller and its partner 32 above, MIDI's 14
+	 * bits): either half moves it, the two read as one value of 0 to
+	 * 16383, given on as a bend's -- so a 14-bit fader is not stepped in
+	 * 128ths. The finer half is bound by its coarse one. */
+	if (event.kind == snurra_midi_event::cc && event.number < 64) {
+		QString coarse = event.control();
+		snurra_control_kind coarse_kind = kind;
+		if (control.isEmpty() && event.number >= 32) {
+			snurra_midi_event partner = event;
+			partner.number = event.number - 32;
+			coarse = partner.control();
+			control = m_bindings.control_for(coarse, &coarse_kind);
+			if (coarse_kind != snurra_control_kind::fine) control.clear();
+			else m_finer[coarse] = event.value;
+		} else if (kind == snurra_control_kind::fine) {
+			m_coarse[coarse] = event.value;
+		}
+		if (!control.isEmpty() && coarse_kind == snurra_control_kind::fine) {
+			kind = snurra_control_kind::fine;
+			heard.kind = snurra_midi_event::bend;
+			heard.value = m_coarse.value(coarse) * 128 + m_finer.value(coarse);
+		}
+	}
 	if (control.isEmpty()) return;
 	/* Another player's binding is that player's to take. */
 	const int colon = int(control.indexOf(QLatin1Char(':')));
 	const QString player = colon < 0 ? QString() : control.left(colon);
 	if (player != m_player) return;
 	if (colon >= 0) control = control.mid(colon + 1);
-	m_apply(control, kind, event);
+	m_apply(control, kind, heard);
 }

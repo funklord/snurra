@@ -1307,8 +1307,13 @@ alike.
    `ch_a_gain -> deck_a_volume (absolute)` and is read back through both
    names; nothing named writes nothing (tested in
    `the_control_moved_is_told_from_the_noise`; without the names read
-   back, it fails). **Not yet:** a layout of slots the person arranges, a 14-bit control's fine half
-   read (its coarse half moves it), HID and Android MIDI, and Mixxx's
+   back, it fails). **A fine control's both halves, 2026-11-20:** a
+   control learned as fine (a controller and its partner 32 above) is
+   moved by either half, the two read as one value of 0 to 16383 and
+   given on as a bend's, so a 14-bit pitch fader is not stepped in
+   128ths (tested by feeding the controller the halves in turn; with the
+   finer half ignored, it fails). **Not yet:** a layout of slots the
+   person arranges, HID and Android MIDI, and Mixxx's
    mappings (whether their JavaScript too is the holder's). A
    window manager that takes Alt-drag to move windows (many on X11) may
    take the press before snurra sees it; a second gesture may be wanted

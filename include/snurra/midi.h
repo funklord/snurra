@@ -179,9 +179,13 @@ public:
 	 * is three, by the third of the widget under the pointer. */
 	void name_widget(QWidget *widget, const QString &control);
 	snurra_bindings &bindings() { return m_bindings; }
+	/* An event as MIDI in gives it -- a test's way in. */
+	void take(const snurra_midi_event &event) { received(event); }
 
 private:
 	void received(const snurra_midi_event &event);
+	/* A fine control's halves as they last came: by its coarse index. */
+	QMap<QString, int> m_coarse, m_finer;
 	void start(const QString &control);
 	void finish(bool final);
 	QString m_player;
