@@ -82,6 +82,20 @@ snurra_peaks::snurra_peaks(std::shared_ptr<snurra_bytes> bytes, const QString &n
 	});
 }
 
+snurra_peaks::snurra_peaks(std::function<std::unique_ptr<snurra_source>(std::function<bool()> stopped)> open, int columns,
+                           std::function<void(int first, const std::vector<float> &values)> piece) {
+	m_thread = std::thread([this, open, columns, piece] {
+		auto stopped = [this] { return m_stop.load(std::memory_order_relaxed); };
+		std::unique_ptr<snurra_source> reader = open(stopped);
+		if (!reader || reader->length() <= 0) return;
+		snurra_peaks_of(*reader, reader->length(), columns, [&stopped, &piece](int first, const std::vector<float> &values) {
+			if (stopped()) return false;
+			piece(first, values);
+			return !stopped();
+		});
+	});
+}
+
 snurra_peaks::~snurra_peaks() {
 	m_stop.store(true);
 	if (m_thread.joinable()) m_thread.join();

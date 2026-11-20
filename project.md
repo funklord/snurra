@@ -1144,8 +1144,14 @@ alike.
    is heard. Tested with two tunes kept at 120 BPM and at 128 played at
    1.25: standing in each, the tile's beat is that track's where it falls
    (`a_player_in_a_tile_beats_with_the_track_it_sounds`; unmapped, it
-   fails). A track never analysed gives the tile no beat there. **Not yet in a nested track:** a waveform
-   of the whole mix, and analysis of a track never loaded on a deck.
+   fails). A track never analysed gives the tile no beat there. **A player's
+   waveform, 2026-11-20:** a tile holding a player draws its whole mix,
+   read over the timeline on the peaks' own thread (a `snurra_peaks`
+   given a function opening its source); tested by a tone coming in at
+   1 s on a player of 2 s -- silent columns before, 0.2 after
+   (`a_players_waveform_is_its_mix`; measured over half, it fails).
+   **Not yet in a nested track:** analysis of a track never loaded on a
+   deck.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless. **Built
    2026-11-20.** `snurra_dj` takes two decks or four (`set_deck_count`,

@@ -1186,8 +1186,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 			m_player_grids.push_back(grid);
 		}
 	}
-	/* A player in it has no file to read again (not yet its waveform). */
-	if (!snurra_is_url(state.sound_source()) && state.player.empty()) read_peaks(nullptr);
+	/* A player in it: its whole mix's waveform (read_peaks). */
+	if (!snurra_is_url(state.sound_source()) || !state.player.empty()) read_peaks(nullptr);
 	if (QFileInfo(state.source).isFile() || url) read_video(state.controls);
 	if (QFileInfo(state.sound_source()).isFile()) read_beats(nullptr);
 	show_jumps();
@@ -1666,6 +1666,15 @@ void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
 		        Qt::QueuedConnection);
 	};
 	m_peaks.reset();   /* the last reader stopped before the next begins */
+	/* A player in it: the waveform of its whole mix, as the deck plays it. */
+	if (!m_state.player.empty()) {
+		const std::vector<snurra_tile_state> player = m_state.player;
+		const int rate = m_deck->rate();
+		m_peaks = std::make_unique<snurra_peaks>(
+		        [player, rate](std::function<bool()> stopped) { return snurra_open_timeline(player, rate, std::move(stopped)); },
+		        COLUMNS, piece);
+		return;
+	}
 	if (bytes) m_peaks = std::make_unique<snurra_peaks>(std::move(bytes), m_state.source, m_deck->rate(), COLUMNS, piece);
 	else m_peaks = std::make_unique<snurra_peaks>(m_state.sound_source(), m_deck->rate(), COLUMNS, piece, m_state.audio_track);
 }

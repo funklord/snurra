@@ -32,6 +32,7 @@
 #include "snurra/fingerprint.h"
 #include "snurra/library.h"
 #include "snurra/node.h"
+#include "snurra/peaks.h"
 #include "snurra/source.h"
 
 namespace {
@@ -123,6 +124,7 @@ private slots:
 	void channels_are_seated_so_none_overlaps();
 	void a_player_sounds_as_its_tiles();
 	void a_nested_tracks_eq_is_the_decks();
+	void a_players_waveform_is_its_mix();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -431,6 +433,34 @@ void beats_test::a_nested_tracks_eq_is_the_decks() {
 	}
 	const double db = 10 * std::log10(out / in);
 	QVERIFY2(db < -40, qPrintable(QStringLiteral("the killed band at %1 dB").arg(db)));
+}
+
+/*
+ * A player's waveform is its whole mix (project.md sec 3f): a tone that
+ * comes in at 1 s on a player 2 s long gives silent columns before it
+ * and its own height, 0.2, after -- read over the timeline, on a thread.
+ */
+void beats_test::a_players_waveform_is_its_mix() {
+	std::vector<snurra_tile_state> player(2);
+	player[0].source = QStringLiteral("snurra-test:silence-for-a-second");
+	player[0].duration_us = 1000000;
+	player[1].source = QStringLiteral("tone:440");
+	player[1].duration_us = 1000000;
+	player[1].row = 1;
+	player[1].lane_start_us = 1000000;
+	std::vector<float> columns(16, -1);
+	std::atomic<int> filled{ 0 };
+	{
+		snurra_peaks peaks([&player](std::function<bool()> stopped) { return snurra_open_timeline(player, RATE, std::move(stopped)); },
+		                   16, [&columns, &filled](int first, const std::vector<float> &values) {
+			                   for (size_t i = 0; i < values.size(); ++i) columns[size_t(first) + i] = values[i];
+			                   filled += int(values.size());
+		                   });
+		QTRY_COMPARE_WITH_TIMEOUT(filled.load(), 16, 5000);
+	}
+	for (int c = 0; c < 8; ++c) QVERIFY2(columns[size_t(c)] < 1e-6f, qPrintable(QStringLiteral("column %1: %2").arg(c).arg(columns[size_t(c)])));
+	for (int c = 9; c < 16; ++c)
+		QVERIFY2(qAbs(columns[size_t(c)] - 0.2f) < 0.01f, qPrintable(QStringLiteral("column %1: %2").arg(c).arg(columns[size_t(c)])));
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

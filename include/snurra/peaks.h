@@ -49,6 +49,11 @@ public:
 	 */
 	snurra_peaks(std::shared_ptr<snurra_bytes> bytes, const QString &name, int rate, int columns,
 	             std::function<void(int first, const std::vector<float> &values)> piece);
+	/* From a source `open` makes on the thread, given how to tell it to
+	 * stop: a player's output (timeline.h), whose waveform is its whole
+	 * mix (project.md sec 3f). */
+	snurra_peaks(std::function<std::unique_ptr<snurra_source>(std::function<bool()> stopped)> open, int columns,
+	             std::function<void(int first, const std::vector<float> &values)> piece);
 	~snurra_peaks();
 
 private:
