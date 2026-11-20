@@ -215,6 +215,10 @@ private:
 	QHash<QString, pending_take> m_taking;
 	QHash<QString, QRect> m_peer_frames;
 	QHash<QString, int> m_peer_decks;   /* a deck view's decks, by its socket */
+	QHash<QString, int> m_peer_listeners;   /* and its listeners */
+	QTimer *m_listener_poll = nullptr;
+	void show_sockets();
+	void listen_at(snurra_tile *tile, bool on);
 	class snurra_controller *m_controller = nullptr;
 	void name_controls(snurra_tile *tile);
 	QString m_adopt_token;

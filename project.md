@@ -1330,9 +1330,22 @@ alike.
    first listener's plug goes there, pressed again out
    (`a_controller_learned_by_holding_moves_the_deck` learns a note onto
    deck A's socket and plugs and unplugs with it; with the control
-   ignored, it fails). **Not yet:** sockets anywhere but a deck (a
-   player's sum, a nested player's track, a window's tile), and a second
-   listener chosen on screen.
+   ignored, it fails). **A window's tile is a socket too, 2026-11-20:**
+   a deck view says in its answer to WHERE how many listeners it has; a
+   window asks its peers that every two seconds (a question no peer
+   answers is given up after 1.5 s), and while one has, each of its tiles
+   shows "listen". Clicked, the window sends the deck view LISTEN with
+   its socket and the tile; the deck view plugs its first listener in
+   there and follows the tile by its status, asked each 50 ms on one
+   socket -- the mirror anchored where the tile's state says it is heard,
+   at its tempo, key and EQ, its level match from the track's kept
+   analysis -- states travelling, not sound, as everywhere. Tested in one
+   process with a window and a deck view on the wire
+   (`a_listener_plugs_into_a_windows_tile`: the socket appears, the
+   headphones hear the tile's 440 Hz, silent when it pauses, the plug out
+   when clicked again); ignoring LISTEN, or the tile's pause, fails it.
+   **Not yet:** sockets on a player's sum and a nested player's track,
+   and a second listener chosen on screen.
 
 **Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
 plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which
@@ -1531,6 +1544,16 @@ Each was shown live first by a deliberate race and a deliberate heap
 overread, both reported. `test/main.cpp` sets
 `QTEST_DISABLE_STACK_DUMP`: QtTest's crash handler re-faulted and
 re-attached gdb 361 times in 281 s on a fixture's overflow.
+
+**Sanitizers over 2026-11-20's new code** (the timeline and its source,
+unfold and the conductor, the listeners, MIDI, the deck view on the wire):
+its nineteen new tests run one by one under AddressSanitizer with UBSan,
+built out of tree with qmake's `CONFIG+=sanitizer sanitize_address
+sanitize_undefined`, the player the handover tests start included, leak
+reports off (Qt's own at exit): all passed, no report. The runtime was
+checked live in both binaries (linked, and answering `ASAN_OPTIONS=help=1`);
+no deliberate fault was planted this time. The window's sockets came after
+this run.
 
 **Sanitizers again, 2026-11-12, after the session's new threads** (the
 stretch in the callback, the picture's, beats' and bytes' readers, the

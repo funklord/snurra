@@ -913,6 +913,17 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_pull->setAutoRaise(true);
 	m_pull->setCheckable(true);
 	top->addWidget(m_pull);
+	/* A plug's socket (sec 3f): headphones hear this tile, before its
+	 * fader; shown only where a listener can be plugged in. */
+	m_listen = new QToolButton(this);
+	m_listen->setText(tr("listen"));
+	m_listen->setAccessibleName(tr("Listen here"));
+	m_listen->setToolTip(tr("Your headphones hear this tile, before its fader"));
+	m_listen->setAutoRaise(true);
+	m_listen->setCheckable(true);
+	m_listen->hide();
+	connect(m_listen, &QToolButton::toggled, this, [this](bool on) { emit listen_requested(this, on); });
+	top->addWidget(m_listen);
 	QToolButton *close = new QToolButton(this);
 	close->setAutoRaise(true);
 	close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
@@ -1907,6 +1918,17 @@ void snurra_tile::show_chapters() {
 
 void snurra_tile::show_cue() {
 	m_waveform->set_cue(m_state.cue_us >= 0 && m_state.duration_us > 0 ? double(m_state.cue_us) / double(m_state.duration_us) : -1);
+}
+
+void snurra_tile::set_listen_available(bool available) {
+	if (m_listen) m_listen->setVisible(available);
+}
+
+void snurra_tile::set_listened(bool listened) {
+	if (!m_listen) return;
+	m_listen->blockSignals(true);
+	m_listen->setChecked(listened);
+	m_listen->blockSignals(false);
 }
 
 void snurra_tile::set_sync_available(bool available) {

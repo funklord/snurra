@@ -22,12 +22,14 @@
 #include <QMimeData>
 #include <QPointer>
 #include <QSet>
+#include <QSettings>
 #include <QSlider>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include <cmath>
 
+#include "snurra/beats.h"
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/engine.h"
@@ -334,11 +336,21 @@ public:
 		QPointer<snurra_tile> tapped;
 		bool playing = false;
 		float tempo = 1;
+		/* Or a tile of another process's (a window's): followed by asking
+		 * its status, its state the mirror's guide. */
+		QString remote;
+		int remote_index = -1;
+		QPointer<QLocalSocket> socket;
+		std::shared_ptr<QByteArray> buffer;
+		snurra_tile_state state;
+		float trim = 1;
 	};
 	std::vector<std::unique_ptr<listener_t>> listeners;
 	int chosen_listener = 0;     /* the one a "listen here" moves */
 	QTimer *follow = nullptr;
 	void plug(int listener, int deck);
+	void plug_remote(int listener, const QString &path, int index);
+	void follow_remote(listener_t &one, const snurra_tile_state &state);
 	void mirror(listener_t &one);
 	void unmirror(listener_t &one);
 	void anchor(listener_t &one);
@@ -445,6 +457,7 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 		here.frame = q->window()->isVisible() ? q->window()->frameGeometry() : QRect();
 		here.path = path;
 		here.index = int(decks.size());
+		here.time = qint64(listeners.size());
 		send(socket, here);
 		break;
 	}
@@ -464,6 +477,9 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 	}
 	case snurra_wire::READY:
 		complete_give(socket, m);
+		break;
+	case snurra_wire::LISTEN:
+		plug_remote(chosen_listener, m.path, m.index);
 		break;
 	case snurra_wire::RELEASE:
 		/* As a deck's title dragged out to `frame`'s corner. */
@@ -1276,6 +1292,77 @@ void snurra_dj_private::unmirror(listener_t &one) {
 	if (one.mirror) one.engine->retire(one.mirror);
 	one.mirror = nullptr;
 	one.tapped = nullptr;
+	if (one.socket) one.socket->deleteLater();
+	one.socket = nullptr;
+	one.remote.clear();
+	one.remote_index = -1;
+}
+
+/*
+ * A plug in a window's tile (sec 3f: "plugging yourself into different
+ * points"): states travel, not sound -- the window is asked for its
+ * status as the plug follows, and the mirror is that tile's track,
+ * anchored where its state says it is heard, at its tempo, key and EQ,
+ * at the level match its analysis gives.
+ */
+void snurra_dj_private::plug_remote(int listener, const QString &path, int index) {
+	if (listener < 0 || listener >= int(listeners.size())) return;
+	listener_t &one = *listeners[size_t(listener)];
+	unmirror(one);
+	one.deck = -1;
+	show_plugs();
+	if (index < 0 || path.isEmpty()) return;
+	one.remote = path;
+	one.remote_index = index;
+	one.buffer = std::make_shared<QByteArray>();
+	QLocalSocket *socket = new QLocalSocket(q);
+	one.socket = socket;
+	listener_t *self = &one;
+	QObject::connect(socket, &QLocalSocket::readyRead, q, [this, self, socket] {
+		self->buffer->append(socket->readAll());
+		for (const snurra_wire::message &m : snurra_wire::decode(*self->buffer))
+			if (m.type == snurra_wire::STATUS_IS && self->socket == socket && self->remote_index < m.states.size())
+				follow_remote(*self, m.states.at(self->remote_index));
+	});
+	QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+	socket->connectToServer(path);
+}
+
+void snurra_dj_private::follow_remote(listener_t &one, const snurra_tile_state &state) {
+	const int rate = one.engine->rate();
+	const qint64 now = snurra_clock_us();
+	if (!one.mirror) {
+		snurra_deck::start_t start = snurra_tile::start_for(state, rate);
+		start.level = 1;
+		start.playing = false;
+		one.mirror = one.engine->add(start);
+		one.playing = false;
+		one.tempo = -1;
+		one.trim = 1;
+		snurra_beat_grid grid;
+		if (QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("loudness/match"), true).toBool()
+		    && snurra_cached_beats(state.sound_source(), state.audio_track, rate, grid))
+			one.trim = snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE);
+	}
+	one.mirror->set_trim(one.trim);
+	one.mirror->set_eq(state.eq_db[0], state.eq_db[1], state.eq_db[2]);
+	one.mirror->set_key_lock(state.key_lock);
+	one.mirror->set_key_shift(state.key_shift);
+	const int64_t there = snurra_us_to_frames(state.position_now(now), rate);
+	const bool drifted = one.playing && std::abs(one.mirror->position_at(now) - there) > rate / 100;
+	if (state.playing != one.playing || state.tempo != one.tempo || drifted) {
+		one.playing = state.playing;
+		one.tempo = state.tempo;
+		one.mirror->set_tempo(state.tempo);
+		if (!state.playing) {
+			one.mirror->set_playing(false);
+			one.mirror->seek(there);
+		} else {
+			const qint64 at = now + one.engine->latency_us() + 50000;
+			one.mirror->start_at(snurra_us_to_frames(state.position_now(at), rate), at);
+			one.mirror->set_playing(true);
+		}
+	}
 }
 
 /* In step with the deck tapped: where it will be heard a moment from now,
@@ -1304,6 +1391,15 @@ void snurra_dj_private::anchor(listener_t &one) {
 void snurra_dj_private::follow_taps() {
 	const qint64 now = snurra_clock_us();
 	for (const std::unique_ptr<listener_t> &one : listeners) {
+		/* Plugged into a window's tile: its status asked each tick. */
+		if (!one->remote.isEmpty()) {
+			if (one->socket && one->socket->state() == QLocalSocket::ConnectedState) {
+				snurra_wire::message status;
+				status.type = snurra_wire::STATUS;
+				one->socket->write(snurra_wire::encode(status));
+			}
+			continue;
+		}
 		if (one->deck < 0) continue;
 		snurra_tile *tile = one->deck < decks.size() ? decks[one->deck]->tile.data() : nullptr;
 		/* Another tile on the deck -- a tune loaded, a player's next track:

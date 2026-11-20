@@ -176,6 +176,15 @@ bool snurra_node::listen() {
 	m_server->setSocketOptions(QLocalServer::UserAccessOption);
 	if (!m_server->listen(m_path)) return false;
 	connect(m_server, &QLocalServer::newConnection, this, &snurra_node::accept);
+	/* Whether a deck view has headphones a tile here could be heard in:
+	 * asked now and every two seconds -- not while a drag asks for itself. */
+	m_listener_poll = new QTimer(this);
+	m_listener_poll->setInterval(2000);
+	connect(m_listener_poll, &QTimer::timeout, this, [this] {
+		if (m_drag_from.isNull()) ask_where();
+	});
+	m_listener_poll->start();
+	QTimer::singleShot(0, this, [this] { ask_where(); });
 	return true;
 }
 
@@ -204,6 +213,30 @@ bool snurra_node::take_controllers(const QString &player) {
 
 void snurra_node::name_controls(snurra_tile *tile) {
 	if (m_controller) m_controller->name_widget(tile->play_button(), QStringLiteral("play"));
+}
+
+void snurra_node::show_sockets() {
+	for (snurra_tile *tile : m_tiles) tile->set_listen_available(!m_peer_listeners.isEmpty());
+}
+
+/* The plug into this tile (project.md sec 3f): the deck view with
+ * headphones is asked to mirror it, as it mirrors a deck of its own. */
+void snurra_node::listen_at(snurra_tile *tile, bool on) {
+	if (m_peer_listeners.isEmpty()) return;
+	for (snurra_tile *other : m_tiles)
+		if (other != tile) other->set_listened(false);
+	snurra_wire::message listen;
+	listen.type = snurra_wire::LISTEN;
+	listen.path = m_path;
+	listen.index = on ? int(m_tiles.indexOf(tile)) : -1;
+	QLocalSocket *socket = new QLocalSocket(this);
+	connect(socket, &QLocalSocket::connected, this, [socket, listen] {
+		socket->write(snurra_wire::encode(listen));
+		socket->disconnectFromServer();
+	});
+	connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+	connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
+	socket->connectToServer(m_peer_listeners.constBegin().key());
 }
 
 void snurra_node::accept() {
@@ -256,6 +289,8 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
 	name_controls(tile);
+	connect(tile, &snurra_tile::listen_requested, this, [this](snurra_tile *asking, bool on) { listen_at(asking, on); });
+	tile->set_listen_available(!m_peer_listeners.isEmpty());
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
@@ -1260,6 +1295,9 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 			/* A deck view says how many decks it has; a window, none. */
 			if (m.index > 0) m_peer_decks.insert(m.path, m.index);
 			else m_peer_decks.remove(m.path);
+			if (m.index > 0 && m.time > 0) m_peer_listeners.insert(m.path, int(m.time));
+			else m_peer_listeners.remove(m.path);
+			show_sockets();
 		}
 		socket->disconnectFromServer();
 		break;
@@ -1336,6 +1374,9 @@ void snurra_node::ask_where() {
 			send(socket, where);
 		});
 		connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
+		/* Asked every two seconds now: a peer that takes the question and
+		 * never answers must not leave a socket open each time. */
+		QTimer::singleShot(1500, socket, &QObject::deleteLater);
 		socket->connectToServer(peer);
 	}
 }

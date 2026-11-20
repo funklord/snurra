@@ -77,6 +77,7 @@ enum type_t : quint8 {
 	SHOW_CONTROLS, /* control: pull out (index >= 0) or push in a tile's controls; time 1 or 0 */
 	PLAY,          /* control: as the tile at index's button would -- play (time 1) or pause (0) */
 	SEEK,          /* control: as the tile at index's waveform would -- to time, in microseconds */
+	LISTEN,        /* to a deck view: plug its first listener into the tile at index of the process at path (-1: out) */
 };
 
 /* Where the giver's tiles go relative to the taker's: a train continues to
@@ -91,7 +92,7 @@ struct message {
 	QRect frame;
 	QString path;
 	qint32 index = -1;
-	qint64 time = 0;      /* READY, COMMIT: see above */
+	qint64 time = 0;      /* READY, COMMIT: see above; HERE from a deck view: its listeners */
 	qint64 fade = 0;      /* COMMIT: the crossfade's length */
 	qint64 started = 0;   /* STATUS_IS: the last crossfade taken, its start */
 	qint64 stopped = 0;   /* and its end, when the giver fell silent */

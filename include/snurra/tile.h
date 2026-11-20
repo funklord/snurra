@@ -166,6 +166,10 @@ public:
 	/* The sync button offered outside a window's group too (a DJ player's
 	 * decks), wherever this track has a beat. */
 	void set_sync_available(bool available);
+	/* A listener can be plugged in here (a deck view has one, project.md
+	 * sec 3f): its "listen" socket shown; and whether the plug is in. */
+	void set_listen_available(bool available);
+	void set_listened(bool listened);
 	/* Its film's picture closed when it is found, though the controls are
 	 * open (the DJ player's decks); its button opens it. Asked before the
 	 * picture is found, as right after the tile is made. */
@@ -273,6 +277,8 @@ signals:
 	/* Its level's slider taken by the hand, and let go: what takes a deck
 	 * out of a player's automation while held (project.md sec 3f). */
 	void level_held(snurra_tile *tile, bool held);
+	/* Its socket clicked: the plug wanted here, or out. */
+	void listen_requested(snurra_tile *tile, bool on);
 	void key_sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
 	/* Files, folders or links dropped on the full-screen picture (a window
@@ -339,6 +345,7 @@ private:
 	QStringList m_subtitle_files;   /* a host's, offered first */
 	QPair<double, double> m_crossfade{ 0, 0 };   /* a train's: in and out, of the track */
 	QToolButton *m_play;
+	QToolButton *m_listen = nullptr;
 	QSlider *m_position;
 	QSlider *m_level;
 	QSlider *m_tempo = nullptr;

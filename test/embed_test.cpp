@@ -88,6 +88,7 @@ private slots:
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void each_player_takes_the_bindings_named_for_it();
 	void a_listener_hears_the_deck_its_plug_is_in();
+	void a_listener_plugs_into_a_windows_tile();
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
 	void the_dj_player_loads_two_decks_and_crosses_them();
@@ -1296,7 +1297,7 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	 * listener in there, and out again. */
 	QCOMPARE(dj.add_listener(QStringLiteral("null")), 0);
 	QToolButton *socket = nullptr;
-	for (QToolButton *button : place->findChildren<QToolButton *>())
+	for (QToolButton *button : place->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly))
 		if (button->accessibleName() == QLatin1String("Listen here")) socket = button;
 	QVERIFY(socket && socket->isVisible());
 	QCOMPARE(socket->property("snurra_control").toString(), QStringLiteral("ch_1_listen"));
@@ -1544,7 +1545,8 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 	const int listener = dj.add_listener(QStringLiteral("capture:") + captures.path());
 	QCOMPARE(listener, 0);
 	QToolButton *listen = nullptr;
-	for (QToolButton *button : dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChildren<QToolButton *>())
+	/* The deck's own socket, not its tile's (shown only in a window). */
+	for (QToolButton *button : dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly))
 		if (button->accessibleName() == QLatin1String("Listen here")) listen = button;
 	QVERIFY2(listen && listen->isVisible(), "no socket on deck A");
 
@@ -1593,6 +1595,72 @@ void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
 	QTest::qWait(700);
 	QVERIFY(heard(hz, rms));
 	QVERIFY2(rms < 1e-4, qPrintable(QStringLiteral("unplugged: %1").arg(rms)));
+}
+
+/*
+ * A plug in a window's tile (project.md sec 3f): a window and a deck view
+ * with headphones, each on the wire. The window finds the deck view's
+ * listener and shows its tile's socket; clicked, the headphones hear the
+ * tile's 440 Hz, which the window plays to its own output; paused there,
+ * they fall silent; the socket clicked again, the plug is out.
+ */
+void embed_test::a_listener_plugs_into_a_windows_tile() {
+	QTemporaryDir runtime, captures;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.show();
+	QVERIFY(dj.listen());
+	QCOMPARE(dj.add_listener(QStringLiteral("capture:") + captures.path()), 0);
+	snurra_node window;
+	QVERIFY(window.listen());
+	snurra_tile_state state;
+	state.source = QStringLiteral("tone:440");
+	state.duration_us = 60000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = window.add_tile(state);
+	window.show();
+	QToolButton *socket = nullptr;
+	for (QToolButton *button : tile->findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Listen here")) socket = button;
+	QVERIFY(socket);
+	QTRY_VERIFY_WITH_TIMEOUT(socket->isVisible(), 4000);
+	socket->click();
+	const QString capture = QDir(captures.path()).filePath(QStringLiteral("%1.capture").arg(QCoreApplication::applicationPid()));
+	auto heard = [&capture](double &hz, double &rms) {
+		QFile file(capture);
+		if (!file.open(QIODevice::ReadOnly)) return false;
+		const QByteArray all = file.readAll();
+		std::vector<float> left;
+		for (qsizetype at = 0; at + 12 <= all.size();) {
+			int32_t frames = 0;
+			std::memcpy(&frames, all.constData() + at + 8, 4);
+			const qsizetype size = 12 + qsizetype(frames) * 8;
+			if (at + size > all.size()) break;
+			const float *samples = reinterpret_cast<const float *>(all.constData() + at + 12);
+			for (int i = 0; i < frames; ++i) left.push_back(samples[2 * i]);
+			at += size;
+		}
+		const size_t span = 12000;
+		if (left.size() < span) return false;
+		int crossings = 0;
+		double sum = 0;
+		for (size_t i = left.size() - span; i < left.size(); ++i) {
+			sum += double(left[i]) * left[i];
+			if (i > left.size() - span && (left[i - 1] < 0) != (left[i] < 0)) ++crossings;
+		}
+		rms = std::sqrt(sum / double(span));
+		hz = crossings / 2.0 / (double(span) / 48000);
+		return true;
+	};
+	double hz = 0, rms = 0;
+	QTRY_VERIFY_WITH_TIMEOUT(heard(hz, rms) && rms > 0.1 && qAbs(hz - 440) < 20, 3000);
+	tile->set_playing(false);
+	QTRY_VERIFY_WITH_TIMEOUT(heard(hz, rms) && rms < 1e-4, 3000);
+	socket->click();
+	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), -1, 2000);
 }
 
 /*
