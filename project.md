@@ -1366,6 +1366,17 @@ controls; each tile very compact but resizeable).
   spellings arriving in the first tile's state over the wire
   (`audiofile_gives_the_first_file_its_sound`); with the deck on the
   source again, or the option dropped, each fails.
+- **A tracklist from a file, 2026-11-20** (mpv's `--chapters-file`):
+  hydra writes a streamed set's tracklist in FFmpeg's metadata format
+  for a player that reads one, and snurra reads it with the chapter
+  reader it already had (FFmpeg opens that format as any other). The
+  list itself, not the file's name, goes in the first tile's state
+  (`chapters`) and through handovers -- hydra overwrites its one file
+  with the next set. Tested by a file of two chapters arriving in the
+  first tile's state over the wire and a tile given them showing them
+  (`a_chapters_file_gives_the_first_file_its_tracklist`); each half
+  taken out fails it. hydra passes it to mpv only today
+  (`takes_chapters`); told in its inbox.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

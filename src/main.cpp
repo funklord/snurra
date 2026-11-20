@@ -144,9 +144,12 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption audio_file(QStringList{ QStringLiteral("audiofile"), QStringLiteral("audio-file") },
 	                                    QStringLiteral("The sound, from a file or URL of its own beside the picture's."),
 	                                    QStringLiteral("file"));
+	const QCommandLineOption chapters_file(QStringLiteral("chapters-file"),
+	                                       QStringLiteral("A tracklist for the first file, in FFmpeg's metadata format, as chapters."),
+	                                       QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, audio_file, dj });
+	                    playlist, loop, shuffle, audio_file, chapters_file, dj });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -252,6 +255,12 @@ int main(int argc, char *argv[]) {
 			const QString sound = parser.value(audio_file);
 			state.sound = QFileInfo::exists(sound) ? QFileInfo(sound).absoluteFilePath() : sound;
 		}
+		/* mpv's --chapters-file: a streamed set's tracklist, which hydra
+		 * writes for a player that reads one. Read now; the file is
+		 * hydra's to overwrite with the next. */
+		if (column == 0 && parser.isSet(chapters_file))
+			for (const snurra_chapter &chapter : snurra_read_chapters(parser.value(chapters_file)))
+				state.chapters << qMakePair(chapter.start_us, chapter.title);
 		/* Given to the deck as it opens, so the first block is heard at
 		 * them; the tile clamps both. */
 		if (parser.isSet(volume)) state.level = qBound(0, parser.value(volume).toInt(), 100);

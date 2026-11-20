@@ -24,7 +24,9 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "snurra/node.h"
 #include "snurra/snap.h"
+#include "snurra/tile.h"
 #include "snurra/source.h"
 #include "snurra/wire.h"
 
@@ -49,6 +51,7 @@ private slots:
 	void a_playlist_is_a_train_of_what_it_names();
 	void shuffle_plays_the_files_in_another_order();
 	void audiofile_gives_the_first_file_its_sound();
+	void a_chapters_file_gives_the_first_file_its_tracklist();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1393,6 +1396,39 @@ void handover_test::audiofile_gives_the_first_file_its_sound() {
 		a->terminate();
 		QVERIFY(a->waitForFinished(5000));
 	}
+}
+
+/*
+ * mpv's --chapters-file, as hydra writes one for a streamed set: FFmpeg's
+ * metadata format, read at launch into the first tile's state, which
+ * carries the list itself over the wire -- the file is hydra's to
+ * overwrite with the next set. A tile given them shows them as its own.
+ */
+void handover_test::a_chapters_file_gives_the_first_file_its_tracklist() {
+	const QString file = m_dir->filePath(QStringLiteral("watch-chapters.txt"));
+	QFile out(file);
+	QVERIFY(out.open(QIODevice::WriteOnly));
+	out.write(";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=90000\ntitle=First\n"
+	          "[CHAPTER]\nTIMEBASE=1/1000\nSTART=90000\nEND=200000\ntitle=Second\n");
+	out.close();
+	const QList<QPair<qint64, QString>> expected{ { 0, QStringLiteral("First") }, { 90000000, QStringLiteral("Second") } };
+	QProcess *a = start({ QStringLiteral("--paused"), QStringLiteral("--chapters-file"), file, QStringLiteral("a.flac"),
+	                      QStringLiteral("b.flac") });
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QList<snurra_tile_state> states;
+	QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 2, 5000);
+	const QList<QPair<qint64, QString>> none;
+	for (const snurra_tile_state &state : states) QCOMPARE(state.chapters, state.column == 0 ? expected : none);
+	a->terminate();
+	QVERIFY(a->waitForFinished(5000));
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = QStringLiteral("tone:440");
+	state.duration_us = 200000000;
+	state.chapters = expected;
+	snurra_tile *tile = node.add_tile(state);
+	QCOMPARE(tile->chapter_count(), 2);
 }
 
 /*

@@ -890,7 +890,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_title_base = m_title->text();
 	/* A mix's tracklist: chapters, read from a file here (a URL's or a
 	 * host's bytes are not opened twice for it). */
-	if (QFileInfo(state.source).isFile()) m_chapters = snurra_read_chapters(state.source);
+	if (!state.chapters.isEmpty())
+		for (const auto &given : state.chapters) m_chapters.push_back(snurra_chapter{ given.first, given.second });
+	else if (QFileInfo(state.source).isFile()) m_chapters = snurra_read_chapters(state.source);
 	m_title->setObjectName(QStringLiteral("snurra-handle"));
 	m_title->setCursor(Qt::OpenHandCursor);
 	m_title->setToolTip(state.source);

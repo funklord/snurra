@@ -83,6 +83,12 @@ struct snurra_tile_state {
 	QString sound;
 	const QString &sound_source() const { return sound.isEmpty() ? source : sound; }
 
+	/* A tracklist given from outside, as (microseconds in, title), in
+	 * order: mpv's --chapters-file, as hydra hands a streamed set's. Held
+	 * here, not as the file's name, since the file is the giver's to
+	 * overwrite. Empty: the source's own chapters, where it has any. */
+	QList<QPair<qint64, QString>> chapters;
+
 	/* Where it is at `now`, carried along from the sample -- either way,
 	 * since a sample's time can be just ahead, when it is heard. */
 	qint64 position_now(qint64 now = snurra_clock_us()) const {
@@ -93,7 +99,7 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	return out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift) << state.overlap_us << state.sound;
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters;
 }
 
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
@@ -103,7 +109,7 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 audio_track = -1;
 	qint32 key_shift = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2] >> key_shift >> state.overlap_us >> state.sound;
+	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2] >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
 	state.key_shift = key_shift;
 	state.level = level;
 	state.row = row;
