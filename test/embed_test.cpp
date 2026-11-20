@@ -40,6 +40,8 @@
 #include "snurra/engine.h"
 #include "snurra/embed.h"
 #include "snurra/midi.h"
+#include "snurra/tile_state.h"
+#include "snurra/timeline.h"
 #include "snurra/wire.h"
 #include "snurra/node.h"
 #include "snurra/beats.h"
@@ -82,6 +84,7 @@ private slots:
 	void a_jump_while_playing_lands_exactly_its_step_on();
 	void the_control_moved_is_told_from_the_noise();
 	void a_controller_learned_by_holding_moves_the_deck();
+	void a_nested_track_is_brought_to_the_level_its_deck_would_give();
 	void each_player_takes_the_bindings_named_for_it();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_player_unfolds_across_the_decks();
@@ -1295,6 +1298,55 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	note(48);
 	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), -1, 2000);
 	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+}
+
+/*
+ * The level match inside a player (project.md sec 3f): a track whose
+ * analysis is kept, with the match on, plays nested at the gain its deck
+ * would give it -- here a tune kept as -20 LUFS, so +6 dB toward -14 --
+ * and as it is with the match off.
+ */
+void embed_test::a_nested_track_is_brought_to_the_level_its_deck_would_give() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("quiet.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(48000));
+	}
+	snurra_beat_grid grid;
+	grid.rate = 48000;
+	grid.loudness = -20;
+	grid.loudness_known = true;
+	grid.peak = 0.1;
+	snurra_cache_beats(path, -1, grid);
+	snurra_beat_grid kept;
+	QVERIFY(snurra_cached_beats(path, -1, 48000, kept));
+	const float gain = snurra_loudness_gain(kept, SNURRA_LOUDNESS_REFERENCE);
+	QVERIFY2(gain > 1.5f, qPrintable(QString::number(gain)));
+
+	std::vector<snurra_tile_state> player(1);
+	player[0].source = path;
+	player[0].duration_us = 1000000;
+	auto rendered = [&player] {
+		std::unique_ptr<snurra_source> source = snurra_open_timeline(player, 48000);
+		std::vector<float> out(2 * 48000);
+		source->read(out.data(), 48000);
+		return out;
+	};
+	QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+	settings.setValue(QStringLiteral("loudness/match"), false);
+	const std::vector<float> plain = rendered();
+	settings.setValue(QStringLiteral("loudness/match"), true);
+	const std::vector<float> matched = rendered();
+	settings.setValue(QStringLiteral("loudness/match"), false);   /* as the suite keeps it */
+	int compared = 0;
+	for (size_t i = 0; i < plain.size(); ++i) {
+		if (std::abs(plain[i]) < 1e-3f) continue;
+		QVERIFY2(std::abs(matched[i] / plain[i] - gain) < 1e-3f, qPrintable(QStringLiteral("at %1: %2").arg(i).arg(matched[i] / plain[i])));
+		++compared;
+	}
+	QVERIFY(compared > 1000);
 }
 
 /*

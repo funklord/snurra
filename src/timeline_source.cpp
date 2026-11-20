@@ -7,10 +7,12 @@
 
 #include <QList>
 #include <QObject>
+#include <QSettings>
 
 #include <algorithm>
 #include <cmath>
 
+#include "snurra/beats.h"
 #include "snurra/clock.h"
 #include "snurra/deck.h"
 #include "snurra/source.h"
@@ -60,6 +62,7 @@ struct part {
 	bool key_lock = false;
 	double pitch = 1;             /* the key shift, as a ratio */
 	std::vector<std::pair<int64_t, float>> envelope;   /* track frames, gain */
+	float trim = 1;               /* the level match's, as its deck's would be */
 	bool eq = false;              /* any band moved: the isolator heard */
 	float eq_gain[3] = { 1, 1, 1 };
 };
@@ -97,6 +100,7 @@ public:
 	    : m_timeline(rate), m_rate(rate), m_interrupted(std::move(interrupted)) {
 		const std::vector<const snurra_tile_state *> order = in_order(states);
 		m_timeline = timeline_of(order, rate);
+		const bool matched = QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("loudness/match"), true).toBool();
 		for (size_t i = 0; i < order.size(); ++i) {
 			const snurra_tile_state &state = *order[i];
 			const snurra_timeline_track &track = m_timeline.tracks[i];
@@ -108,6 +112,15 @@ public:
 			made.level = float(std::clamp(state.level, 0, 100)) / 100.0f;
 			made.key_lock = state.key_lock;
 			made.pitch = std::pow(2.0, double(state.key_shift) / 12.0);
+			/* The level match, as a deck takes it (snurra_tile::set_beats):
+			 * from the track's analysis where it has been kept, while the
+			 * setting is on; a track not yet analysed plays as it is, as a
+			 * deck's does until its analysis comes. */
+			if (matched && state.player.empty()) {
+				snurra_beat_grid grid;
+				if (snurra_cached_beats(made.name, state.audio_track, rate, grid))
+					made.trim = snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE);
+			}
 			for (int band = 0; band < 3; ++band) {
 				const float db = state.eq_db[band];
 				made.eq_gain[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
@@ -183,7 +196,7 @@ private:
 			}
 			/* As a deck: its level, its envelope at the frame heard, and a
 			 * train's crossfades on a quarter circle (snurra_deck::fade). */
-			double gain = one.level * envelope_gain(one.envelope, heard.segment, frame);
+			double gain = one.level * one.trim * envelope_gain(one.envelope, heard.segment, frame);
 			const double into = double(time - m_starts[i]);
 			if (fade_in > 0 && into < fade_in) gain *= std::sin(into / fade_in * M_PI_2);
 			const double left_of = double(m_ends[i] - time);

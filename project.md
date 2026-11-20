@@ -1129,8 +1129,15 @@ alike.
    state's bands, as its deck would -- an 8 kHz tone with its high band
    killed comes out frame for frame as the isolator makes it, below -40
    dB (`a_nested_tracks_eq_is_the_decks`; with the isolator left out it
-   fails). **Not yet in a nested track:** the level match's trim, which
-   a tile takes from its analysis; and a waveform of the whole mix.
+   fails). **And its level match, 2026-11-20:** a nested track whose
+   analysis is kept takes the trim its deck would (`snurra_loudness_gain`
+   toward -14 LUFS) while `loudness/match` is on; one not yet analysed
+   plays as it is, as a deck's does until its analysis comes -- nested
+   tracks are not analysed of themselves yet. Tested by a tune kept as
+   -20 LUFS: nested, every sample at the deck's gain with the match on,
+   as it is with it off (`a_nested_track_is_brought_to_the_level_its_deck_would_give`;
+   without the trim it fails). **Not yet in a nested track:** a waveform
+   of the whole mix, and analysis of a track never loaded on a deck.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless. **Built
    2026-11-20.** `snurra_dj` takes two decks or four (`set_deck_count`,
