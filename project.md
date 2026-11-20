@@ -885,6 +885,107 @@ happens. It is a frameless window of its own that takes no input, so the
 drag goes on through it; on Wayland, where a program cannot place a
 window, it is not shown.
 
+## 3f. Decks and the train: one timeline, two views, nested {#decks-and-train}
+
+Status:  settled 2026-11-20
+Decides: decks-and-train
+
+**The holder, 2026-11-20:** "just like other software we want the 2/4
+deck style setup too. It will be used on mobile as an optimized cut down
+version, but on desktop it should be controllable with hardware too, and
+we should have a realtime connection of some sort between the
+(attachable) player and deck mode so they can be switched between and/or
+combined effortlessly." Then: "Maybe the player view behaves like
+automation for the deck view. So the envelope is a crossfader automation
+etc. and the next track is loaded on the other side. Or each channel is
+its own player and can have an already prepared mix in it? Both
+possible?" -- and, both being possible: "let us make it so that the deck
+view is in a symbiosis with a single player train and that a single deck
+can also be the output endpoint for a player train/deck. Very trippy and
+recursive."
+
+**One thing underneath: a timeline.** A set is lanes of tiles -- each a
+track with its start, tempo, key, EQ, envelope, cue, offset -- and the
+overlaps between a lane's tiles, which is what a window's group already
+is (sec 3b). Today that timeline is computed by the window from its
+widgets (`snurra_node::lane_start`, `lay_out_timeline`); it becomes data
+of its own, `snurra_timeline`, which the window shows and the decks
+play. Everything below is that one model seen two ways, or one inside
+another.
+
+**Symbiosis: the deck view is a view of one train, live, both ways.**
+
+- A train unfolds onto alternating decks: track 1 on A, 2 on B, 3 on A;
+  the next is loaded and cued on the free deck while the current plays.
+  A stack's lanes, up to four, go to four decks -- what the 4-deck
+  layout is for.
+- **The train's automation drives the decks**: a crossfade is the
+  crossfader moving over the overlap where the two envelopes mirror
+  (equal-power out and in), and each deck's channel fader where they do
+  not -- the faithful mapping for any shape, the crossfader then left
+  centred. A tile's envelope is its channel fader; tempo, key lock, key
+  and EQ go with the tile to its deck.
+- **A hand takes over**, as a DAW's touch mode: a control touched on
+  screen or on a controller leaves the automation while held, and
+  follows it again when let go.
+- **Moves made on the decks are written back** into the train: a fader
+  ridden becomes the tile's envelope, a crossfade done by hand becomes
+  the overlap and its curve, a deck started becomes where its tile comes
+  in. So a mix performed live is a prepared mix in the player view,
+  editable and played again -- the one model, not a recording beside it.
+- Switching views moves nothing: both show the one timeline, and both may
+  be open at once.
+
+**Nested: a deck plays a timeline, and a deck view's mix is a timeline.**
+
+- A deck's source may be a file, a whole train or stack, or another deck
+  view's mix -- a channel with a prepared set in it, under the live
+  decks. A single track is the shortest timeline, so a deck needs no
+  second kind.
+- A deck's controls act on what it holds as a whole: the waveform is the
+  whole mix, tempo and key lock stretch it, cue and jumps move in it,
+  sync follows the beat of whichever track sounds at that moment.
+- **Rendered in the source's own time**, as a source (`snurra_source`):
+  the timeline mixes its tiles -- each its own source, tempo and
+  envelope -- on the deck's reader thread, and the deck above applies its
+  own tempo, EQ and fader to the result. So a timeline inside a timeline
+  costs nothing new, and recursion is a tree: a timeline is moved into a
+  deck, never referenced from two places, so it cannot contain itself.
+- **Across processes, states travel, not sound** (sec 3b's rule): a
+  train or a deck view handed to a deck goes over as its tile states, a
+  tree now, and the taker builds it -- the handover's OFFER, READY and
+  COMMIT as for a tile, so a set playing moves into a deck without a gap.
+- **What a nested level costs, said plainly:** a deck reads ahead of what
+  is heard, so a change made inside a nested timeline -- a hand on the
+  inner deck view -- is heard a read-ahead late. Live hands belong on the
+  outermost level; nested levels play prepared. Measured when built.
+
+**2 or 4 decks**, a choice in the view. The phone gets the cut-down one:
+two decks, the controls that fit (sec 3b's fold-cover measures stand).
+**Hardware control on the desktop**: every deck and mixer control is a
+typed control (sec 3a kept the string bus out; a name per control is
+layered on the typed ones), reachable from a controller's MIDI and from
+the wire, so a controller drives the deck view and a window's train
+alike.
+
+**The order it is built in**, each step usable before the next:
+
+1. `snurra_timeline`: the window's timeline as data, the window drawing
+   it; nothing heard changes (the suite is the proof).
+2. A timeline as a source, so a deck plays a train or a stack -- a
+   channel with a prepared mix.
+3. The deck view on the wire as a peer, 2 or 4 decks: a tile, a train or
+   a deck view handed onto a deck and pulled off it, gapless.
+4. A train unfolded onto the decks, its automation driving them, a hand
+   taking over.
+5. Moves on the decks written back into the train.
+6. Controllers: MIDI in, the typed controls named.
+
+**Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
+plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which
+this player does not link) -- and whether headphone pre-listen comes with
+the decks (sec 3) or after. Neither blocks steps 1 to 5.
+
 ## 4. State
 
 **Audio, built 2026-11-12** (the holder: "start on the audio output and
