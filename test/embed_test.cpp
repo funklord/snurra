@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QGridLayout>
 #include <QProgressBar>
+#include <QFileInfo>
 #include <QtTest>
 
 #include <alsa/asoundlib.h>
@@ -89,6 +90,7 @@ private slots:
 	void a_controller_learned_by_holding_moves_the_deck();
 	void a_nested_track_is_brought_to_the_level_its_deck_would_give();
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
+	void a_browse_knob_and_load_buttons_fill_the_decks();
 	void each_player_takes_the_bindings_named_for_it();
 	void each_deck_has_its_side_of_the_crossfader();
 	void the_decks_sit_as_the_person_arranged_them();
@@ -1446,6 +1448,54 @@ void embed_test::a_player_in_a_tile_beats_with_the_track_it_sounds() {
 		QVERIFY2(qAbs(tile->beats().first - first) < 1e-6, qPrintable(QStringLiteral("first beat at %1, meant %2").arg(tile->beats().first).arg(first)));
 		QVERIFY(!tile->beats().loudness_known);
 	}
+}
+
+/*
+ * A controller's browse knob and load buttons (project.md sec 3f): a
+ * relative encoder bound to browse steps the browser's choice down and
+ * up the list, and deck B's load puts the chosen tune on deck B.
+ */
+void embed_test::a_browse_knob_and_load_buttons_fill_the_decks() {
+	QTemporaryDir dir;
+	for (const QString &name : { QStringLiteral("a.wav"), QStringLiteral("b.wav"), QStringLiteral("c.wav") }) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(48000));
+	}
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers")); });
+	{
+		snurra_bindings bindings;
+		bindings.bind(QStringLiteral("pads/ch1/cc20"), QStringLiteral("browse"), snurra_control_kind::relative);
+		bindings.bind(QStringLiteral("pads/ch1/note40"), QStringLiteral("ch_2_load"), snurra_control_kind::button);
+		bindings.save();
+	}
+	snurra_dj dj;
+	dj.set_browser_folder(dir.path());
+	dj.show();
+	snurra_library *browser = dj.findChild<snurra_library *>();
+	QTRY_COMPARE_WITH_TIMEOUT(browser->shown().size(), 3, 5000);
+	QVERIFY(dj.take_controllers());
+	snurra_controller *controller = dj.findChild<snurra_controller *>();
+	QVERIFY(controller);
+	qint64 at = snurra_clock_us();
+	auto event = [&at](snurra_midi_event::kind_t kind, int number, int value) {
+		snurra_midi_event made;
+		made.port = QStringLiteral("pads");
+		made.kind = kind;
+		made.number = number;
+		made.value = value;
+		made.at_us = (at += 2000000);   /* each a second apart: the bindings read again */
+		return made;
+	};
+	controller->take(event(snurra_midi_event::cc, 20, 1));   /* one step down: the first */
+	controller->take(event(snurra_midi_event::cc, 20, 1));   /* the second */
+	controller->take(event(snurra_midi_event::cc, 20, 1));   /* the third */
+	controller->take(event(snurra_midi_event::cc, 20, 127)); /* one back up: the second */
+	QCOMPARE(browser->chosen(), QStringList{ browser->shown().at(1) });
+	controller->take(event(snurra_midi_event::note_on, 40, 100));
+	QCOMPARE(dj.loaded(1), QFileInfo(browser->shown().at(1)).fileName());
+	QVERIFY(dj.loaded(0).isEmpty());
 }
 
 /*

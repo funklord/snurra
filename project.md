@@ -1340,9 +1340,15 @@ alike.
    moved by either half, the two read as one value of 0 to 16383 and
    given on as a bend's, so a 14-bit pitch fader is not stepped in
    128ths (tested by feeding the controller the halves in turn; with the
-   finer half ignored, it fails). **Not yet:** slots other than the
-   decks and their strips (effect units, a browse knob) -- the decks'
-   own are arranged and sided below -- HID and Android MIDI, and Mixxx's
+   finer half ignored, it fails). **The browser on a controller,
+   2026-11-21:** `browse` steps the browser's choice by a relative
+   encoder, or puts it at its place down the list by a knob, and
+   `ch_N_load` puts the chosen tune on deck N; learned by Alt held on the
+   list and on a deck's frame. Tested by an encoder stepping down three
+   and back one, then deck B's load (with the steps ignored, it fails).
+   **Not yet:** slots other than the decks, their strips and the browser
+   (snurra has no effect units) -- the decks' own are arranged and sided
+   below -- HID and Android MIDI, and Mixxx's
    mappings (whether their JavaScript too is the holder's). A
    window manager that takes Alt-drag to move windows (many on X11) may
    take the press before snurra sees it; a second gesture may be wanted

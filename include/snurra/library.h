@@ -70,6 +70,11 @@ public:
 	bool identifying() const { return m_identifying; }
 	/* The tunes chosen in the list, as full paths. */
 	QStringList chosen() const;
+	/* The choice moved `by` rows down the list (up where negative), or to
+	 * row `at` of what is shown: a controller's browse knob. */
+	void step_choice(int by);
+	void choose_row(int at);
+	QWidget *list() const;
 	/* What is listed, as full paths, in the list's order; and whether
 	 * the folder is still being looked through. */
 	QStringList shown() const;

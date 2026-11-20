@@ -1387,6 +1387,8 @@ void snurra_dj_private::name_controls(int deck) {
 	/* The deck's own socket: a cue button on a controller is a plug with
 	 * a fixed place (sec 3f). */
 	control_widget(decks[deck]->listen, slot + QStringLiteral("listen"));
+	/* The deck itself, where its tile leaves room: its load. */
+	control_widget(decks[deck], slot + QStringLiteral("load"));
 }
 
 void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event) {
@@ -1397,6 +1399,25 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 	if (kind == snurra_control_kind::relative) step = event.value >= 64 ? event.value - (event.value >= 96 ? 128 : 64) : event.value;
 	const bool relative = kind == snurra_control_kind::relative;
 	at = std::clamp(at, 0.0, 1.0);
+	/* The browser: a knob steps the choice, or puts it at its place down
+	 * the list; a deck's load puts the chosen tune on that deck. */
+	if (control == QLatin1String("browse")) {
+		if (relative) browser->step_choice(step);
+		else if (event.kind == snurra_midi_event::note_on || (event.kind == snurra_midi_event::cc && kind == snurra_control_kind::button))
+			return;
+		else browser->choose_row(int(std::lround(at * double(std::max(0, int(browser->shown().size()) - 1)))));
+		return;
+	}
+	if (control.startsWith(QLatin1String("ch_")) && control.endsWith(QLatin1String("_load"))) {
+		if (off) return;
+		const int deck = control.section(QLatin1Char('_'), 1, 1).toInt() - 1;
+		const QStringList chosen = browser->chosen();
+		if (deck < 0 || deck >= decks.size() || chosen.isEmpty()) return;
+		snurra_media media;
+		media.path = chosen.first();
+		q->load(deck, media);
+		return;
+	}
 	if (control == QLatin1String("crossfader")) {
 		q->set_crossfader(relative ? position + step / 64.0 : at * 2 - 1);
 		return;
@@ -1661,6 +1682,7 @@ bool snurra_dj::take_controllers() {
 		return false;
 	}
 	d->control_widget(d->crossfader, QStringLiteral("crossfader"));
+	d->control_widget(d->browser->list(), QStringLiteral("browse"));
 	for (int i = 0; i < d->decks.size(); ++i) d->name_controls(i);
 	return true;
 }

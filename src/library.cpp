@@ -431,6 +431,24 @@ QStringList snurra_library::chosen() const {
 	return paths;
 }
 
+void snurra_library::choose_row(int at) {
+	const int rows = m_filter->rowCount();
+	if (rows <= 0) return;
+	const QModelIndex index = m_filter->index(std::clamp(at, 0, rows - 1), NAME);
+	m_view->setCurrentIndex(index);
+	m_view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+	m_view->scrollTo(index);
+}
+
+void snurra_library::step_choice(int by) {
+	const QModelIndex now = m_view->currentIndex();
+	choose_row(now.isValid() ? now.row() + by : (by > 0 ? 0 : m_filter->rowCount() - 1));
+}
+
+QWidget *snurra_library::list() const {
+	return m_view;
+}
+
 void snurra_library::identify(const QStringList &paths) {
 	if (paths.isEmpty() || m_identifying) return;
 	stop_identify();
