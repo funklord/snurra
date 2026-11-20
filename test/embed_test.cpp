@@ -31,6 +31,7 @@
 #include <QCoreApplication>
 #include <cstring>
 #include <QComboBox>
+#include <QGridLayout>
 #include <QtTest>
 
 #include <alsa/asoundlib.h>
@@ -89,6 +90,7 @@ private slots:
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void each_player_takes_the_bindings_named_for_it();
 	void each_deck_has_its_side_of_the_crossfader();
+	void the_decks_sit_as_the_person_arranged_them();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_plugs_into_a_windows_tile();
 	void a_player_unfolds_across_the_decks();
@@ -1590,6 +1592,47 @@ void embed_test::each_deck_has_its_side_of_the_crossfader() {
 	for (int click = 0; click < 3; ++click) side_button(again, 3)->click();   /* right, thru, default */
 	QCOMPARE(side_button(again, 3)->text(), QStringLiteral("right (default)"));
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/D/crossfader")));
+}
+
+/*
+ * The decks arranged as the controller in front of the person (project.md
+ * sec 3f): by default A B above C D; arranged "C A B D", one row in that
+ * order, kept, and a deck view made again has it; back to the default,
+ * nothing is kept.
+ */
+void embed_test::the_decks_sit_as_the_person_arranged_them() {
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks")); });
+	auto where = [](snurra_dj &dj, int deck) {
+		QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-%1").arg(QChar(QLatin1Char(char('a' + deck)))));
+		QGridLayout *grid = qobject_cast<QGridLayout *>(place->parentWidget()->layout()->itemAt(0)->layout());
+		int row = -1, column = -1, rows = 0, columns = 0;
+		grid->getItemPosition(grid->indexOf(place), &row, &column, &rows, &columns);
+		return QPoint(column, row);
+	};
+	{
+		snurra_dj dj;
+		dj.set_deck_count(4);
+		QCOMPARE(where(dj, 0), QPoint(0, 0));
+		QCOMPARE(where(dj, 1), QPoint(1, 0));
+		QCOMPARE(where(dj, 2), QPoint(0, 1));
+		QCOMPARE(where(dj, 3), QPoint(1, 1));
+		dj.arrange(QStringLiteral("C A B D"));
+		QCOMPARE(where(dj, 2), QPoint(0, 0));
+		QCOMPARE(where(dj, 0), QPoint(1, 0));
+		QCOMPARE(where(dj, 1), QPoint(2, 0));
+		QCOMPARE(where(dj, 3), QPoint(3, 0));
+	}
+	QCOMPARE(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/arrangement")).toString(), QStringLiteral("C A B D"));
+	snurra_dj again;
+	again.set_deck_count(4);
+	QCOMPARE(where(again, 2), QPoint(0, 0));
+	/* Two decks of a four-deck arrangement: where they are named. */
+	again.set_deck_count(2);
+	QCOMPARE(where(again, 0), QPoint(0, 0));
+	QCOMPARE(where(again, 1), QPoint(1, 0));
+	again.arrange(QString());
+	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
 }
 
 /*

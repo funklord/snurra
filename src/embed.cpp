@@ -20,6 +20,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QList>
+#include <QMenu>
 #include <QMimeData>
 #include <QPointer>
 #include <QSet>
@@ -455,6 +456,44 @@ public:
 		}
 		left_side->setText(on[LEFT].join(QLatin1Char(' ')));
 		right_side->setText(on[RIGHT].join(QLatin1Char(' ')));
+	}
+	/*
+	 * Where the decks sit (sec 3f: the layout of the controller in front of
+	 * the person): by default two to a row, A and B above C and D; or as
+	 * the person arranged them -- `decks/arrangement`, letters in order, a
+	 * "/" between rows: "C A B D" as many four-deck controllers lay them
+	 * out. Only an arrangement chosen is written.
+	 */
+	void place_decks() {
+		for (dj_deck *deck : decks) grid->removeWidget(deck);
+		const QString chosen = QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/arrangement")).toString();
+		QList<QStringList> rows;
+		for (const QString &row : chosen.split(QLatin1Char('/'), Qt::SkipEmptyParts)) rows << row.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		QList<bool> placed(decks.size(), false);
+		int row_at = 0;
+		for (const QStringList &row : rows) {
+			int column = 0;
+			for (const QString &letter : row) {
+				const int i = letter.isEmpty() ? -1 : letter.at(0).toUpper().unicode() - 'A';
+				if (i < 0 || i >= decks.size() || placed[i]) continue;
+				grid->addWidget(decks[i], row_at, column++);
+				placed[i] = true;
+			}
+			if (column > 0) ++row_at;
+		}
+		/* Unnamed decks -- none arranged, or two decks of a four-deck
+		 * arrangement -- two to a row after them. */
+		int column = 0;
+		for (int i = 0; i < decks.size(); ++i) {
+			if (placed[i]) continue;
+			grid->addWidget(decks[i], row_at, column);
+			if (++column == 2) {
+				column = 0;
+				++row_at;
+			}
+		}
+		const int rows_used = row_at + (column > 0 ? 1 : 0);
+		for (int row = 0; row < 4; ++row) grid->setRowStretch(row, row < rows_used ? 1 : 0);
 	}
 	/* What a deck syncs to: another deck playing, else another loaded. */
 	snurra_tile *other_than(int deck) const {
@@ -1175,6 +1214,13 @@ bool snurra_dj::unfold(int deck) {
 	return d->unfold(deck);
 }
 
+void snurra_dj::arrange(const QString &arrangement) {
+	QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+	if (arrangement.trimmed().isEmpty()) settings.remove(QStringLiteral("decks/arrangement"));
+	else settings.setValue(QStringLiteral("decks/arrangement"), arrangement.trimmed());
+	d->place_decks();
+}
+
 bool snurra_dj::start_now(int deck) {
 	return d->start_now(deck);
 }
@@ -1656,11 +1702,25 @@ void snurra_dj::set_deck_count(int count) {
 			connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
 			socket->connectToServer(giver);
 		};
-		/* Two to a row, A and B above C and D, as Traktor's four. */
-		d->grid->addWidget(deck, i / 2, i % 2);
 		d->decks << deck;
+		/* The arrangements, from any deck's menu. */
+		deck->setContextMenuPolicy(Qt::CustomContextMenu);
+		connect(deck, &QWidget::customContextMenuRequested, this, [this, deck](const QPoint &at) {
+			QMenu menu;
+			const QString now = QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/arrangement")).toString();
+			const QList<QPair<QString, QString>> choices{ { tr("Default (A B above C D)"), QString() },
+				                                      { tr("A B C D in a row"), QStringLiteral("A B C D") },
+				                                      { tr("C A B D in a row"), QStringLiteral("C A B D") } };
+			for (const auto &choice : choices) {
+				QAction *action = menu.addAction(choice.first);
+				action->setCheckable(true);
+				action->setChecked(now == choice.second);
+				connect(action, &QAction::triggered, this, [this, arrangement = choice.second] { arrange(arrangement); });
+			}
+			menu.exec(deck->mapToGlobal(at));
+		});
 	}
-	for (int row = 0; row < 2; ++row) d->grid->setRowStretch(row, row < (count + 1) / 2 ? 1 : 0);
+	d->place_decks();
 	d->read_sides();
 	d->name_sides();
 	d->show_plugs();

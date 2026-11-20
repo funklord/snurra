@@ -1076,7 +1076,16 @@ example.")
   which ALSA's sequencer allows, or one passing it on over the wire -- is
   settled with step 6.
 
-**2 or 4 decks**, a choice in the view: two layouts of slots. **Each
+**2 or 4 decks**, a choice in the view: two layouts of slots. **Where
+the decks sit, 2026-11-20** (built; `snurra_dj::arrange`, and a deck's
+right-click menu): by default two to a row, A and B above C and D; or as
+the person arranges them, letters in order and "/" between rows -- the
+menu offers A B C D and C A B D in a row, the order many four-deck
+controllers have. Only an arrangement chosen is written
+(`decks/arrangement`); with two decks only, those named sit where named.
+Tested in `the_decks_sit_as_the_person_arranged_them` (default grid,
+"C A B D" in one row, kept and read again, two of them in place, the
+default writing nothing); with the arrangement ignored, it fails. **Each
 deck's side of the crossfader, 2026-11-20** (built): a small button on
 each deck goes from its default -- A and C left, B and D right, shown as
 "left (default)" -- to left, right and thru (out of the crossfader's

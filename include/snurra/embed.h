@@ -138,6 +138,11 @@ public:
 	 * default. Taking away C and D unloads them. */
 	void set_deck_count(int count);
 	int deck_count() const;
+	/* (5) Where the decks sit: letters in order, "/" between rows ("C A B D"
+	 * in a row, as many four-deck controllers lay them out); empty for the
+	 * default, two to a row. Kept as the person's choice; also on a
+	 * deck's right-click menu. */
+	void arrange(const QString &arrangement);
 
 	/* (5) On the wire as a deck view (project.md sec 3f): snurra's own
 	 * windows of tiles hand a tile -- or with Shift a whole player -- onto
