@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "snurra/beats.h"
+#include "snurra/deck.h"
 #include "snurra/timeline.h"
 #include "snurra/tile_state.h"
 #include "snurra/fingerprint.h"
@@ -121,6 +122,7 @@ private slots:
 	void a_timeline_places_its_tiles();
 	void channels_are_seated_so_none_overlaps();
 	void a_player_sounds_as_its_tiles();
+	void a_nested_tracks_eq_is_the_decks();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -398,6 +400,37 @@ void beats_test::a_player_sounds_as_its_tiles() {
 	QCOMPARE(int64_t(nested->read(inside.data(), int(nested->length()))), nested->length());
 	for (size_t i = 0; i < heard.size(); ++i)
 		QVERIFY2(std::abs(inside[i] - heard[i]) < 0.5 * frame, qPrintable(QStringLiteral("nested, at %1").arg(i / 2)));
+}
+
+/*
+ * A nested track's EQ (project.md sec 3f): an 8 kHz tone in a player, its
+ * high band killed, comes out as the deck's own isolator makes it of the
+ * same samples, frame for frame -- and far down, the kill being one.
+ */
+void beats_test::a_nested_tracks_eq_is_the_decks() {
+	std::vector<snurra_tile_state> player(1);
+	player[0].source = QStringLiteral("tone:8000");
+	player[0].duration_us = 1000000;
+	player[0].eq_db[2] = SNURRA_EQ_KILL;
+	std::unique_ptr<snurra_source> source = snurra_open_timeline(player, RATE);
+	std::vector<float> heard(size_t(2 * RATE));
+	QCOMPARE(source->read(heard.data(), RATE), RATE);
+	snurra_isolator isolator;
+	isolator.make(RATE);
+	const float gain[3] = { 1, 1, 0 };
+	double in = 0, out = 0;
+	for (int n = 0; n < RATE; ++n) {
+		const float x = float(0.2 * std::sin(2 * M_PI * 8000.0 / RATE * double(n)));
+		const float left = isolator.run(x, 0, gain);
+		const float right = isolator.run(x, 1, gain);
+		QVERIFY2(heard[size_t(2 * n)] == left && heard[size_t(2 * n + 1)] == right, qPrintable(QStringLiteral("at %1").arg(n)));
+		if (n >= RATE / 10) {
+			in += double(x) * x;
+			out += double(left) * left;
+		}
+	}
+	const double db = 10 * std::log10(out / in);
+	QVERIFY2(db < -40, qPrintable(QStringLiteral("the killed band at %1 dB").arg(db)));
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

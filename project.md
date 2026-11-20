@@ -1123,9 +1123,14 @@ alike.
    factory left out the second. Found on the way: a track read through
    the stretch at tempo 1 lost its last two frames, the cubic wanting
    frames past the end -- why a deck reads straight there, and now this
-   does too. **Not yet in a nested track:** its EQ and the level match's
-   trim, which a deck applies in its callback; and a waveform of the
-   whole mix.
+   does too. **A nested track's EQ, 2026-11-20:** the deck's isolator
+   is a type of its own now (`snurra_isolator`, moved out of
+   `snurra_deck` unchanged), and each nested track runs one at its
+   state's bands, as its deck would -- an 8 kHz tone with its high band
+   killed comes out frame for frame as the isolator makes it, below -40
+   dB (`a_nested_tracks_eq_is_the_decks`; with the isolator left out it
+   fails). **Not yet in a nested track:** the level match's trim, which
+   a tile takes from its analysis; and a waveform of the whole mix.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless. **Built
    2026-11-20.** `snurra_dj` takes two decks or four (`set_deck_count`,

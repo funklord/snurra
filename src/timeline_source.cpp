@@ -11,6 +11,7 @@
 #include <cmath>
 
 #include "snurra/clock.h"
+#include "snurra/deck.h"
 #include "snurra/source.h"
 #include "snurra/stretch.h"
 #include "snurra/tile_state.h"
@@ -58,6 +59,8 @@ struct part {
 	bool key_lock = false;
 	double pitch = 1;             /* the key shift, as a ratio */
 	std::vector<std::pair<int64_t, float>> envelope;   /* track frames, gain */
+	bool eq = false;              /* any band moved: the isolator heard */
+	float eq_gain[3] = { 1, 1, 1 };
 };
 
 /* A part being heard: its source open, read through its stretch. */
@@ -71,6 +74,7 @@ struct voice {
 	size_t chunk_len = 0;
 	int64_t next_time = -1;       /* the timeline frame its next frame out is for */
 	int segment = 0;              /* the envelope's, carried as the deck's is */
+	snurra_isolator isolator;     /* its EQ, as a deck's (snurra_deck) */
 };
 
 float envelope_gain(const std::vector<std::pair<int64_t, float>> &points, int &segment, double frame) {
@@ -103,6 +107,11 @@ public:
 			made.level = float(std::clamp(state.level, 0, 100)) / 100.0f;
 			made.key_lock = state.key_lock;
 			made.pitch = std::pow(2.0, double(state.key_shift) / 12.0);
+			for (int band = 0; band < 3; ++band) {
+				const float db = state.eq_db[band];
+				made.eq_gain[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
+				made.eq = made.eq || db != 0;
+			}
 			for (const auto &point : state.envelope)
 				made.envelope.emplace_back(snurra_us_to_frames(point.first, rate), std::clamp(point.second, 0.0f, 1.0f));
 			m_parts.push_back(std::move(made));
@@ -167,6 +176,10 @@ private:
 				heard.next_time = time + 1;
 				continue;
 			}
+			if (one.eq) {
+				left = heard.isolator.run(left, 0, one.eq_gain);
+				right = heard.isolator.run(right, 1, one.eq_gain);
+			}
 			/* As a deck: its level, its envelope at the frame heard, and a
 			 * train's crossfades on a quarter circle (snurra_deck::fade). */
 			double gain = one.level * envelope_gain(one.envelope, heard.segment, frame);
@@ -190,6 +203,7 @@ private:
 			                                   : snurra_open_source(one.name, m_rate, one.fallback, m_interrupted);
 			if (one.audio_track >= 0) heard.source->choose_audio_track(one.audio_track);
 			heard.chunk.assign(2 * 1024, 0.0f);
+			heard.isolator.make(m_rate);
 			voice *self = &heard;
 			heard.pull = [self](float &left, float &right) {
 				if (self->chunk_at >= self->chunk_len) {
@@ -210,6 +224,7 @@ private:
 		heard.stretch->reset(frame);
 		heard.frame = frame;
 		heard.segment = 0;
+		heard.isolator.rest();
 		heard.next_time = time;
 	}
 

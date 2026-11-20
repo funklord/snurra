@@ -15,7 +15,7 @@ snurra_deck::snurra_deck(const start_t &start)
 	      return true;
       }) {
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
-	make_eq();
+	m_eq.make(m_rate);
 
 	/*
 	 * Anchored -- a handover's taker, which must sound in step with the
@@ -406,10 +406,10 @@ void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
  * band goes through that split's allpass too, or the three would not add
  * up flat: the band's own phase against the two above it.
  */
-void snurra_deck::make_eq() {
+void snurra_isolator::make(int rate) {
 	enum kind_t { low_pass, high_pass, all_pass };
-	auto section = [this](biquad_t &made, double hz, double q, kind_t kind) {
-		const double w = 2 * M_PI * hz / m_rate;
+	auto section = [rate](biquad_t &made, double hz, double q, kind_t kind) {
+		const double w = 2 * M_PI * hz / rate;
 		const double cosw = std::cos(w);
 		const double alpha = std::sin(w) / (2 * q);
 		double b0, b1, b2;
@@ -434,12 +434,12 @@ void snurra_deck::make_eq() {
 	};
 	const double q[2] = { 1 / (2 * std::cos(M_PI / 8)), 1 / (2 * std::cos(3 * M_PI / 8)) };
 	for (int i = 0; i < 4; ++i) {
-		section(m_eq.low[i], 250, q[i % 2], low_pass);
-		section(m_eq.above_low[i], 250, q[i % 2], high_pass);
-		section(m_eq.mid[i], 4000, q[i % 2], low_pass);
-		section(m_eq.high[i], 4000, q[i % 2], high_pass);
+		section(low[i], 250, q[i % 2], low_pass);
+		section(above_low[i], 250, q[i % 2], high_pass);
+		section(mid[i], 4000, q[i % 2], low_pass);
+		section(high[i], 4000, q[i % 2], high_pass);
 	}
-	for (int i = 0; i < 2; ++i) section(m_eq.align[i], 4000, q[i], all_pass);
+	for (int i = 0; i < 2; ++i) section(align[i], 4000, q[i], all_pass);
 }
 
 namespace {
@@ -451,7 +451,7 @@ template <size_t N, typename section_t> float through(section_t (&sections)[N], 
 
 }   // namespace
 
-float snurra_deck::isolator_t::run(float x, int channel, const float gain[3]) {
+float snurra_isolator::run(float x, int channel, const float gain[3]) {
 	const float bottom = through(align, through(low, x, channel), channel);
 	const float above = through(above_low, x, channel);
 	const float middle = through(mid, above, channel);
@@ -459,7 +459,7 @@ float snurra_deck::isolator_t::run(float x, int channel, const float gain[3]) {
 	return gain[0] * bottom + gain[1] * middle + gain[2] * top;
 }
 
-void snurra_deck::isolator_t::rest() {
+void snurra_isolator::rest() {
 	for (biquad_t *sections : { low, above_low, mid, high })
 		for (int i = 0; i < 4; ++i) sections[i].rest();
 	for (biquad_t &made : align) made.rest();

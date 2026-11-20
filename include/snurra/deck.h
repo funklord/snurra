@@ -40,6 +40,33 @@ constexpr float SNURRA_EQ_KILL = -1000.0f;
  * is what a handover's two sides schedule to cross over in the same
  * moment.
  */
+/*
+ * A DJ's three-band isolator, the deck's EQ: the track split at 250 Hz and
+ * 4 kHz by Linkwitz-Riley 8 crossovers, whose bands add back to an
+ * allpass, each band weighted. Its own type so a player's nested track
+ * (timeline.h) is equalised as a deck equalises it.
+ */
+struct snurra_isolator {
+	struct biquad_t {
+		float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+		float z1[2] = { 0, 0 };
+		float z2[2] = { 0, 0 };
+		float run(float x, int channel) {
+			const float y = b0 * x + z1[channel];
+			z1[channel] = b1 * x - a1 * y + z2[channel];
+			z2[channel] = b2 * x - a2 * y;
+			return y;
+		}
+		void rest() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
+	};
+	biquad_t low[4], above_low[4], mid[4], high[4], align[2];
+	/* Its crossovers, fixed for `rate`. */
+	void make(int rate);
+	/* One channel's frame, split and weighted by band. */
+	float run(float x, int channel, const float gain[3]);
+	void rest();
+};
+
 class snurra_deck {
 public:
 	struct start_t {
@@ -252,28 +279,9 @@ private:
 	 * section with its two channels' state; the bands' gains as heard,
 	 * moving toward the asked; and how much of the isolator is heard
 	 * against the dry track, 0 while every band is at 0 dB. */
-	struct biquad_t {
-		float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-		float z1[2] = { 0, 0 };
-		float z2[2] = { 0, 0 };
-		float run(float x, int channel) {
-			const float y = b0 * x + z1[channel];
-			z1[channel] = b1 * x - a1 * y + z2[channel];
-			z2[channel] = b2 * x - a2 * y;
-			return y;
-		}
-		void rest() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
-	};
-	struct isolator_t {
-		biquad_t low[4], above_low[4], mid[4], high[4], align[2];
-		/* One channel's frame, split and weighted by band. */
-		float run(float x, int channel, const float gain[3]);
-		void rest();
-	};
-	isolator_t m_eq;
+	snurra_isolator m_eq;
 	float m_eq_gain[3] = { 1, 1, 1 };
 	float m_eq_wet = 0;
-	void make_eq();
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
 	std::atomic<int> m_key_shift{ 0 };
