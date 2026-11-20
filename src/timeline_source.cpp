@@ -225,6 +225,16 @@ private:
 
 }   // namespace
 
+snurra_timeline snurra_timeline_from(const std::vector<snurra_tile_state> &states, int rate,
+                                     std::vector<snurra_tile_state> *in_timeline_order) {
+	const std::vector<const snurra_tile_state *> order = in_order(states);
+	if (in_timeline_order) {
+		in_timeline_order->clear();
+		for (const snurra_tile_state *state : order) in_timeline_order->push_back(*state);
+	}
+	return timeline_of(order, rate);
+}
+
 snurra_tile_state snurra_player_state(const std::vector<snurra_tile_state> &states, int rate) {
 	snurra_tile_state player;
 	player.player = states;

@@ -20,6 +20,7 @@
 #include <QPointer>
 #include <QSet>
 #include <QSlider>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -185,6 +186,13 @@ public:
 		setMinimumHeight(fontMetrics().height() * 8);
 		column = new QVBoxLayout(this);
 		column->setContentsMargins(2, 2, 2, 2);
+		/* A deck holding a whole player: spread it over the decks. */
+		unfold = new QToolButton(this);
+		unfold->setText(QObject::tr("Unfold across the decks"));
+		unfold->setAccessibleName(unfold->text());
+		unfold->setAutoRaise(true);
+		unfold->hide();
+		column->addWidget(unfold, 0, Qt::AlignLeft);
 		empty = new QLabel(QObject::tr("Deck %1 -- double-click a tune below, or drop one here").arg(name), this);
 		empty->setAlignment(Qt::AlignCenter);
 		empty->setWordWrap(true);
@@ -196,6 +204,7 @@ public:
 	 * process's socket and its index there (snurra_wire::TILE_MIME). */
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
+	QToolButton *unfold;
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
 	QString name;
@@ -266,6 +275,34 @@ public:
 	/* The deck's tile gone from it, its deck left to the engine's retire. */
 	void detach(int deck);
 
+	/* ---- a player unfolded across the decks (sec 3f, step 4) ---- */
+	struct score_t {
+		std::vector<snurra_tile_state> states;   /* timeline order */
+		snurra_timeline timeline{ 48000 };
+		std::vector<int> channel;                /* by track: its deck */
+		std::vector<int64_t> start, end, in, out;   /* frames of the player's time */
+		int64_t time0 = 0;                       /* the player's time at t0_us */
+		qint64 t0_us = 0;
+		bool playing = false;
+		std::vector<int> on_deck;                /* by deck: the track it holds, -1 */
+		std::vector<bool> started;               /* by track */
+		std::vector<int> stage;                  /* by track: 0 its fade in set, 1 its fade out */
+		std::vector<bool> held;                  /* by deck: a hand on its fader */
+		QTimer *timer = nullptr;
+	};
+	std::unique_ptr<score_t> score;
+	bool unfold(int deck);
+	void end_score();
+	int64_t score_time(qint64 us) const;
+	qint64 score_us(int64_t time) const;
+	int64_t frame_of(int track, int64_t time) const;
+	void place(int64_t time, qint64 at_us);
+	void load_track(int track, int64_t frame);
+	void start_track(int track, qint64 at_us);
+	void automate(int track, int64_t time);
+	void conduct();
+	void hold(int deck, bool held);
+
 	QList<dj_deck *> decks;   /* A, B and, with four, C and D */
 	QGridLayout *grid = nullptr;
 	QSlider *crossfader = nullptr;
@@ -296,6 +333,8 @@ public:
 	}
 	void unload(int i) {
 		dj_deck *deck = decks[i];
+		if (score && i < int(score->on_deck.size())) score->on_deck[size_t(i)] = -1;
+		deck->unfold->hide();
 		if (!deck->tile) return;
 		snurra_tile *tile = deck->tile;
 		deck->tile = nullptr;
@@ -555,6 +594,247 @@ void snurra_dj_private::abort_give(const QString &token) {
 	send(give.socket, abort);
 }
 
+/*
+ * A player unfolded across the decks (project.md sec 3f, step 4): its
+ * tracks seated on channels (snurra_timeline::seat), channel c on deck c,
+ * and conducted on the shared clock -- each loaded on its deck and
+ * started a lead ahead of its moment, its crossfades the deck's fade, the
+ * next one cued on a deck once its track there has ended. The decks'
+ * play and seek are the player's (set_grouped), and a hand on a deck's
+ * fader takes it out of the automation while held. The crossfader is left
+ * to the hand.
+ */
+bool snurra_dj_private::unfold(int deck) {
+	if (deck < 0 || deck >= decks.size() || !decks[deck]->tile) return false;
+	snurra_tile *holder = decks[deck]->tile;
+	const snurra_tile_state outer = holder->state();
+	if (outer.player.empty()) return false;
+	if (!engine) engine = shared_engine();
+	const int rate = engine->rate();
+	auto made = std::make_unique<score_t>();
+	made->timeline = snurra_timeline_from(outer.player, rate, &made->states);
+	const snurra_timeline::seating seated = made->timeline.seat();
+	if (seated.channels > 4) return false;
+	if (seated.channels > decks.size()) q->set_deck_count(4);
+	end_score();
+	const size_t tracks = made->states.size();
+	made->channel = seated.channel;
+	for (size_t i = 0; i < tracks; ++i) {
+		made->start.push_back(made->timeline.start(int(i)));
+		made->end.push_back(made->timeline.end(int(i)));
+		const int before = made->timeline.tracks[i].follows;
+		made->in.push_back(before >= 0 ? made->timeline.overlap(before) : 0);
+		made->out.push_back(made->timeline.overlap(int(i)));
+	}
+	made->started.assign(tracks, false);
+	made->stage.assign(tracks, -1);
+	made->on_deck.assign(size_t(decks.size()), -1);
+	made->held.assign(size_t(decks.size()), false);
+
+	/* Over in step: the decks start a lead from now where the player is
+	 * then, and the deck that held it fades out over the same moment. */
+	const qint64 now = snurra_clock_us();
+	const qint64 period_us = qint64(engine->period()) * 1000000 / rate;
+	const qint64 at = now + engine->latency_us() + period_us + 100000;
+	const int64_t time = snurra_us_to_frames(outer.playing ? outer.position_now(at) : outer.position_us, rate);
+	if (outer.playing) {
+		holder->deck()->fade(at, CROSSFADE_US, 1, 0);
+		holder->retire_deck_at(at + CROSSFADE_US + period_us);
+		detach(deck);
+	} else {
+		unload(deck);
+	}
+	score = std::move(made);
+	score->playing = outer.playing;
+	place(time, at);
+	score->timer = new QTimer(q);
+	score->timer->setInterval(20);
+	QObject::connect(score->timer, &QTimer::timeout, q, [this] { conduct(); });
+	score->timer->start();
+	return true;
+}
+
+void snurra_dj_private::end_score() {
+	if (!score) return;
+	if (score->timer) score->timer->deleteLater();
+	for (int i = 0; i < decks.size(); ++i)
+		if (decks[i]->tile && i < int(score->on_deck.size()) && score->on_deck[size_t(i)] >= 0) decks[i]->tile->set_grouped(false);
+	score.reset();
+}
+
+int64_t snurra_dj_private::score_time(qint64 us) const {
+	if (!score->playing) return score->time0;
+	return score->time0 + snurra_us_to_frames(us - score->t0_us, engine->rate());
+}
+
+qint64 snurra_dj_private::score_us(int64_t time) const {
+	return score->t0_us + qint64(snurra_frames_to_us(time - score->time0, engine->rate()));
+}
+
+int64_t snurra_dj_private::frame_of(int track, int64_t time) const {
+	const snurra_timeline_track &one = score->timeline.tracks[size_t(track)];
+	return std::max<int64_t>(0, std::llround(double(time - score->start[size_t(track)]) * one.tempo) + one.offset);
+}
+
+/* Every channel's deck at the player's `time`, heard from `at_us`: the
+ * track sounding there, else the next to come, cued. */
+void snurra_dj_private::place(int64_t time, qint64 at_us) {
+	score->time0 = time;
+	score->t0_us = at_us;
+	for (size_t i = 0; i < score->states.size(); ++i)
+		if (score->end[i] > time) {
+			score->started[i] = false;
+			score->stage[i] = -1;
+		}
+	for (int deck = 0; deck < decks.size(); ++deck) {
+		int sounding = -1, next = -1;
+		for (size_t i = 0; i < score->states.size(); ++i) {
+			if (score->channel[i] != deck || score->end[i] <= time) continue;
+			if (score->start[i] <= time) sounding = int(i);
+			else if (next < 0 || score->start[i] < score->start[size_t(next)]) next = int(i);
+		}
+		if (sounding >= 0) {
+			load_track(sounding, frame_of(sounding, time));
+			if (score->playing) start_track(sounding, at_us);
+		} else if (next >= 0) {
+			load_track(next, score->timeline.tracks[size_t(next)].offset);
+		}
+	}
+}
+
+void snurra_dj_private::load_track(int track, int64_t frame) {
+	const int deck = score->channel[size_t(track)];
+	if (deck >= decks.size()) return;
+	snurra_tile *tile = decks[deck]->tile;
+	if (!tile || score->on_deck[size_t(deck)] != track) {
+		unload(deck);
+		snurra_tile_state state = score->states[size_t(track)];
+		state.row = 0;
+		state.column = 0;
+		state.controls = true;
+		state.playing = false;
+		state.position_us = snurra_frames_to_us(frame, engine->rate());
+		state.sampled_at_us = snurra_clock_us();
+		tile = snurra_tile::embedded(*engine, state, nullptr, decks[deck]);
+		install(deck, tile, snurra_title_of(state.source));
+		score->on_deck[size_t(deck)] = track;
+		/* Its play and seek are the player's, not its own. */
+		tile->set_grouped(true);
+		QObject::connect(tile, &snurra_tile::play_requested, q, [this](snurra_tile *, bool playing) {
+			if (!score || playing == score->playing) return;
+			const qint64 now = snurra_clock_us();
+			const int64_t time = score_time(now);
+			score->playing = playing;
+			if (!playing) {
+				for (dj_deck *one : decks)
+					if (one->tile) one->tile->hold_at(one->tile->frame_now());
+				score->time0 = time;
+				score->t0_us = now;
+				return;
+			}
+			place(time, now + engine->latency_us() + 50000);
+		});
+		QObject::connect(tile, &snurra_tile::seek_requested, q, [this, track](snurra_tile *, qint64 position_us) {
+			if (!score) return;
+			const snurra_timeline_track &one = score->timeline.tracks[size_t(track)];
+			const int64_t time = score->start[size_t(track)]
+			                     + std::llround(double(snurra_us_to_frames(position_us, engine->rate()) - one.offset) / one.tempo);
+			const qint64 now = snurra_clock_us();
+			if (!score->playing)
+				for (dj_deck *other : decks)
+					if (other->tile) other->tile->hold_at(other->tile->frame_now());
+			place(std::max<int64_t>(0, time), score->playing ? now + engine->latency_us() + 50000 : now);
+		});
+		QObject::connect(tile, &snurra_tile::level_held, q, [this, deck](snurra_tile *, bool held) { hold(deck, held); });
+	} else {
+		tile->hold_at(frame);
+	}
+}
+
+void snurra_dj_private::start_track(int track, qint64 at_us) {
+	const int deck = score->channel[size_t(track)];
+	snurra_tile *tile = deck < decks.size() ? decks[deck]->tile : nullptr;
+	if (!tile || score->on_deck[size_t(deck)] != track) return;
+	tile->play_from(frame_of(track, score_time(at_us)), at_us);
+	score->started[size_t(track)] = true;
+	automate(track, score_time(at_us));
+}
+
+/* Its crossfades as its deck's fade: in over the overlap with the track
+ * before, then out over the one after -- the quarter circle a train's
+ * decks use. Not while a hand holds its fader. */
+void snurra_dj_private::automate(int track, int64_t time) {
+	const int deck = score->channel[size_t(track)];
+	snurra_tile *tile = deck < decks.size() ? decks[deck]->tile : nullptr;
+	if (!tile || score->held[size_t(deck)] || score->on_deck[size_t(deck)] != track) return;
+	const size_t i = size_t(track);
+	const int stage = score->in[i] > 0 && time < score->start[i] + score->in[i] ? 0 : 1;
+	if (stage == score->stage[i]) return;
+	score->stage[i] = stage;
+	const int rate = engine->rate();
+	if (stage == 0)
+		tile->deck()->fade(score_us(score->start[i]), snurra_frames_to_us(score->in[i], rate), 0, 1, true);
+	else if (score->out[i] > 0)
+		tile->deck()->fade(score_us(score->end[i] - score->out[i]), snurra_frames_to_us(score->out[i], rate), 1, 0, true);
+	else
+		tile->deck()->fade(0, 0, 1, 1);
+}
+
+void snurra_dj_private::conduct() {
+	if (!score || !score->playing) return;
+	const qint64 now = snurra_clock_us();
+	const int64_t time = score_time(now);
+	const int64_t lead = snurra_us_to_frames(1500000, engine->rate());
+	bool left = false;
+	for (size_t i = 0; i < score->states.size(); ++i) {
+		if (score->end[i] > time) left = true;
+		const int deck = score->channel[i];
+		if (deck >= decks.size()) continue;
+		if (score->started[i]) {
+			automate(int(i), time);
+			continue;
+		}
+		if (score->end[i] <= time || score->start[i] > time + lead) continue;
+		/* Its deck free -- what it held has ended -- it is loaded there
+		 * and started at its moment; late, it starts where it is now. */
+		const int holding = score->on_deck[size_t(deck)];
+		if (holding >= 0 && holding != int(i) && score->end[size_t(holding)] > time) continue;
+		if (holding != int(i)) load_track(int(i), score->timeline.tracks[i].offset);
+		const qint64 moment = score_us(score->start[i]);
+		start_track(int(i), std::max(moment, now + engine->latency_us() + 20000));
+	}
+	/* A deck whose track has ended shows the next one to come there. */
+	for (int deck = 0; deck < decks.size(); ++deck) {
+		const int holding = score->on_deck[size_t(deck)];
+		if (holding < 0 || score->end[size_t(holding)] > time) continue;
+		int next = -1;
+		for (size_t i = 0; i < score->states.size(); ++i)
+			if (score->channel[i] == deck && !score->started[i] && score->end[i] > time
+			    && (next < 0 || score->start[i] < score->start[size_t(next)]))
+				next = int(i);
+		if (next >= 0) load_track(next, score->timeline.tracks[size_t(next)].offset);
+	}
+	if (!left) score->playing = false;
+}
+
+/* A hand on a deck's fader: the automation off while held -- its fades
+ * and its envelope -- and back on when let go. */
+void snurra_dj_private::hold(int deck, bool held) {
+	if (!score || deck >= int(score->held.size())) return;
+	score->held[size_t(deck)] = held;
+	snurra_tile *tile = decks[deck]->tile;
+	const int track = score->on_deck[size_t(deck)];
+	if (!tile || track < 0) return;
+	if (held) {
+		tile->deck()->fade(0, 0, 1, 1);
+		tile->deck()->set_envelope({});
+		return;
+	}
+	tile->set_envelope(tile->state().envelope);
+	score->stage[size_t(track)] = -1;
+	automate(track, score_time(snurra_clock_us()));
+}
+
 void snurra_dj_private::detach(int deck) {
 	dj_deck *place = decks[deck];
 	if (!place->tile) return;
@@ -564,6 +844,7 @@ void snurra_dj_private::detach(int deck) {
 	tile->disconnect();
 	tile->hide();
 	tile->deleteLater();
+	place->unfold->hide();
 	place->empty->show();
 }
 
@@ -583,6 +864,10 @@ bool snurra_dj::listen() {
 		while (QLocalSocket *socket = d->server->nextPendingConnection()) d->watch(socket);
 	});
 	return true;
+}
+
+bool snurra_dj::unfold(int deck) {
+	return d->unfold(deck);
 }
 
 QString snurra_dj::socket_path() const {
@@ -638,6 +923,8 @@ snurra_dj::~snurra_dj() {
 
 bool snurra_dj::load(int deck, const snurra_media &media) {
 	if (deck < 0 || deck >= d->decks.size() || (!media.bytes && media.path.isEmpty())) return false;
+	/* A tune put on a deck by hand: the decks are the hand's again. */
+	d->end_score();
 	if (!d->engine) d->engine = shared_engine();
 	d->unload(deck);
 	dj_deck *place = d->decks[deck];
@@ -670,6 +957,7 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->tile = tile;
 	place->name = name;
 	place->empty->hide();
+	place->unfold->setVisible(!tile->state().player.empty());
 	place->column->addWidget(tile);
 	tile->show();
 	snurra_dj *dj = q;
@@ -716,6 +1004,7 @@ void snurra_dj::set_deck_count(int count) {
 		/* The giver is asked, as a window asks it (snurra_node::dropEvent):
 		 * the handover is its to make -- the tile, or with Shift the whole
 		 * player -- onto this deck. */
+		connect(deck->unfold, &QToolButton::clicked, this, [this, i] { unfold(i); });
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
 			if (!d->server || giver.isEmpty()) return;
 			snurra_wire::message merge;

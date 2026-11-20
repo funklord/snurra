@@ -127,6 +127,11 @@ std::unique_ptr<snurra_source> snurra_open_timeline(const std::vector<snurra_til
  * player handed onto a deck becomes (project.md sec 3f, step 3). */
 snurra_tile_state snurra_player_state(const std::vector<snurra_tile_state> &states, int rate);
 
+/* `states`' timeline, as snurra_open_timeline plays it; its track i is
+ * `in_timeline_order`'s state i -- rows, each in column order. */
+snurra_timeline snurra_timeline_from(const std::vector<snurra_tile_state> &states, int rate,
+                                     std::vector<snurra_tile_state> *in_timeline_order = nullptr);
+
 /*
  * A train's overlap between a track and the next (project.md sec 3b, steps
  * 3 and 6), in frames out at `rate`: lengths in frames out, tempos as the

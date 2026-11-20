@@ -264,6 +264,9 @@ signals:
 	 * unless Shift is held. */
 	void shift_requested(snurra_tile *tile, qint64 delta_us, bool done, bool snap);
 	void sync_requested(snurra_tile *tile);
+	/* Its level's slider taken by the hand, and let go: what takes a deck
+	 * out of a player's automation while held (project.md sec 3f). */
+	void level_held(snurra_tile *tile, bool held);
 	void key_sync_requested(snurra_tile *tile);
 	void controls_changed(snurra_tile *tile);
 	/* Files, folders or links dropped on the full-screen picture (a window

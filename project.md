@@ -1159,7 +1159,29 @@ alike.
    train of its own (it opens as a tile holding its player), and the
    deck view's own look at four decks on a small screen.
 4. A train unfolded onto the decks, its automation driving them, a hand
-   taking over.
+   taking over. **Built 2026-11-20** (`snurra_dj::unfold`, the deck's
+   "Unfold across the decks"): a deck holding a whole player spreads it
+   over the decks, its tracks seated on channels (`seat`), channel c on
+   deck c, two decks becoming four where the player needs them. The deck
+   view conducts it on the shared clock: each track loaded and started a
+   lead (1.5 s) ahead of its moment, as a window's train starts its next;
+   its crossfades the deck's fade, in then out, on the quarter circle; a
+   deck whose track has ended shows the next to come there, cued. The
+   decks' play and seek are the player's (`set_grouped`, as in a
+   window's group). A hand on a deck's fader (`level_held`) takes that
+   deck from the automation -- no fade, no envelope -- while held, and
+   gives it back when let go. The deck that held the player fades out
+   over the moment the decks come in. A tune loaded by hand ends the
+   conducting. Tested in `a_player_unfolds_across_the_decks`: a train of
+   three tones over the wire onto deck A, unfolded onto A, B, A -- B cued,
+   then in at 2 s half a second into its track by 2.5 s with A fading
+   out; the third cued on A once A's track ended at 3 s and still at its
+   first frame at 3.7 s, half a second in at 4.5 s; B's fader held lifts
+   its fade and let go restores it. Without the hold, or without the
+   automation, it fails. A started track's tile says playing from the
+   moment it is started, a lead before it sounds -- as a train's next
+   does. **Not yet:** the fader drawn moving with the automation, and a
+   hand on the crossfader recorded (step 5).
 5. Moves on the decks written back into the train.
 6. Slots and the person's layout; controllers: MIDI in, bound to slots.
 

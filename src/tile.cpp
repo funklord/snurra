@@ -1143,6 +1143,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	connect(m_sync, &QToolButton::clicked, this, &snurra_tile::request_sync);
 	connect(m_cue, &QToolButton::clicked, this, &snurra_tile::cue);
 	connect(m_loop, &QToolButton::toggled, this, &snurra_tile::set_loop);
+	connect(m_level, &QSlider::sliderPressed, this, [this] { emit level_held(this, true); });
+	connect(m_level, &QSlider::sliderReleased, this, [this] { emit level_held(this, false); });
 	connect(m_level, &QSlider::valueChanged, this, [this](int level) {
 		m_state.level = level;
 		m_deck->set_level(float(level) / 100);

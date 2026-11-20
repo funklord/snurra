@@ -25,6 +25,8 @@
 #include <QToolButton>
 
 #include <cmath>
+#include <QLocalSocket>
+#include <QScopeGuard>
 #include <QtTest>
 
 #include <memory>
@@ -32,6 +34,7 @@
 #include "snurra/clock.h"
 #include "snurra/engine.h"
 #include "snurra/embed.h"
+#include "snurra/wire.h"
 #include "snurra/node.h"
 #include "snurra/beats.h"
 #include "snurra/library.h"
@@ -71,6 +74,7 @@ private slots:
 	void the_tempo_reaches_16_and_snaps_to_the_middle();
 	void a_dark_desktop_is_found_where_it_is_written();
 	void a_jump_while_playing_lands_exactly_its_step_on();
+	void a_player_unfolds_across_the_decks();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void a_beat_found_once_is_kept_and_shown();
@@ -1096,6 +1100,104 @@ void embed_test::a_jump_while_playing_lands_exactly_its_step_on() {
 	const double deck_off_ms = double(deck->frame_now() - deck_expected) * 1000 / deck_rate;
 	qInfo("a deck after the jump: %.1f ms off where it would be", deck_off_ms);
 	QVERIFY2(std::abs(deck_off_ms) < 5, qPrintable(QStringLiteral("a deck %1 ms off its step").arg(deck_off_ms)));
+}
+
+/*
+ * A player unfolded across the decks (project.md sec 3f, step 4): a train
+ * of three tones, 3 s each crossing over 1 s, handed onto deck A whole
+ * over the wire, then unfolded. Its tracks take decks A, B, A: the first
+ * plays on A, the second waits cued on B and comes in at 2 s fading in
+ * while A fades out, and once A's track has ended the third is cued there
+ * and comes in at 4 s. A hand on B's fader takes B from the automation --
+ * no fade on it while held -- and gives it back when let go.
+ */
+void embed_test::a_player_unfolds_across_the_decks() {
+	QTemporaryDir runtime;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.listen());
+
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("unfold");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	for (int i = 0; i < 3; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(220 + 110 * i);
+		tone.duration_us = 3000000;
+		tone.column = i;
+		tone.overlap_us = i > 0 ? 1000000 : -1;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		/* Handed over and gone: the deck view fades it in on its own. */
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("3 tracks"), 3000);
+	QToolButton *unfold = nullptr;
+	for (QToolButton *button : dj.findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Unfold across the decks") && button->isVisible()) unfold = button;
+	QVERIFY2(unfold, "no Unfold on a deck holding a player");
+	QElapsedTimer since;
+	since.start();
+	unfold->click();
+	QCOMPARE(dj.loaded(0), QStringLiteral("tone:220"));
+	QCOMPARE(dj.loaded(1), QStringLiteral("tone:330"));
+
+	auto tile_of = [&dj](int deck) {
+		const QString name = deck == 0 ? QStringLiteral("snurra-deck-a") : QStringLiteral("snurra-deck-b");
+		QWidget *place = dj.findChild<QWidget *>(name);
+		return place ? place->findChild<snurra_tile *>() : nullptr;
+	};
+	QVERIFY(tile_of(0)->playing());
+	QVERIFY(!tile_of(1)->playing());
+	/* At about 2.5 s: B in, half a second into its track, faded in; A on
+	 * its way out. */
+	QTest::qWait(int(std::max<qint64>(0, 2500 - since.elapsed())));
+	QVERIFY(tile_of(1)->playing());
+	QVERIFY2(qAbs(tile_of(1)->state().position_us - 500000) < 250000,
+	         qPrintable(QStringLiteral("B at %1 us").arg(tile_of(1)->state().position_us)));
+	QCOMPARE(tile_of(1)->deck()->fade_from(), 0.0f);
+	QCOMPARE(tile_of(0)->deck()->fade_to(), 0.0f);
+
+	/* A hand on B's fader: no automation while held, back when let go. */
+	QSlider *level = nullptr;
+	for (QSlider *slider : tile_of(1)->window()->findChildren<QSlider *>())
+		if (slider->accessibleName() == QLatin1String("Level") && tile_of(1)->isAncestorOf(slider)) level = slider;
+	if (!level)
+		for (QSlider *slider : dj.findChildren<QSlider *>())
+			if (slider->accessibleName() == QLatin1String("Level") && dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b"))->isAncestorOf(slider))
+				level = slider;
+	QVERIFY(level);
+	emit level->sliderPressed();
+	QCOMPARE(tile_of(1)->deck()->fade_from(), 1.0f);
+	QCOMPARE(tile_of(1)->deck()->fade_to(), 1.0f);
+	emit level->sliderReleased();
+	QVERIFY(tile_of(1)->deck()->fade_from() == 0.0f || tile_of(1)->deck()->fade_to() == 0.0f);
+
+	/* A's track over at 3 s: the third cued there, in at 4 s -- started a
+	 * lead ahead on the shared clock, as a train's next is, so standing
+	 * at its first frame until then, half a second in at 4.5 s. */
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("tone:440"), 2000);
+	QVERIFY2(since.elapsed() < 3900, qPrintable(QString::number(since.elapsed())));
+	QTest::qWait(int(std::max<qint64>(0, 3700 - since.elapsed())));
+	QVERIFY2(tile_of(0)->state().position_us < 100000,
+	         qPrintable(QStringLiteral("the third at %1 us at 3.7 s").arg(tile_of(0)->state().position_us)));
+	QTest::qWait(int(std::max<qint64>(0, 4500 - since.elapsed())));
+	QVERIFY2(qAbs(tile_of(0)->state().position_us - 500000) < 250000,
+	         qPrintable(QStringLiteral("the third at %1 us at 4.5 s").arg(tile_of(0)->state().position_us)));
 }
 
 /*

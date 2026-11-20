@@ -147,6 +147,16 @@ public:
 	bool listen();
 	QString socket_path() const;
 
+	/* (5) The player deck `deck` holds -- a whole player handed onto it --
+	 * unfolded across the decks (project.md sec 3f): each of its tracks on
+	 * its channel's deck, started at its moment, its crossfades and
+	 * envelope moving that deck, the next one cued; the decks' play and
+	 * seek are the player's, and a hand on a deck's fader takes that deck
+	 * from the automation while held. Two decks become four where it needs
+	 * them. False where the deck holds no player, or one needing more than
+	 * four decks at once. A tune loaded by hand ends it. */
+	bool unfold(int deck);
+
 	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
 	void set_crossfader(double position);
 	double crossfader() const;
