@@ -1007,6 +1007,23 @@ example.")
   listener's plug to its slot's tap, so the dynamic "listen here"
   sockets and a controller's fixed buttons are one mechanism.
 - The phone's cut-down view is a layout of fewer slots, not other code.
+- **Remapping is live and in place** (the holder, 2026-11-20: "a context
+  sensitive easy remapping method, for example to alt+click_hold on a
+  control then twiddle a knob to set it to that one. so remapping can be
+  done easily live, this requires that we filter out controller noise so
+  we know the one thing that is being tweaked and ignore if unsure until
+  a clear signal"). Alt held and the pointer held on a control listens;
+  the one control moved binds to that control's slot. Against noise:
+  listening starts before the press, so a control that chatters
+  untouched (a worn pot, a jog's drift) is known and set aside; clock,
+  active sensing and other system messages are never candidates; a
+  binding is made only when exactly one control shows a clear change --
+  a note on, or a run of values over a real part of its range -- and two
+  moving, or none clearly, binds nothing and says to move just one. The
+  same movement tells what the control is: absolute, a relative encoder
+  (about 64, or 1 and 127), a 14-bit pair (CC n and n + 32), pitch bend.
+  A control in no slot offers to make one. The gesture is the same for
+  MIDI, HID and a key.
 
 **2 or 4 decks**, a choice in the view: two layouts of slots. The phone gets the cut-down one:
 two decks, the controls that fit (sec 3b's fold-cover measures stand).
