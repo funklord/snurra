@@ -36,7 +36,9 @@ and everything above it knows nothing of SFTP or fuzznet.
   has its own icon, installed into hicolor (7f46785); mplayer's
   `-shuffle` (40f7746), `-audiofile` / mpv's `--audio-file=` (be4761b)
   and mpv's `--chapters-file` (720a6cf) are taken -- the last two are
-  what hydra hands players, told in its inbox (20261120T1625Z).
+  what hydra hands players, told in its inbox (20261120T1625Z). A film
+  keeps a Wayland screen on through the portal (d26b97c), and `make
+  check-mk` links again after two days broken (ad878e0).
 - Loudness matching is on by default at -14 LUFS (holder, 2026-11-18).
   Knobs turn by holding and moving up or down; the EQ is one line drawn
   across its three bands; tiles are as wide as their time on the
