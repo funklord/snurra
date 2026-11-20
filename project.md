@@ -1136,7 +1136,15 @@ alike.
    tracks are not analysed of themselves yet. Tested by a tune kept as
    -20 LUFS: nested, every sample at the deck's gain with the match on,
    as it is with it off (`a_nested_track_is_brought_to_the_level_its_deck_would_give`;
-   without the trim it fails). **Not yet in a nested track:** a waveform
+   without the trim it fails). **A player's beat, 2026-11-20:** a tile
+   holding a player takes as its own grid the kept grid of the track it
+   sounds -- in a crossfade the one coming in -- mapped into the player's
+   time (its start, its tempo, its offset), its loudness not the tile's;
+   so sync onto or from a deck holding a player follows whichever track
+   is heard. Tested with two tunes kept at 120 BPM and at 128 played at
+   1.25: standing in each, the tile's beat is that track's where it falls
+   (`a_player_in_a_tile_beats_with_the_track_it_sounds`; unmapped, it
+   fails). A track never analysed gives the tile no beat there. **Not yet in a nested track:** a waveform
    of the whole mix, and analysis of a track never loaded on a deck.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless. **Built

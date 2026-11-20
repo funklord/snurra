@@ -85,6 +85,7 @@ private slots:
 	void the_control_moved_is_told_from_the_noise();
 	void a_controller_learned_by_holding_moves_the_deck();
 	void a_nested_track_is_brought_to_the_level_its_deck_would_give();
+	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void each_player_takes_the_bindings_named_for_it();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_player_unfolds_across_the_decks();
@@ -1347,6 +1348,54 @@ void embed_test::a_nested_track_is_brought_to_the_level_its_deck_would_give() {
 		++compared;
 	}
 	QVERIFY(compared > 1000);
+}
+
+/*
+ * Sync with a player in a deck (project.md sec 3f: "sync follows the beat
+ * of whichever track sounds at that moment"): two tunes with kept grids,
+ * 120 BPM and 128 BPM played at 1.25, as a player in a tile. Standing in
+ * the first, the tile's beat is the first's; in the second, the second's,
+ * where it falls in the player's time.
+ */
+void embed_test::a_player_in_a_tile_beats_with_the_track_it_sounds() {
+	QTemporaryDir dir;
+	std::vector<snurra_tile_state> player(2);
+	const double periods[2] = { 24000, 22500 };
+	const double firsts[2] = { 1000, 3000 };
+	for (int i = 0; i < 2; ++i) {
+		const QString path = dir.filePath(QStringLiteral("%1.wav").arg(i));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4 * 48000));
+		file.close();
+		snurra_beat_grid grid;
+		grid.period = periods[i];
+		grid.first = firsts[i];
+		grid.confidence = 10;
+		grid.rate = 48000;
+		snurra_cache_beats(path, -1, grid);
+		player[size_t(i)].source = path;
+		player[size_t(i)].duration_us = 4000000;
+		player[size_t(i)].column = i;
+	}
+	player[1].tempo = 1.25f;
+	const snurra_timeline timeline = snurra_timeline_from(player, 48000);
+	const int64_t second = timeline.start(1);
+	for (int at = 0; at < 2; ++at) {
+		snurra_node node;
+		snurra_tile_state state;
+		state.source = QStringLiteral("2 tracks");
+		state.player = player;
+		state.duration_us = snurra_frames_to_us(timeline.end(1), 48000);
+		state.position_us = at == 0 ? 1000000 : snurra_frames_to_us(second + 48000, 48000);
+		state.sampled_at_us = snurra_clock_us();
+		snurra_tile *tile = node.add_tile(state);
+		const double period = at == 0 ? 24000 : 22500 / 1.25;
+		QTRY_VERIFY_WITH_TIMEOUT(qAbs(tile->beats().period - period) < 1e-6, 2000);
+		const double first = at == 0 ? 1000 : double(second) + 3000 / 1.25;
+		QVERIFY2(qAbs(tile->beats().first - first) < 1e-6, qPrintable(QStringLiteral("first beat at %1, meant %2").arg(tile->beats().first).arg(first)));
+		QVERIFY(!tile->beats().loudness_known);
+	}
 }
 
 /*

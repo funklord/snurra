@@ -20,6 +20,7 @@ class QSlider;
 class QToolButton;
 class snurra_bytes;
 class snurra_deck;
+class snurra_timeline;
 class snurra_engine;
 class snurra_peaks;
 class snurra_video;
@@ -369,6 +370,13 @@ private:
 	QToolButton *m_forward = nullptr;
 	std::unique_ptr<snurra_beats> m_beats;
 	snurra_beat_grid m_grid;
+	/* A player in it (project.md sec 3f): its tracks' timeline and their
+	 * kept grids, and which track's grid it shows -- the one sounding --
+	 * so sync follows whichever track is heard. */
+	std::unique_ptr<snurra_timeline> m_player_timeline;
+	std::vector<snurra_beat_grid> m_player_grids;
+	int m_player_track = -2;
+	void follow_player_beat();
 	QToolButton *m_shape;   /* the envelope control: the waveform edits it */
 	/* Set when the tile owns its deck. Guarded: an engine destroyed first
 	 * has deleted its decks already, and is not to be called. */

@@ -1175,6 +1175,17 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	const bool url = snurra_is_url(state.source);
 	/* The waveform and the beats are the sound's, which may be a stream
 	 * of its own beside the picture's (tile_state.h). */
+	/* A player in it: its tracks' grids where kept, the sounding one's
+	 * the tile's own as it plays (follow_player_beat). */
+	if (!state.player.empty()) {
+		std::vector<snurra_tile_state> order;
+		m_player_timeline = std::make_unique<snurra_timeline>(snurra_timeline_from(state.player, m_deck->rate(), &order));
+		for (const snurra_tile_state &track : order) {
+			snurra_beat_grid grid;
+			if (!snurra_cached_beats(track.sound_source(), track.audio_track, m_deck->rate(), grid)) grid = snurra_beat_grid{};
+			m_player_grids.push_back(grid);
+		}
+	}
 	/* A player in it has no file to read again (not yet its waveform). */
 	if (!snurra_is_url(state.sound_source()) && state.player.empty()) read_peaks(nullptr);
 	if (QFileInfo(state.source).isFile() || url) read_video(state.controls);
@@ -2118,7 +2129,37 @@ void snurra_tile::set_place(int row, int column) {
 	m_state.column = column;
 }
 
+/*
+ * The grid of the track a player in this tile sounds now, in the player's
+ * time: its beats where they fall on the timeline -- coming in at its
+ * start, at its tempo, from its offset. In a crossfade the one coming in,
+ * which is what goes on. Its loudness is not the tile's: the player's
+ * tracks are matched inside it already.
+ */
+void snurra_tile::follow_player_beat() {
+	if (!m_player_timeline) return;
+	const int64_t time = frame_now();
+	int sounding = -1;
+	for (int i = 0; i < int(m_player_grids.size()); ++i)
+		if (m_player_timeline->start(i) <= time && time < m_player_timeline->end(i)
+		    && (sounding < 0 || m_player_timeline->start(i) >= m_player_timeline->start(sounding)))
+			sounding = i;
+	if (sounding == m_player_track) return;
+	m_player_track = sounding;
+	snurra_beat_grid mapped;
+	if (sounding >= 0 && m_player_grids[size_t(sounding)].valid()) {
+		const snurra_beat_grid &grid = m_player_grids[size_t(sounding)];
+		const snurra_timeline_track &track = m_player_timeline->tracks[size_t(sounding)];
+		mapped = grid;
+		mapped.period = grid.period / track.tempo;
+		mapped.first = double(m_player_timeline->start(sounding)) + (grid.first - double(track.offset)) / track.tempo;
+		mapped.loudness_known = false;
+	}
+	set_beats(mapped);
+}
+
 void snurra_tile::tick() {
+	follow_player_beat();
 	/* The length once the source has said it; a dummy until then. */
 	const int64_t length = m_deck->length();
 	if (length > 0 && frames_to_us(length, m_deck->rate()) != m_state.duration_us) {
