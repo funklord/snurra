@@ -5,6 +5,7 @@
  */
 #include "snurra/timeline.h"
 
+#include <QList>
 #include <QObject>
 
 #include <algorithm>
@@ -248,6 +249,28 @@ snurra_timeline snurra_timeline_from(const std::vector<snurra_tile_state> &state
 		for (const snurra_tile_state *state : order) in_timeline_order->push_back(*state);
 	}
 	return timeline_of(order, rate);
+}
+
+QList<snurra_tile_state> snurra_player_tracks(const snurra_tile_state &holder, int rate) {
+	std::vector<snurra_tile_state> order;
+	const snurra_timeline timeline = snurra_timeline_from(holder.player, rate, &order);
+	const int64_t time = snurra_us_to_frames(holder.position_us, rate);
+	QList<snurra_tile_state> tracks;
+	for (size_t i = 0; i < order.size(); ++i) {
+		snurra_tile_state track = order[i];
+		const snurra_timeline_track &one = timeline.tracks[i];
+		const int64_t start = timeline.start(int(i)), end = timeline.end(int(i));
+		const bool sounding = start <= time && time < end;
+		int64_t frame = one.offset;
+		if (sounding) frame = std::max<int64_t>(0, std::llround(double(time - start) * one.tempo) + one.offset);
+		else if (time >= end) frame = one.length;
+		track.position_us = snurra_frames_to_us(frame, rate);
+		track.sampled_at_us = holder.sampled_at_us;
+		track.playing = holder.playing && sounding;
+		track.controls = sounding || (i == 0 && !holder.playing);
+		tracks << track;
+	}
+	return tracks;
 }
 
 snurra_tile_state snurra_player_state(const std::vector<snurra_tile_state> &states, int rate) {

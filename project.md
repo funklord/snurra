@@ -1160,9 +1160,19 @@ alike.
    first tile alone in place of the whole player, or ignoring RELEASE,
    fails it. Seen in Xvfb at 1100 x 760 with two tones on A and B: the
    four decks in two rows, the crossfader's ends "A C" and "B D", the
-   browser under them. **Not yet:** a window joining a deck view's tile back into a
-   train of its own (it opens as a tile holding its player), and the
-   deck view's own look at four decks on a small screen.
+   browser under them. **A player out of a deck is tiles again**
+   (2026-11-20, `snurra_player_tracks`): a window that is empty when it
+   takes one tile holding a player unpacks it, each track a tile where
+   the player stands -- the one sounding playing at its frame, those to
+   come at their start, those past at their end -- so a deck pulled out
+   is an editable train again; into a window with tiles it stays one
+   tile, a channel with a prepared mix. Tested by deck A's train of two
+   pulled out: two tiles, the first playing within 5 ms of where the
+   player stood, the deck left empty; without the unpacking it fails. A
+   player taken out inside a crossfade has both its tracks playing full
+   until the overlap ends (the train's fades are started by the window
+   only for a next it starts itself). **Not yet:** the deck view's own
+   look at four decks on a small screen.
 4. A train unfolded onto the decks, its automation driving them, a hand
    taking over. **Built 2026-11-20** (`snurra_dj::unfold`, the deck's
    "Unfold across the decks"): a deck holding a whole player spreads it

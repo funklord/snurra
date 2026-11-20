@@ -1132,7 +1132,14 @@ void snurra_node::take(QLocalSocket *socket, const snurra_wire::message &m) {
 	pending.socket = socket;
 	pending.since = now;
 	setUpdatesEnabled(false);
-	for (snurra_tile_state state : m.states) {
+	/* A whole player into an empty window -- a deck pulled out of a deck
+	 * view -- is the player again, its tracks tiles once more, in step
+	 * where the player stands (project.md sec 3f); into a window with
+	 * tiles it stays one tile, a channel with a prepared mix. */
+	QList<snurra_tile_state> states = m.states;
+	if (m_tiles.isEmpty() && states.size() == 1 && !states.first().player.empty())
+		states = snurra_player_tracks(states.first(), m_engine->rate());
+	for (snurra_tile_state state : states) {
 		/* Anchored on the giver's own sample, as it came: re-sampled here
 		 * it would be rounded to a frame once more. A playing tile's deck
 		 * is held silent until the crossfade. */

@@ -1574,6 +1574,32 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	QVERIFY2(!adopted.isEmpty(), "no window took deck C");
 	QVERIFY(ask(adopted, status_request()).states.first().playing);
 	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 1, 5000);
+
+	/* Deck A, the train as one player, out into a window: its two tracks
+	 * are tiles again, the first playing where the player stood. */
+	const snurra_tile_state holder = ask(deck_socket, status_request()).states.first();
+	release.index = 0;
+	tell(deck_socket, release);
+	QString unpacked;
+	waited.restart();
+	while (unpacked.isEmpty() && waited.elapsed() < 10000) {
+		for (const QString &path : sockets()) {
+			if (path == deck_socket || path == adopted) continue;
+			if (ask(path, status_request(), 500).states.size() == 2) unpacked = path;
+		}
+		QTest::qWait(100);
+	}
+	QVERIFY2(!unpacked.isEmpty(), "deck A's player did not come out as its tiles");
+	QMap<int, snurra_tile_state> tiles;
+	for (const snurra_tile_state &state : ask(unpacked, status_request()).states) tiles.insert(state.column, state);
+	QCOMPARE(tiles.value(0).source, QStringLiteral("a.flac"));
+	QCOMPARE(tiles.value(1).source, QStringLiteral("b.flac"));
+	QVERIFY(tiles.value(0).playing);
+	QVERIFY(!tiles.value(1).playing);
+	const qint64 player_at = holder.position_now(tiles.value(0).sampled_at_us);
+	QVERIFY2(qAbs(tiles.value(0).position_us - player_at) <= 5000,
+	         qPrintable(QStringLiteral("the first at %1 us, the player at %2").arg(tiles.value(0).position_us).arg(player_at)));
+	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 0, 5000);
 }
 
 /*
