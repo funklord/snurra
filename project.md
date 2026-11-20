@@ -283,6 +283,19 @@ and everything above it knows nothing of SFTP or fuzznet.
       so it lists nothing. Whether a phone should have both is the
       holder's.
 
+- **Open, the holder's (2026-11-20): an About window, and where.** The
+  workspace's GUIs carry one in a Help menu (harmonization.md); snurra
+  has no menu at all, by design -- a tile, a drawer, a library. Best
+  guess: About in a right-click menu on the title, as XMMS and gmplayer
+  put theirs, or none beyond `--version`. Not built until decided.
+- **Open (2026-11-20): the theme onto qtkit.** qtkit's
+  `qtkit_follow_desktop` asks the portal, reads `~/.config/kdeglobals`,
+  abstains on identical colours and follows a change, which snurra's own
+  `snurra_follow_desktop` does not. qtkit has no remote yet, and snurra
+  is public, so a submodule at a local path would break every clone and
+  CI. Waits on qtkit being published; then the player (not snurra.pri,
+  whose hosts keep their own palettes) takes it.
+
 ## 3a. Mixing: Mixxx's structure, kept where it holds, improved where not
 
 The holder, 2026-11-11: copy Mixxx's structure for mixing, unless it is
@@ -1341,8 +1354,12 @@ controls; each tile very compact but resizeable).
   puts the player and the entry under PREFIX (/usr/local) and DESTDIR,
   and `make uninstall` removes those two files by name. The entry passes
   `desktop-file-validate`; installed into a scratch DESTDIR, the player
-  ran from there, and uninstall left no file. The icon is the theme's
-  generic `multimedia-audio-player` until snurra has one.
+  ran from there, and uninstall left no file. **Its own icon,
+  2026-11-20**: `snurra.svg`, a record spinning, installed into hicolor
+  as `snurra`, named by the entry and taken by every window from the
+  theme (`QIcon::fromTheme`, the generic `multimedia-audio-player` where
+  it is not installed); the desktop file name is set too, which is where
+  Wayland looks for a window's icon.
 - **A tile in a program of its own, in one call, 2026-11-12** (sec 1:
   BeerSSH's tile): `snurra_tile::embedded(engine, state, bytes, parent)`
   -- the consumer's engine, bytes from its transport -- gives a widget

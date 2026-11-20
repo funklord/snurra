@@ -136,13 +136,17 @@ test: $(BIN) tests-build fuzznetd
 # audio and starts it with the files clicked (project.md sec 3b); several
 # at once become a train. PREFIX and DESTDIR as packaging expects them.
 PREFIX ?= /usr/local
-INSTALLED = $(DESTDIR)$(PREFIX)/bin/snurra $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop
+# The icon in hicolor, the theme every desktop falls back to, so the entry
+# and the player's windows find it by name.
+ICON = $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/snurra.svg
+INSTALLED = $(DESTDIR)$(PREFIX)/bin/snurra $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop $(ICON)
 
 install: $(BIN)
 	install -D -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/snurra
 	install -D -m 0644 snurra.desktop $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop
+	install -D -m 0644 snurra.svg $(ICON)
 
-# The two files install wrote, by name.
+# The three files install wrote, by name.
 uninstall:
 	rm -f $(INSTALLED)
 
