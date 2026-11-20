@@ -1323,8 +1323,18 @@ controls; each tile very compact but resizeable).
   shows its three-minute stand-in, but plays on past it to the stream's
   own end -- measured 2026-11-13 with a live Matroska over HTTP under a
   1 s stand-in, heard to its 3 s end -- since a deck ends only where its
-  source does and a train skips a tile of no known length. Only the
-  shown length is wrong (not yet better).
+  source does and a train skips a tile of no known length. **Shown as
+  live, 2026-11-20**: a tile whose source opened with no length of its
+  own (`snurra_tile::live`, from the deck's new `opened()`) shows its
+  time as "1:23 live", as mplayer shows a radio's, its position slider
+  disabled, and takes no seek -- before, it read "of 3:00" and a seek
+  asked went to the stand-in's place (60 s on, measured) though the
+  stream played on where it was. Tested with a live Matroska served
+  unsized, as a radio is (`a_live_stream_counts_up_and_does_not_seek`);
+  with `live()` false, or its seek guard out, it fails. Served with a
+  Content-Length but no ranges, FFmpeg takes the stream for seekable and
+  the sound fails to open -- a server that sizes a body and ignores
+  ranges, not a radio; not chased.
 - **A file manager can open audio with it, 2026-11-12** (sec 3b's launch):
   `snurra.desktop` declares the audio types FFmpeg decodes here and runs
   `snurra %F`, so several files clicked open as a train; `make install`

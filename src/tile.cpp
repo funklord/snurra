@@ -1518,7 +1518,7 @@ void snurra_tile::show_video_frame() {
 			        .arg(seconds / 60 % 60, 2, 10, QLatin1Char('0'))
 			        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
 		};
-		clock = text(heard) + QStringLiteral(" / ") + text(m_state.duration_us);
+		clock = live() ? tr("%1 live").arg(text(heard)) : text(heard) + QStringLiteral(" / ") + text(m_state.duration_us);
 	}
 	if (m_view) {
 		m_view->show_frame(frame);
@@ -1654,6 +1654,9 @@ void snurra_tile::step_frame() {
 }
 
 void snurra_tile::seek(qint64 position_us) {
+	/* A live stream has nowhere to go: its three-minute stand-in is not a
+	 * length, and a seek would only restart the reader where it is. */
+	if (live()) return;
 	if (m_grouped) {
 		emit seek_requested(this, qBound<qint64>(0, position_us, m_state.duration_us));
 		return;
@@ -1983,6 +1986,10 @@ int64_t snurra_tile::frame_now() const {
 	return m_deck->position_at(snurra_clock_us());
 }
 
+bool snurra_tile::live() const {
+	return m_deck->opened() && !m_deck->failed() && m_deck->length() <= 0;
+}
+
 int64_t snurra_tile::length_frames() const {
 	const int64_t length = m_deck->length();
 	return length > 0 ? length : us_to_frames(m_state.duration_us, m_deck->rate());
@@ -2059,6 +2066,18 @@ void snurra_tile::tick() {
 	const qint64 now = frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate());
 	m_state.position_us = now;
 	m_state.sampled_at_us = snurra_clock_us();
+	/* Live, the time is only where it is, as mplayer shows a radio's, and
+	 * the position has no end to be a fraction of. */
+	const bool is_live = live();
+	if (m_position->isEnabled() == is_live) {
+		m_position->setEnabled(!is_live);
+		if (is_live) m_position->setValue(0);
+	}
+	if (is_live) {
+		m_time->setText(tr("%1 live").arg(clock_text(now)));
+		m_waveform->set_fraction(0);
+		return;
+	}
 	if (!m_position->isSliderDown()) m_position->setValue(int(now / 100000));
 	m_time->setText(clock_text(now) + QStringLiteral(" / ") + clock_text(m_state.duration_us));
 	m_waveform->set_fraction(m_state.duration_us > 0 ? double(now) / m_state.duration_us : 0);

@@ -18,6 +18,7 @@
 #include <QSignalSpy>
 #include <QDataStream>
 #include <QLabel>
+#include <QSlider>
 #include <QMimeData>
 #include <QAbstractItemModel>
 #include <QTreeView>
@@ -69,6 +70,7 @@ private slots:
 	void less_and_greater_step_along_the_train();
 	void the_full_screen_picture_takes_the_players_keys();
 	void a_url_plays_with_its_picture();
+	void a_live_stream_counts_up_and_does_not_seek();
 	void a_url_that_never_answers_lets_the_window_close();
 	void an_hls_stream_plays_and_seeks_data();
 	void an_hls_stream_plays_and_seeks();
@@ -581,15 +583,18 @@ void video_test::the_full_screen_picture_takes_the_players_keys() {
  */
 class one_file_server : public QTcpServer {
 public:
-	explicit one_file_server(const QByteArray &body, bool answer = true) : m_body(body), m_answer(answer) {
+	explicit one_file_server(const QByteArray &body, bool answer = true, bool sized = true)
+	    : m_body(body), m_answer(answer), m_sized(sized) {
 		connect(this, &QTcpServer::newConnection, this, [this] {
 			while (QTcpSocket *socket = nextPendingConnection()) {
 				m_held << socket;
 				connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
 					m_request[socket] += socket->readAll();
 					if (!m_answer || !m_request[socket].contains("\r\n\r\n")) return;
-					socket->write("HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\nContent-Length: "
-					              + QByteArray::number(m_body.size()) + "\r\nConnection: close\r\n\r\n");
+					/* Unsized, as a radio's: the body ends when the connection does. */
+					socket->write("HTTP/1.1 200 OK\r\nContent-Type: video/x-matroska\r\n"
+					              + (m_sized ? "Content-Length: " + QByteArray::number(m_body.size()) + "\r\n" : QByteArray())
+					              + "Connection: close\r\n\r\n");
 					socket->write(m_body);
 					socket->disconnectFromHost();
 				});
@@ -601,6 +606,7 @@ public:
 private:
 	QByteArray m_body;
 	bool m_answer;
+	bool m_sized;
 	QList<QTcpSocket *> m_held;
 	QHash<QTcpSocket *, QByteArray> m_request;
 };
@@ -632,6 +638,55 @@ void video_test::a_url_plays_with_its_picture() {
 	QTRY_VERIFY_WITH_TIMEOUT(tile->state().duration_us < 4000000, 5000);   /* the film's own length */
 	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 1000000, 5000);
 	QVERIFY(!tile->deck()->failed());
+}
+
+/*
+ * A radio, as mplayer plays one: a live Matroska (written with no duration
+ * and no cues) served as a stream, so nothing says how long it is. The
+ * tile shows where it is and that it is live, not "of 3:00" -- the
+ * stand-in's three minutes -- and its position cannot be moved.
+ */
+void video_test::a_live_stream_counts_up_and_does_not_seek() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	const QString name = QStringLiteral("live.mka");
+	QProcess ffmpeg;
+	ffmpeg.start(m_ffmpeg, { QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"), QStringLiteral("-f"),
+	                         QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=f=440:d=6"),
+	                         QStringLiteral("-c:a"), QStringLiteral("pcm_s16le"), QStringLiteral("-live"), QStringLiteral("1"),
+	                         QStringLiteral("-f"), QStringLiteral("matroska"), m_dir.filePath(name) });
+	QVERIFY(ffmpeg.waitForFinished(60000) && ffmpeg.exitCode() == 0);
+	QFile file(m_dir.filePath(name));
+	QVERIFY(file.open(QIODevice::ReadOnly));
+	one_file_server server(file.readAll(), true, false);
+	QVERIFY(server.listen(QHostAddress::LocalHost));
+
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = server.url(name);
+	state.duration_us = 180000000;
+	state.controls = true;
+	state.playing = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	node.show();
+	QTRY_VERIFY_WITH_TIMEOUT(tile->state().position_us > 1000000, 5000);
+	QVERIFY(!tile->deck()->failed());
+	QVERIFY2(tile->live(), "a stream with no length is not taken for live");
+	/* The controls are a drawer of the window's, not the tile's child. */
+	QLabel *time = node.findChild<QLabel *>(QStringLiteral("snurra-time"));
+	QVERIFY(time);
+	QTRY_VERIFY_WITH_TIMEOUT(time->text().endsWith(QLatin1String(" live")), 2000);
+	QVERIFY2(!time->text().contains(QLatin1String("3:00")), qPrintable(time->text()));
+	QSlider *position = nullptr;
+	for (QSlider *slider : node.findChildren<QSlider *>())
+		if (slider->accessibleName() == QLatin1String("Position")) position = slider;
+	QVERIFY(position && !position->isEnabled());
+	/* A seek asked anyway is not taken: the time goes on from where it was. */
+	const qint64 before = tile->state().position_us;
+	tile->seek_by(60000000);
+	QTest::qWait(300);
+	QVERIFY2(tile->state().position_us < before + 2000000, "a live stream was sought");
+	QVERIFY(tile->state().position_us >= before);
 }
 
 /*

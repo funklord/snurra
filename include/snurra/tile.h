@@ -85,6 +85,9 @@ public:
 	/* Frames, at the deck's rate: where it is now, and how long. */
 	int64_t frame_now() const;
 	int64_t length_frames() const;
+	/* Opened and with no length of its own: a live stream, a radio. Its
+	 * time counts up with nothing to count to, and it cannot be sought. */
+	bool live() const;
 	void set_controls(bool out);
 	bool controls() const { return m_state.controls; }
 	int row() const { return m_state.row; }

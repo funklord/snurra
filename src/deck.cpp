@@ -60,6 +60,7 @@ snurra_deck::snurra_deck(const start_t &start)
 		/* Not for a close that gave up the opening: that is not a failure. */
 		if (m_source->stand_in() && !m_stop.load()) m_failed.store(true, std::memory_order_release);
 		m_length.store(m_source->length(), std::memory_order_relaxed);
+		m_opened.store(true, std::memory_order_release);
 		/* Opened on its track, before a frame is read: a stem's lane is
 		 * never heard as the mix. */
 		if (track >= 0) {

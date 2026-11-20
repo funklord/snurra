@@ -164,6 +164,10 @@ public:
 	/* What it was given could not be opened: it plays silence instead. */
 	bool failed() const { return m_failed.load(std::memory_order_acquire); }
 
+	/* The source is open and its length() is its own answer: 0 then means
+	 * it has none -- a live stream -- not that it is still opening. */
+	bool opened() const { return m_opened.load(std::memory_order_acquire); }
+
 	/* The source's sound tracks (a film's languages), empty for one, and
 	 * which plays; known once opened. choose_audio_track takes effect at
 	 * the next seek -- a tile seeks to where it is, so the change crosses
@@ -292,6 +296,7 @@ private:
 	std::atomic<bool> m_locked{ false };
 	std::atomic<bool> m_finished{ false };
 	std::atomic<bool> m_failed{ false };
+	std::atomic<bool> m_opened{ false };
 	std::atomic<int64_t> m_stand_in_length{ -1 };   /* -1: as it is */
 	std::atomic<int> m_audio_wanted{ -1 };
 	std::atomic<int> m_audio_track{ -1 };
