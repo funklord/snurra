@@ -1205,6 +1205,8 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 			if (!snurra_cached_beats(track.sound_source(), track.audio_track, m_deck->rate(), grid)) grid = snurra_beat_grid{};
 			m_player_grids.push_back(grid);
 		}
+		m_player_order = order;
+		analyse_player_track();
 	}
 	/* A player in it: its whole mix's waveform (read_peaks). */
 	if (!snurra_is_url(state.sound_source()) || !state.player.empty()) read_peaks(nullptr);
@@ -2180,6 +2182,40 @@ void snurra_tile::set_place(int row, int column) {
  * which is what goes on. Its loudness is not the tile's: the player's
  * tracks are matched inside it already.
  */
+/*
+ * A player's tracks never analysed -- never on a deck of their own -- are
+ * analysed here, one after another on the analysis's thread, each kept as
+ * a deck's would be (beats.h), and the tile's beat taken again as each
+ * comes: so sync follows a prepared mix of tunes fresh from the folder.
+ * A track kept already, or a name that is no file, is passed by.
+ */
+void snurra_tile::analyse_player_track() {
+	const int rate = m_deck->rate();
+	while (m_player_next < m_player_order.size()) {
+		const size_t i = m_player_next++;
+		const snurra_tile_state &track = m_player_order[i];
+		snurra_beat_grid kept;
+		if (snurra_cached_beats(track.sound_source(), track.audio_track, rate, kept)) continue;
+		if (!track.player.empty() || !QFileInfo(track.sound_source()).isFile()) continue;
+		QPointer<snurra_tile> self = this;
+		m_player_beats = std::make_unique<snurra_beats>(
+		        track.sound_source(), rate,
+		        [self, i](const snurra_beat_grid &grid) {
+			        QMetaObject::invokeMethod(
+			                self,
+			                [self, i, grid] {
+				                if (!self || i >= self->m_player_grids.size()) return;
+				                self->m_player_grids[i] = grid;
+				                self->m_player_track = -2;   /* taken again on the next tick */
+				                self->analyse_player_track();
+			                },
+			                Qt::QueuedConnection);
+		        },
+		        track.audio_track);
+		return;
+	}
+}
+
 void snurra_tile::follow_player_beat() {
 	if (!m_player_timeline) return;
 	const int64_t time = frame_now();

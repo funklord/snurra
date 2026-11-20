@@ -389,6 +389,12 @@ private:
 	std::vector<snurra_beat_grid> m_player_grids;
 	int m_player_track = -2;
 	void follow_player_beat();
+	/* Its tracks never analysed, analysed one after another, as a deck
+	 * analyses its own: which next, and the one at work. */
+	std::vector<snurra_tile_state> m_player_order;
+	size_t m_player_next = 0;
+	std::unique_ptr<snurra_beats> m_player_beats;
+	void analyse_player_track();
 	QToolButton *m_shape;   /* the envelope control: the waveform edits it */
 	/* Set when the tile owns its deck. Guarded: an engine destroyed first
 	 * has deleted its decks already, and is not to be called. */

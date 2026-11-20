@@ -32,6 +32,7 @@
 #include "snurra/fingerprint.h"
 #include "snurra/library.h"
 #include "snurra/node.h"
+#include "snurra/tile.h"
 #include "snurra/peaks.h"
 #include "snurra/source.h"
 
@@ -125,6 +126,7 @@ private slots:
 	void a_player_sounds_as_its_tiles();
 	void a_nested_tracks_eq_is_the_decks();
 	void a_players_waveform_is_its_mix();
+	void a_players_tracks_are_analysed_in_its_tile();
 	void a_beat_is_found_to_the_frame_data();
 	void a_beat_is_found_to_the_frame();
 	void what_has_no_beat_is_given_none_data();
@@ -461,6 +463,53 @@ void beats_test::a_players_waveform_is_its_mix() {
 	for (int c = 0; c < 8; ++c) QVERIFY2(columns[size_t(c)] < 1e-6f, qPrintable(QStringLiteral("column %1: %2").arg(c).arg(columns[size_t(c)])));
 	for (int c = 9; c < 16; ++c)
 		QVERIFY2(qAbs(columns[size_t(c)] - 0.2f) < 0.01f, qPrintable(QStringLiteral("column %1: %2").arg(c).arg(columns[size_t(c)])));
+}
+
+/*
+ * A player's tracks never analysed (project.md sec 3f): two tunes fresh
+ * from a folder, 120 and 128 BPM, as a player in a tile standing in the
+ * second. The tile analyses them itself, keeps what it finds as a deck
+ * would, and its beat becomes the second's -- so sync follows the mix.
+ */
+void beats_test::a_players_tracks_are_analysed_in_its_tile() {
+	QTemporaryDir dir;
+	std::vector<snurra_tile_state> player(2);
+	const double bpm[2] = { 120, 128 };
+	for (int i = 0; i < 2; ++i) {
+		const made_t made = beat(bpm[i], 0.1, false, 20);
+		QByteArray pcm;
+		for (float v : made.mono) {
+			const qint16 sample = qint16(std::clamp(v, -1.0f, 1.0f) * 30000);
+			pcm.append(reinterpret_cast<const char *>(&sample), 2);
+		}
+		auto le32 = [](quint32 v) { return QByteArray(reinterpret_cast<const char *>(&v), 4); };
+		auto le16 = [](quint16 v) { return QByteArray(reinterpret_cast<const char *>(&v), 2); };
+		const QString path = dir.filePath(QStringLiteral("%1.wav").arg(i));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("RIFF" + le32(quint32(36 + pcm.size())) + "WAVEfmt " + le32(16) + le16(1) + le16(1) + le32(RATE)
+		           + le32(RATE * 2) + le16(2) + le16(16) + "data" + le32(quint32(pcm.size())) + pcm);
+		file.close();
+		snurra_beat_grid none;
+		QVERIFY(!snurra_cached_beats(path, -1, RATE, none));
+		player[size_t(i)].source = path;
+		player[size_t(i)].duration_us = 20000000;
+		player[size_t(i)].column = i;
+	}
+	const snurra_timeline timeline = snurra_timeline_from(player, RATE);
+	snurra_node node;
+	snurra_tile_state state;
+	state.source = QStringLiteral("2 tracks");
+	state.player = player;
+	state.duration_us = snurra_frames_to_us(timeline.end(1), RATE);
+	state.position_us = snurra_frames_to_us(timeline.start(1) + 5 * RATE, RATE);
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *tile = node.add_tile(state);
+	const double period = 60.0 * RATE / 128;
+	QTRY_VERIFY_WITH_TIMEOUT(tile->beats().valid() && qAbs(tile->beats().period - period) < 1, 30000);
+	snurra_beat_grid kept;
+	QVERIFY(snurra_cached_beats(player[1].source, -1, RATE, kept));
+	QVERIFY(qAbs(kept.period - period) < 1);
 }
 
 void beats_test::a_beat_is_found_to_the_frame_data() {

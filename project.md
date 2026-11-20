@@ -1175,8 +1175,16 @@ alike.
    given a function opening its source); tested by a tone coming in at
    1 s on a player of 2 s -- silent columns before, 0.2 after
    (`a_players_waveform_is_its_mix`; measured over half, it fails).
-   **Not yet in a nested track:** analysis of a track never loaded on a
-   deck.
+   **A player's tracks analysed in its tile, 2026-11-21:** a tile
+   holding a player analyses its tracks never analysed -- one after
+   another on the analysis's thread, each kept as a deck's would be -- and
+   takes its beat again as each comes, so sync follows a prepared mix of
+   tunes fresh from the folder (tested by two such tunes at 120 and 128
+   BPM: the tile's beat becomes the second's and it is kept;
+   `a_players_tracks_are_analysed_in_its_tile`, without the analysis it
+   fails). Its tracks' level match comes from what is kept when the
+   player's sound opens, so a track analysed later is matched the next
+   time it opens.
 3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
    player handed onto a deck and pulled off it, gapless. **Built
    2026-11-20.** `snurra_dj` takes two decks or four (`set_deck_count`,
