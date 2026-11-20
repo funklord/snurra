@@ -936,12 +936,15 @@ another.
 - Switching views moves nothing: both show the one timeline, and both may
   be open at once.
 
-**Nested: a deck plays a timeline, and a deck view's mix is a timeline.**
+**Nested: a deck plays a player.** The holder, the same day: "a deck's
+input can be a whole train or another deck view's mix -- because they
+are the same thing, it is the player's output = all decks' output." A
+train and a deck view are not two things a deck can take but one, a
+player, whose output is the sum of all its decks.
 
-- A deck's source may be a file, a whole train or stack, or another deck
-  view's mix -- a channel with a prepared set in it, under the live
-  decks. A single track is the shortest timeline, so a deck needs no
-  second kind.
+- A deck's source is a file or a player's output -- a channel with a
+  prepared set in it, under the live decks. A single track is the
+  shortest timeline, so a deck needs no third kind.
 - A deck's controls act on what it holds as a whole: the waveform is the
   whole mix, tempo and key lock stretch it, cue and jumps move in it,
   sync follows the beat of whichever track sounds at that moment.
@@ -952,8 +955,8 @@ another.
   costs nothing new, and recursion is a tree: a timeline is moved into a
   deck, never referenced from two places, so it cannot contain itself.
 - **Across processes, states travel, not sound** (sec 3b's rule): a
-  train or a deck view handed to a deck goes over as its tile states, a
-  tree now, and the taker builds it -- the handover's OFFER, READY and
+  player handed to a deck goes over as its tile states, a tree now, and
+  the taker builds it -- the handover's OFFER, READY and
   COMMIT as for a tile, so a set playing moves into a deck without a gap.
 - **What a nested level costs, said plainly:** a deck reads ahead of what
   is heard, so a change made inside a nested timeline -- a hand on the
@@ -972,10 +975,10 @@ alike.
 
 1. `snurra_timeline`: the window's timeline as data, the window drawing
    it; nothing heard changes (the suite is the proof).
-2. A timeline as a source, so a deck plays a train or a stack -- a
+2. A timeline as a source, so a deck plays a player's output -- a
    channel with a prepared mix.
-3. The deck view on the wire as a peer, 2 or 4 decks: a tile, a train or
-   a deck view handed onto a deck and pulled off it, gapless.
+3. The deck view on the wire as a peer, 2 or 4 decks: a tile or a whole
+   player handed onto a deck and pulled off it, gapless.
 4. A train unfolded onto the decks, its automation driving them, a hand
    taking over.
 5. Moves on the decks written back into the train.
