@@ -88,6 +88,9 @@ public:
 	 */
 	void set_grouped(bool grouped);
 	void request_playing(bool playing);
+	/* Its play button, wherever its controls are (a window takes them
+	 * out into a drawer of its own): a controller names it. */
+	QWidget *play_button() const;
 	/* Plays `frame` from the moment `at_us` on the shared clock, any fade
 	 * done with; or holds at `frame`, paused. */
 	void play_from(int64_t frame, qint64 at_us);

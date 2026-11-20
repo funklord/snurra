@@ -1692,6 +1692,10 @@ snurra_deck::start_t snurra_tile::start_for(const snurra_tile_state &state, int 
 	return start;
 }
 
+QWidget *snurra_tile::play_button() const {
+	return m_play;
+}
+
 void snurra_tile::retire_deck_at(int64_t at_us) {
 	if (!m_owner) return;
 	m_owner->retire(m_deck, at_us);

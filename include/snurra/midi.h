@@ -7,6 +7,10 @@
 #include <QString>
 #include <QStringList>
 
+class QTimer;
+class QWidget;
+
+#include <functional>
 #include <memory>
 
 /*
@@ -145,6 +149,44 @@ private:
 	};
 	QMap<QString, bound> m_bound;      /* by index */
 	QMap<QString, QString> m_alias;    /* index -> name */
+};
+
+/*
+ * A player's controllers: MIDI in, its bindings, and learning by Alt held
+ * with the pointer pressed on a named control. Each player is a process
+ * of its own and names its controls within it (the holder: "they can't
+ * live in the same namespace"); a binding reaches one player by naming it
+ * -- `emergency:play` -- and a name with none is the deck view's. So two
+ * processes may share a controller, each taking what is meant for it.
+ */
+class snurra_controller : public QObject {
+	Q_OBJECT
+
+public:
+	using apply_t = std::function<void(const QString &control, snurra_control_kind kind, const snurra_midi_event &event)>;
+	/* `player`: this process's name, empty for the deck view. */
+	snurra_controller(const QString &player, apply_t apply, QObject *parent);
+	/* MIDI in, and the bindings the person made; false without MIDI. */
+	bool open();
+	/* `widget` is the control `control` of this player: Alt held and the
+	 * pointer pressed on it learns a binding to it. A name ending "_eq"
+	 * is three, by the third of the widget under the pointer. */
+	void name_widget(QWidget *widget, const QString &control);
+	snurra_bindings &bindings() { return m_bindings; }
+
+private:
+	void received(const snurra_midi_event &event);
+	void start(const QString &control);
+	void finish(bool final);
+	QString m_player;
+	apply_t m_apply;
+	snurra_midi_in *m_midi = nullptr;
+	snurra_bindings m_bindings;
+	snurra_midi_learn m_learn;
+	QString m_learning;
+	qint64 m_loaded_us = 0;
+	QTimer *m_timer = nullptr;
+	QObject *m_filter = nullptr;
 };
 
 /* "button", "absolute" ... and back; unknown reads as absolute. */

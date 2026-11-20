@@ -42,6 +42,12 @@ public:
 
 	/* Listens on this process's socket; false when it cannot. */
 	bool listen();
+	/* Controllers for this window as the player `player` (project.md sec
+	 * 3f): an emergency mix, say, its own process, its play on a button
+	 * of its own. Its controls are `play` (the group's, both ways) and
+	 * `stop`, bound as `<player>:play`; Alt held on a tile's play button
+	 * learns one. False without MIDI. */
+	bool take_controllers(const QString &player);
 	QString socket_path() const { return m_path; }
 
 	/* `held`: its deck silent until a crossfade brings it in. */
@@ -209,6 +215,8 @@ private:
 	QHash<QString, pending_take> m_taking;
 	QHash<QString, QRect> m_peer_frames;
 	QHash<QString, int> m_peer_decks;   /* a deck view's decks, by its socket */
+	class snurra_controller *m_controller = nullptr;
+	void name_controls(snurra_tile *tile);
 	QString m_adopt_token;
 	QPoint m_adopt_at;
 	QPoint m_drag_from;

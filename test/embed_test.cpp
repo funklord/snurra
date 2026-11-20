@@ -82,6 +82,7 @@ private slots:
 	void a_jump_while_playing_lands_exactly_its_step_on();
 	void the_control_moved_is_told_from_the_noise();
 	void a_controller_learned_by_holding_moves_the_deck();
+	void each_player_takes_the_bindings_named_for_it();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
@@ -1294,6 +1295,98 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	note(48);
 	QTRY_COMPARE_WITH_TIMEOUT(dj.plugged(0), -1, 2000);
 	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+}
+
+/*
+ * An emergency player (project.md sec 3f): a window of its own, named
+ * "emergency", and the deck view, both taking controllers. A binding
+ * naming the player reaches only it -- `emergency:play` plays the window
+ * and not deck A, `ch_1_play` deck A and not the window -- and a note
+ * learned on the window's play button replaces what played it.
+ */
+void embed_test::each_player_takes_the_bindings_named_for_it() {
+	snd_seq_t *sender = nullptr;
+	if (snd_seq_open(&sender, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) QSKIP("no ALSA sequencer");
+	auto close_sender = qScopeGuard([sender] { snd_seq_close(sender); });
+	snd_seq_set_client_name(sender, "snurra test buttons");
+	const int out = snd_seq_create_simple_port(sender, "pads", SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_NO_EXPORT,
+	                                           SND_SEQ_PORT_TYPE_MIDI_GENERIC);
+	QVERIFY(out >= 0);
+	const QString pads = QStringLiteral("snurra test buttons:pads/ch1/");
+	{
+		QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+		settings.remove(QStringLiteral("controllers"));
+		settings.setValue(QStringLiteral("controllers/bindings"),
+		                  QStringList{ pads + QStringLiteral("note50 -> emergency:play (button)"),
+		                               pads + QStringLiteral("note51 -> ch_1_play (button)") });
+	}
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers")); });
+
+	snurra_node emergency;
+	snurra_tile_state state;
+	state.source = QStringLiteral("tone:330");
+	state.duration_us = 60000000;
+	state.controls = true;
+	state.sampled_at_us = snurra_clock_us();
+	snurra_tile *mix = emergency.add_tile(state);
+	emergency.show();
+	QVERIFY(emergency.take_controllers(QStringLiteral("emergency")));
+	/* A second named window with a play of its own: not reached. */
+	snurra_node backup;
+	snurra_tile *other = backup.add_tile(state);
+	backup.show();
+	QVERIFY(backup.take_controllers(QStringLiteral("backup")));
+	snurra_dj dj;
+	dj.show();
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QVERIFY(dj.take_controllers());
+	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	for (snurra_midi_in *in : { emergency.findChild<snurra_midi_in *>(), backup.findChild<snurra_midi_in *>(), dj.findChild<snurra_midi_in *>() }) {
+		QVERIFY(in);
+		QVERIFY(snd_seq_connect_to(sender, out, in->client(), in->port()) >= 0);
+	}
+	auto note = [sender, out](int number) {
+		snd_seq_event_t event;
+		snd_seq_ev_clear(&event);
+		snd_seq_ev_set_source(&event, out);
+		snd_seq_ev_set_subs(&event);
+		snd_seq_ev_set_direct(&event);
+		snd_seq_ev_set_noteon(&event, 0, number, 100);
+		snd_seq_event_output_direct(sender, &event);
+		snd_seq_ev_set_noteoff(&event, 0, number, 0);
+		snd_seq_event_output_direct(sender, &event);
+		QTest::qWait(30);
+	};
+	note(50);
+	QTRY_VERIFY_WITH_TIMEOUT(mix->playing(), 2000);
+	QTest::qWait(100);
+	QVERIFY(!deck->playing());
+	QVERIFY(!other->playing());
+	note(51);
+	QTRY_VERIFY_WITH_TIMEOUT(deck->playing(), 2000);
+	QVERIFY(mix->playing());
+	note(50);
+	QTRY_VERIFY_WITH_TIMEOUT(!mix->playing(), 2000);
+	QVERIFY(deck->playing());
+
+	/* Learned on the window's play button: note 52 plays it now. */
+	QWidget *play = mix->play_button();
+	QVERIFY(play);
+	QCOMPARE(play->property("snurra_control").toString(), QStringLiteral("play"));
+	QTest::mousePress(play, Qt::LeftButton, Qt::AltModifier, play->rect().center());
+	note(52);
+	QTest::mouseRelease(play, Qt::LeftButton, Qt::AltModifier, play->rect().center());
+	QVERIFY(!mix->playing());
+	snurra_bindings kept;
+	kept.load();
+	QCOMPARE(kept.control_for(pads + QStringLiteral("note52")), QStringLiteral("emergency:play"));
+	QVERIFY(kept.control_for(pads + QStringLiteral("note50")).isEmpty());
+	QCOMPARE(kept.control_for(pads + QStringLiteral("note51")), QStringLiteral("ch_1_play"));
+	QTest::qWait(1100);   /* the window reads the bindings again at most each second */
+	note(52);
+	QTRY_VERIFY_WITH_TIMEOUT(mix->playing(), 2000);
 }
 
 /*

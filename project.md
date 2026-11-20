@@ -1249,11 +1249,24 @@ alike.
    test's own, deck A's level held with Alt while a pot wandering 14 of
    127 chatters and a fader moves -- the fader bound and then moving the
    level, the pot moving nothing); without the chatter rule both fail,
-   the second binding the pot. **Not yet:** renaming snurra's controls,
-   a layout of slots the person arranges, a 14-bit control's fine half
-   read (its coarse half moves it), HID and Android MIDI, a second
-   player's controls (the emergency player's, its own process), and
-   Mixxx's mappings (whether their JavaScript too is the holder's). A
+   the second binding the pot. **Each player its own names, 2026-11-20**
+   (`snurra_controller`, shared by the deck view and a window): a window
+   started with `--name <player>` takes controllers too -- an emergency
+   mix, its own process -- its controls `play` (the group's, both ways)
+   and `stop`, learned on a tile's play button. A binding names the
+   player it reaches, `emergency:play`; one naming none is the deck
+   view's. Every process with controllers reads the same device (ALSA's
+   sequencer lets each subscribe) and takes only what names it, reading
+   the bindings again at most each second, so one learned in another
+   process is heard. Tested in one process with the deck view and two
+   named windows (`each_player_takes_the_bindings_named_for_it`):
+   `emergency:play` plays that window and neither deck A nor "backup",
+   `ch_1_play` deck A alone, a note learned on the window's play button
+   replaces what played it; without the player's check, "backup" plays
+   on the emergency button. **Not yet:** renaming snurra's controls, a
+   layout of slots the person arranges, a 14-bit control's fine half
+   read (its coarse half moves it), HID and Android MIDI, and Mixxx's
+   mappings (whether their JavaScript too is the holder's). A
    window manager that takes Alt-drag to move windows (many on X11) may
    take the press before snurra sees it; a second gesture may be wanted
    there.

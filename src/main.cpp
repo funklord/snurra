@@ -143,6 +143,9 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption listen(QStringLiteral("listen"),
 	                                QStringLiteral("Headphones for the DJ player, on this output (as --output): each deck's \"listen\" plugs them in there."),
 	                                QStringLiteral("spec"));
+	const QCommandLineOption player_name(QStringLiteral("name"),
+	                                     QStringLiteral("This player's name for controllers, as an emergency mix's: its play and stop on buttons of their own."),
+	                                     QStringLiteral("player"));
 	const QCommandLineOption decks(QStringLiteral("decks"), QStringLiteral("The DJ player's decks: 2 or 4."), QStringLiteral("count"));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
 	const QCommandLineOption audio_file(QStringList{ QStringLiteral("audiofile"), QStringLiteral("audio-file") },
@@ -153,7 +156,7 @@ int main(int argc, char *argv[]) {
 	                                       QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen });
+	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen, player_name });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -222,6 +225,8 @@ int main(int argc, char *argv[]) {
 
 	snurra_node node;
 	if (!node.listen()) return 1;
+	/* A named player takes controllers, its bindings its own (sec 3f). */
+	if (parser.isSet(player_name)) node.take_controllers(parser.value(player_name));
 
 	if (parser.isSet(adopt)) {
 		const QStringList xy = parser.value(at).split(QLatin1Char(','));

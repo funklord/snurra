@@ -4,7 +4,12 @@
  */
 #include "snurra/midi.h"
 
+#include <QCursor>
+#include <QMouseEvent>
 #include <QSettings>
+#include <QTimer>
+#include <QToolTip>
+#include <QWidget>
 #include <QSocketNotifier>
 
 #include <algorithm>
@@ -378,4 +383,120 @@ bool snurra_midi_in::open() {
 #else
 	return false;
 #endif
+}
+
+/* ---- a player's controllers ------------------------------------------- */
+
+namespace {
+
+class event_hook : public QObject {
+public:
+	explicit event_hook(std::function<bool(QObject *, QEvent *)> hook, QObject *parent) : QObject(parent), m_hook(std::move(hook)) {}
+	bool eventFilter(QObject *watched, QEvent *event) override { return m_hook(watched, event); }
+
+private:
+	std::function<bool(QObject *, QEvent *)> m_hook;
+};
+
+const char *const CONTROL_PROPERTY = "snurra_control";
+
+}   // namespace
+
+snurra_controller::snurra_controller(const QString &player, apply_t apply, QObject *parent)
+    : QObject(parent), m_player(player), m_apply(std::move(apply)) {}
+
+bool snurra_controller::open() {
+	if (m_midi) return true;
+	m_midi = new snurra_midi_in(this);
+	if (!m_midi->open()) {
+		delete m_midi;
+		m_midi = nullptr;
+		return false;
+	}
+	m_bindings.load();
+	m_loaded_us = snurra_clock_us();
+	connect(m_midi, &snurra_midi_in::received, this, [this](const snurra_midi_event &event) { received(event); });
+	return true;
+}
+
+void snurra_controller::name_widget(QWidget *widget, const QString &control) {
+	if (!widget) return;
+	widget->setProperty(CONTROL_PROPERTY, control);
+	if (!m_filter) {
+		m_filter = new event_hook(
+		        [this](QObject *watched, QEvent *event) {
+			        QWidget *widget = qobject_cast<QWidget *>(watched);
+			        const QString name = widget ? widget->property(CONTROL_PROPERTY).toString() : QString();
+			        if (name.isEmpty() || !m_midi) return false;
+			        if (event->type() == QEvent::MouseButtonPress
+			            && (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier)) {
+				        QString control = name;
+				        /* An EQ is one line over three bands: the band under the hand. */
+				        if (control.endsWith(QLatin1String("_eq"))) {
+					        const int third = int(3 * static_cast<QMouseEvent *>(event)->position().x() / std::max(1, widget->width()));
+					        control += third <= 0 ? QStringLiteral("_low") : third == 1 ? QStringLiteral("_mid") : QStringLiteral("_high");
+				        }
+				        start(control);
+				        return true;   /* a learn, not a use of the control */
+			        }
+			        if (event->type() == QEvent::MouseButtonRelease && !m_learning.isEmpty()) {
+				        finish(true);
+				        return true;
+			        }
+			        return false;
+		        },
+		        this);
+	}
+	widget->installEventFilter(m_filter);
+}
+
+void snurra_controller::start(const QString &control) {
+	m_learning = control;
+	m_learn.start(snurra_clock_us());
+	if (!m_timer) {
+		m_timer = new QTimer(this);
+		m_timer->setInterval(20);
+		connect(m_timer, &QTimer::timeout, this, [this] { finish(false); });
+	}
+	m_timer->start();
+	QToolTip::showText(QCursor::pos(), tr("Move the control for %1").arg(control));
+}
+
+void snurra_controller::finish(bool final) {
+	if (m_learning.isEmpty()) return;
+	const snurra_midi_learn::verdict found = m_learn.decide(final);
+	if (found.state == snurra_midi_learn::verdict::waiting) return;
+	if (found.state == snurra_midi_learn::verdict::clear) {
+		/* Named for this player, unless it is the deck view's. */
+		const QString control = m_player.isEmpty() ? m_learning : m_player + QLatin1Char(':') + m_learning;
+		m_bindings.load();   /* another player may have learned since */
+		m_bindings.bind(found.control, control, found.kind);
+		m_bindings.save();
+		QToolTip::showText(QCursor::pos(), QStringLiteral("%1 -> %2").arg(m_bindings.name_of(found.control), control));
+	} else {
+		QToolTip::showText(QCursor::pos(), found.why);
+	}
+	m_learning.clear();
+	m_learn.stop();
+	if (m_timer) m_timer->stop();
+}
+
+void snurra_controller::received(const snurra_midi_event &event) {
+	m_learn.see(event);
+	if (!m_learning.isEmpty()) return;   /* while learning, nothing moves */
+	/* Another process may have learned one since: read again, at most
+	 * once a second. */
+	if (event.at_us - m_loaded_us > 1000000) {
+		m_bindings.load();
+		m_loaded_us = event.at_us;
+	}
+	snurra_control_kind kind = snurra_control_kind::absolute;
+	QString control = m_bindings.control_for(event.control(), &kind);
+	if (control.isEmpty()) return;
+	/* Another player's binding is that player's to take. */
+	const int colon = int(control.indexOf(QLatin1Char(':')));
+	const QString player = colon < 0 ? QString() : control.left(colon);
+	if (player != m_player) return;
+	if (colon >= 0) control = control.mid(colon + 1);
+	m_apply(control, kind, event);
 }

@@ -35,6 +35,7 @@
 #include "snurra/deck.h"
 #include "snurra/engine.h"
 #include "snurra/marker.h"
+#include "snurra/midi.h"
 #include "snurra/snap.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
@@ -178,6 +179,33 @@ bool snurra_node::listen() {
 	return true;
 }
 
+bool snurra_node::take_controllers(const QString &player) {
+	if (m_controller) return true;
+	m_controller = new snurra_controller(
+	        player,
+	        [this](const QString &control, snurra_control_kind, const snurra_midi_event &event) {
+		        /* Buttons, on their press. */
+		        if (event.kind == snurra_midi_event::note_off || (event.kind == snurra_midi_event::cc && event.value < 64)) return;
+		        if (m_tiles.isEmpty()) return;
+		        bool playing = false;
+		        for (snurra_tile *tile : m_tiles) playing = playing || tile->playing();
+		        if (control == QLatin1String("play")) play_group(m_tiles.first(), !playing);
+		        else if (control == QLatin1String("stop") && playing) play_group(m_tiles.first(), false);
+	        },
+	        this);
+	if (!m_controller->open()) {
+		delete m_controller;
+		m_controller = nullptr;
+		return false;
+	}
+	for (snurra_tile *tile : m_tiles) name_controls(tile);
+	return true;
+}
+
+void snurra_node::name_controls(snurra_tile *tile) {
+	if (m_controller) m_controller->name_widget(tile->play_button(), QStringLiteral("play"));
+}
+
 void snurra_node::accept() {
 	while (QLocalSocket *socket = m_server->nextPendingConnection()) watch(socket);
 }
@@ -227,6 +255,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
+	name_controls(tile);
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });

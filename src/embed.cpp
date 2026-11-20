@@ -346,18 +346,12 @@ public:
 	void show_plugs();
 
 	/* ---- controllers (sec 3f, step 6) ---- */
-	snurra_midi_in *midi = nullptr;
-	snurra_bindings bindings;
-	snurra_midi_learn learn;
-	QString learning;            /* the control the hand holds, while learning */
-	QTimer *learn_timer = nullptr;
-	QObject *learn_filter = nullptr;
+	snurra_controller *controller = nullptr;
 	void name_controls(int deck);
-	void control_widget(QWidget *widget, const QString &name);
-	void received(const snurra_midi_event &event);
+	void control_widget(QWidget *widget, const QString &name) {
+		if (controller) controller->name_widget(widget, name);
+	}
 	void apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event);
-	void start_learning(const QString &control);
-	void finish_learning(bool final);
 	bool unfold(int deck);
 	bool fold();
 	void end_score();
@@ -1164,52 +1158,11 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
  * pressed on a control listens; the one hardware control moved clearly
  * binds to it (snurra_midi_learn), and nothing binds while unsure.
  */
-namespace {
-
-class event_hook : public QObject {
-public:
-	explicit event_hook(std::function<bool(QObject *, QEvent *)> hook, QObject *parent) : QObject(parent), m_hook(std::move(hook)) {}
-	bool eventFilter(QObject *watched, QEvent *event) override { return m_hook(watched, event); }
-
-private:
-	std::function<bool(QObject *, QEvent *)> m_hook;
-};
-
-const char *const CONTROL_PROPERTY = "snurra_control";
-
-}   // namespace
-
-void snurra_dj_private::control_widget(QWidget *widget, const QString &name) {
-	if (!widget) return;
-	widget->setProperty(CONTROL_PROPERTY, name);
-	if (!learn_filter) {
-		learn_filter = new event_hook(
-		        [this](QObject *watched, QEvent *event) {
-			        QWidget *widget = qobject_cast<QWidget *>(watched);
-			        const QString name = widget ? widget->property(CONTROL_PROPERTY).toString() : QString();
-			        if (name.isEmpty() || !midi) return false;
-			        if (event->type() == QEvent::MouseButtonPress
-			            && (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier)) {
-				        QString control = name;
-				        /* The EQ is one line over three bands: the band under the hand. */
-				        if (control.endsWith(QLatin1String("_eq"))) {
-					        const int third = int(3 * static_cast<QMouseEvent *>(event)->position().x() / std::max(1, widget->width()));
-					        control += third <= 0 ? QStringLiteral("_low") : third == 1 ? QStringLiteral("_mid") : QStringLiteral("_high");
-				        }
-				        start_learning(control);
-				        return true;   /* a learn, not a move of the control */
-			        }
-			        if (event->type() == QEvent::MouseButtonRelease && !learning.isEmpty()) {
-				        finish_learning(true);
-				        return true;
-			        }
-			        return false;
-		        },
-		        q);
-	}
-	widget->installEventFilter(learn_filter);
-}
-
+/*
+ * Controllers (project.md sec 3f, step 6): the deck view's controls named
+ * by slot -- ch_1_play ... ch_4_eq_high, crossfader -- and moved by what
+ * the person bound to them (snurra_controller, midi.h).
+ */
 void snurra_dj_private::name_controls(int deck) {
 	snurra_tile *tile = deck < decks.size() ? decks[deck]->tile : nullptr;
 	if (!tile) return;
@@ -1227,42 +1180,6 @@ void snurra_dj_private::name_controls(int deck) {
 	/* The deck's own socket: a cue button on a controller is a plug with
 	 * a fixed place (sec 3f). */
 	control_widget(decks[deck]->listen, slot + QStringLiteral("listen"));
-}
-
-void snurra_dj_private::start_learning(const QString &control) {
-	learning = control;
-	learn.start(snurra_clock_us());
-	if (!learn_timer) {
-		learn_timer = new QTimer(q);
-		learn_timer->setInterval(20);
-		QObject::connect(learn_timer, &QTimer::timeout, q, [this] { finish_learning(false); });
-	}
-	learn_timer->start();
-	QToolTip::showText(QCursor::pos(), snurra_dj::tr("Move the control for %1").arg(control), q);
-}
-
-void snurra_dj_private::finish_learning(bool final) {
-	if (learning.isEmpty()) return;
-	const snurra_midi_learn::verdict found = learn.decide(final);
-	if (found.state == snurra_midi_learn::verdict::waiting) return;
-	if (found.state == snurra_midi_learn::verdict::clear) {
-		bindings.bind(found.control, learning, found.kind);
-		bindings.save();
-		QToolTip::showText(QCursor::pos(), QStringLiteral("%1 -> %2").arg(bindings.name_of(found.control), learning), q);
-	} else {
-		QToolTip::showText(QCursor::pos(), found.why, q);
-	}
-	learning.clear();
-	learn.stop();
-	if (learn_timer) learn_timer->stop();
-}
-
-void snurra_dj_private::received(const snurra_midi_event &event) {
-	learn.see(event);
-	if (!learning.isEmpty()) return;   /* while learning, nothing moves */
-	snurra_control_kind kind = snurra_control_kind::absolute;
-	const QString control = bindings.control_for(event.control(), &kind);
-	if (!control.isEmpty()) apply(control, kind, event);
 }
 
 void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event) {
@@ -1426,15 +1343,15 @@ int snurra_dj::plugged(int listener) const {
 }
 
 bool snurra_dj::take_controllers() {
-	if (d->midi) return true;
-	d->midi = new snurra_midi_in(this);
-	if (!d->midi->open()) {
-		delete d->midi;
-		d->midi = nullptr;
+	if (d->controller) return true;
+	d->controller = new snurra_controller(
+	        QString(), [this](const QString &control, snurra_control_kind kind, const snurra_midi_event &event) { d->apply(control, kind, event); },
+	        this);
+	if (!d->controller->open()) {
+		delete d->controller;
+		d->controller = nullptr;
 		return false;
 	}
-	d->bindings.load();
-	connect(d->midi, &snurra_midi_in::received, this, [this](const snurra_midi_event &event) { d->received(event); });
 	d->control_widget(d->crossfader, QStringLiteral("crossfader"));
 	for (int i = 0; i < d->decks.size(); ++i) d->name_controls(i);
 	return true;
