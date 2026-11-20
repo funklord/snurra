@@ -7,8 +7,10 @@
 #include "snurra/clock.h"
 #include "snurra/output.h"
 
-snurra_engine::snurra_engine(QObject *parent) : QObject(parent) {
-	const QByteArray wanted = qgetenv("SNURRA_OUTPUT");
+snurra_engine::snurra_engine(QObject *parent) : snurra_engine(QString::fromLocal8Bit(qgetenv("SNURRA_OUTPUT")), parent) {}
+
+snurra_engine::snurra_engine(const QString &output, QObject *parent) : QObject(parent) {
+	const QByteArray wanted = output.toLocal8Bit();
 #ifdef Q_OS_ANDROID
 	/* No ALSA for an app there: AAudio, and QAudioSink if it will not. */
 	const QString fallback = QStringLiteral("aaudio");

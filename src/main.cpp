@@ -140,6 +140,9 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption playlist(QStringLiteral("playlist"), QStringLiteral("Play the files a playlist names (.m3u, .pls), as a train."),
 	                                  QStringLiteral("file"));
 	const QCommandLineOption dj(QStringLiteral("dj"), QStringLiteral("Open the DJ player: two decks, a crossfader and the music under them."));
+	const QCommandLineOption listen(QStringLiteral("listen"),
+	                                QStringLiteral("Headphones for the DJ player, on this output (as --output): each deck's \"listen\" plugs them in there."),
+	                                QStringLiteral("spec"));
 	const QCommandLineOption decks(QStringLiteral("decks"), QStringLiteral("The DJ player's decks: 2 or 4."), QStringLiteral("count"));
 	const QCommandLineOption loop(QStringLiteral("loop"), QStringLiteral("Play it all this many times; 0 for ever."), QStringLiteral("times"));
 	const QCommandLineOption audio_file(QStringList{ QStringLiteral("audiofile"), QStringLiteral("audio-file") },
@@ -150,7 +153,7 @@ int main(int argc, char *argv[]) {
 	                                       QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks });
+	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
@@ -167,7 +170,7 @@ int main(int argc, char *argv[]) {
 	/* The DJ player (embed.h 3), as a window of its own; with files, the
 	 * first two on its decks. On a phone it is the app (the holder,
 	 * 2026-11-13: one static screen, the browser under the decks). */
-	bool as_dj = parser.isSet(dj) || parser.isSet(decks);
+	bool as_dj = parser.isSet(dj) || parser.isSet(decks) || parser.isSet(listen);
 #ifdef Q_OS_ANDROID
 	as_dj = as_dj || parser.positionalArguments().isEmpty();
 #endif
@@ -184,6 +187,7 @@ int main(int argc, char *argv[]) {
 		/* MIDI controllers, bound as the person chose; Alt held on a
 		 * control learns one (project.md sec 3f). */
 		player->take_controllers();
+		for (const QString &spec : parser.values(listen)) player->add_listener(spec);
 		const QStringList given = parser.positionalArguments();
 		for (int deck = 0; deck < player->deck_count() && deck < given.size(); ++deck) {
 			snurra_media media;

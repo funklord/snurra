@@ -165,6 +165,15 @@ public:
 	 * sequencer). */
 	bool take_controllers();
 
+	/* (5) Pre-listen as a plug (project.md sec 3f): a listener is headphones
+	 * on an output of their own (as --output names one), plugged into one
+	 * deck at a time and hearing it before its fader and the crossfader.
+	 * Its number back; each deck shows "listen", which moves the first
+	 * listener's plug there. plug(listener, -1) unplugs. */
+	int add_listener(const QString &output);
+	void plug(int listener, int deck);
+	int plugged(int listener) const;
+
 	/* -1, A alone; 1, B alone; 0, both at equal power (-3 dB each). */
 	void set_crossfader(double position);
 	double crossfader() const;

@@ -27,6 +27,9 @@
 #include <cmath>
 #include <QLocalSocket>
 #include <QScopeGuard>
+#include <QDir>
+#include <QCoreApplication>
+#include <cstring>
 #include <QtTest>
 
 #include <alsa/asoundlib.h>
@@ -79,6 +82,7 @@ private slots:
 	void a_jump_while_playing_lands_exactly_its_step_on();
 	void the_control_moved_is_told_from_the_noise();
 	void a_controller_learned_by_holding_moves_the_deck();
+	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_player_unfolds_across_the_decks();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
@@ -1260,6 +1264,85 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	QTest::qWait(100);
 	QCOMPARE(tile->level(), before);
 	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+}
+
+/*
+ * Pre-listen as a plug (project.md sec 3f, step 7): deck A plays 440 Hz
+ * with its fader down and the crossfader all the way to B, which plays
+ * 1320 Hz. A listener on an output of its own -- a capture the test reads
+ * -- plugged into A hears 440 Hz all the same, before the fader and the
+ * crossfader; the plug moved to B, it hears 1320; unplugged, nothing.
+ */
+void embed_test::a_listener_hears_the_deck_its_plug_is_in() {
+	QTemporaryDir captures;
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	for (int deck = 0; deck < 2; ++deck) {
+		snurra_media media;
+		media.path = deck == 0 ? QStringLiteral("tone:440") : QStringLiteral("tone:1320");
+		QVERIFY(dj.load(deck, media));
+	}
+	auto tile_of = [&dj](int deck) {
+		QWidget *place = dj.findChild<QWidget *>(deck == 0 ? QStringLiteral("snurra-deck-a") : QStringLiteral("snurra-deck-b"));
+		return place ? place->findChild<snurra_tile *>() : nullptr;
+	};
+	tile_of(0)->set_level(0);
+	dj.set_crossfader(1);
+	tile_of(0)->set_playing(true);
+	tile_of(1)->set_playing(true);
+	const int listener = dj.add_listener(QStringLiteral("capture:") + captures.path());
+	QCOMPARE(listener, 0);
+	QToolButton *listen = nullptr;
+	for (QToolButton *button : dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Listen here")) listen = button;
+	QVERIFY2(listen && listen->isVisible(), "no socket on deck A");
+
+	const QString capture = QDir(captures.path()).filePath(QStringLiteral("%1.capture").arg(QCoreApplication::applicationPid()));
+	/* The last quarter second heard: its loudness, and its pitch by how
+	 * often it crosses zero. */
+	auto heard = [&capture](double &hz, double &rms) {
+		QFile file(capture);
+		if (!file.open(QIODevice::ReadOnly)) return false;
+		const QByteArray all = file.readAll();
+		std::vector<float> left;
+		for (qsizetype at = 0; at + 12 <= all.size();) {
+			int32_t frames = 0;
+			std::memcpy(&frames, all.constData() + at + 8, 4);
+			const qsizetype size = 12 + qsizetype(frames) * 8;
+			if (at + size > all.size()) break;
+			const float *samples = reinterpret_cast<const float *>(all.constData() + at + 12);
+			for (int i = 0; i < frames; ++i) left.push_back(samples[2 * i]);
+			at += size;
+		}
+		const size_t span = 12000;
+		if (left.size() < span) return false;
+		int crossings = 0;
+		double sum = 0;
+		for (size_t i = left.size() - span; i < left.size(); ++i) {
+			sum += double(left[i]) * left[i];
+			if (i > left.size() - span && (left[i - 1] < 0) != (left[i] < 0)) ++crossings;
+		}
+		rms = std::sqrt(sum / double(span));
+		hz = crossings / 2.0 / (double(span) / 48000);
+		return true;
+	};
+	double hz = 0, rms = 0;
+	listen->click();
+	QCOMPARE(dj.plugged(0), 0);
+	QTest::qWait(700);
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(rms > 0.1 && qAbs(hz - 440) < 20, qPrintable(QStringLiteral("plugged into A: %1 Hz at %2").arg(hz).arg(rms)));
+	dj.plug(0, 1);
+	QVERIFY(!listen->isChecked());
+	QTest::qWait(700);
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(rms > 0.1 && qAbs(hz - 1320) < 30, qPrintable(QStringLiteral("plugged into B: %1 Hz at %2").arg(hz).arg(rms)));
+	dj.plug(0, -1);
+	QTest::qWait(700);
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(rms < 1e-4, qPrintable(QStringLiteral("unplugged: %1").arg(rms)));
 }
 
 /*

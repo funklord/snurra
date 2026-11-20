@@ -1236,6 +1236,28 @@ alike.
    there.
 
 7. Taps and listeners: a listener's output, the sockets, the plug moved.
+   **First part built 2026-11-20** (`snurra_dj::add_listener`, `plug`;
+   the player's `--listen <output>`, as many as wanted): a listener is a
+   second engine on an output of its own (`snurra_engine(output, ...)`),
+   plugged into one deck at a time. It hears a mirror of that deck -- the
+   same track opened again on its own deck, anchored on the shared clock
+   where the deck will be heard, its tempo, key lock, key shift and EQ
+   followed, re-anchored when the deck is played, paused or sought or
+   drifts past 10 ms -- at full level, so before the deck's fader and the
+   crossfader, as a cue channel is. States travel, not sound (sec 3b):
+   the mirror reads the track itself, so two devices' clocks never meet in
+   one buffer. A deck's track replaced -- a tune loaded, a player's next
+   track -- the plug stays in the deck and hears the new one. Each deck
+   shows "listen" while a listener exists; clicking it moves the first
+   listener's plug there, again takes it out. Tested in
+   `a_listener_hears_the_deck_its_plug_is_in` against a capture: deck A
+   at 440 Hz with its fader down and the crossfader all on B (1320 Hz);
+   plugged into A it hears 440, moved to B 1320, unplugged nothing; a
+   mirror at the deck's fader, or an old mirror left sounding, fails it.
+   **Not yet:** sockets anywhere but a deck (a player's sum, a nested
+   player's track, a window's tile), a second listener chosen on screen,
+   and a hardware cue button bound to its slot's plug (the controls'
+   names would be `ch_N_listen`).
 
 **Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
 plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which

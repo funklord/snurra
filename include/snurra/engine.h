@@ -31,6 +31,9 @@ class snurra_engine : public QObject {
 public:
 	/* Opens $SNURRA_OUTPUT, or alsa:default, or null failing those. */
 	explicit snurra_engine(QObject *parent = nullptr);
+	/* Opens `output` in its place: a second engine on an output of its own
+	 * -- a listener's headphones (project.md sec 3f). */
+	snurra_engine(const QString &output, QObject *parent);
 	~snurra_engine() override;
 
 	snurra_deck *add(snurra_deck::start_t start);

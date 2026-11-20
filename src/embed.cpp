@@ -190,6 +190,15 @@ public:
 		setMinimumHeight(fontMetrics().height() * 8);
 		column = new QVBoxLayout(this);
 		column->setContentsMargins(2, 2, 2, 2);
+		/* The plug's socket here: a listener's headphones hear this deck. */
+		listen = new QToolButton(this);
+		listen->setText(QObject::tr("listen"));
+		listen->setAccessibleName(QObject::tr("Listen here"));
+		listen->setToolTip(QObject::tr("Your headphones hear this deck, before its fader and the crossfader"));
+		listen->setCheckable(true);
+		listen->setAutoRaise(true);
+		listen->hide();
+		column->addWidget(listen, 0, Qt::AlignRight);
 		/* A deck holding a whole player: spread it over the decks. */
 		unfold = new QToolButton(this);
 		unfold->setText(QObject::tr("Unfold across the decks"));
@@ -208,6 +217,7 @@ public:
 	 * process's socket and its index there (snurra_wire::TILE_MIME). */
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
+	QToolButton *listen;
 	QToolButton *unfold;
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
@@ -295,6 +305,28 @@ public:
 		QTimer *timer = nullptr;
 	};
 	std::unique_ptr<score_t> score;
+
+	/* ---- listeners (sec 3f, step 7) ---- */
+	/* A listener: headphones of their own -- an engine on another output
+	 * -- and a plug in one deck at a time, heard there as a mirror of that
+	 * deck, before its fader and the crossfader. */
+	struct listener_t {
+		std::unique_ptr<snurra_engine> engine;
+		snurra_deck *mirror = nullptr;
+		int deck = -1;
+		QPointer<snurra_tile> tapped;
+		bool playing = false;
+		float tempo = 1;
+	};
+	std::vector<std::unique_ptr<listener_t>> listeners;
+	int chosen_listener = 0;     /* the one a "listen here" moves */
+	QTimer *follow = nullptr;
+	void plug(int listener, int deck);
+	void mirror(listener_t &one);
+	void unmirror(listener_t &one);
+	void anchor(listener_t &one);
+	void follow_taps();
+	void show_plugs();
 
 	/* ---- controllers (sec 3f, step 6) ---- */
 	snurra_midi_in *midi = nullptr;
@@ -1149,6 +1181,116 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 	}
 }
 
+/*
+ * Pre-listen as a plug (project.md sec 3f, the holder: "running around with
+ * a plug and plugging yourself into different points"): a listener's
+ * output plays a mirror of the deck it is plugged into -- the same track,
+ * in step on the shared clock, its tempo, key and EQ followed -- at full
+ * level, so it hears the deck before the room's fader and crossfader.
+ * Moving the plug is retiring one mirror and making another.
+ */
+void snurra_dj_private::mirror(listener_t &one) {
+	snurra_tile *tile = one.deck >= 0 && one.deck < decks.size() ? decks[one.deck]->tile.data() : nullptr;
+	one.tapped = tile;
+	if (!tile) return;
+	snurra_deck::start_t start = snurra_tile::start_for(tile->state(), one.engine->rate());
+	start.level = 1;
+	start.playing = false;
+	one.mirror = one.engine->add(start);
+	one.playing = false;
+	anchor(one);
+}
+
+void snurra_dj_private::unmirror(listener_t &one) {
+	if (one.mirror) one.engine->retire(one.mirror);
+	one.mirror = nullptr;
+	one.tapped = nullptr;
+}
+
+/* In step with the deck tapped: where it will be heard a moment from now,
+ * heard then here, playing as it plays, at its tempo, key and EQ. */
+void snurra_dj_private::anchor(listener_t &one) {
+	snurra_tile *tile = one.tapped;
+	if (!tile || !one.mirror) return;
+	snurra_deck *deck = tile->deck();
+	one.tempo = deck->tempo();
+	one.mirror->set_tempo(deck->tempo());
+	one.mirror->set_key_lock(tile->state().key_lock);
+	one.mirror->set_key_shift(tile->state().key_shift);
+	one.mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
+	one.playing = tile->playing();
+	if (!one.playing) {
+		one.mirror->set_playing(false);
+		one.mirror->seek(deck->position_at(snurra_clock_us()));
+		return;
+	}
+	const qint64 at = snurra_clock_us() + std::max(one.engine->latency_us(), engine->latency_us()) + 50000;
+	one.mirror->start_at(deck->position_at(at), at);
+	one.mirror->set_playing(true);
+}
+
+void snurra_dj_private::follow_taps() {
+	const qint64 now = snurra_clock_us();
+	for (const std::unique_ptr<listener_t> &one : listeners) {
+		if (one->deck < 0) continue;
+		snurra_tile *tile = one->deck < decks.size() ? decks[one->deck]->tile.data() : nullptr;
+		/* Another tile on the deck -- a tune loaded, a player's next track:
+		 * the plug is in the deck, so it hears that. */
+		if (tile != one->tapped || !one->mirror) {
+			unmirror(*one);
+			mirror(*one);
+			continue;
+		}
+		const int64_t apart = one->mirror->position_at(now) - tile->deck()->position_at(now);
+		const bool drifted = one->playing && std::abs(apart) > one->engine->rate() / 100;
+		if (tile->playing() != one->playing || tile->deck()->tempo() != one->tempo || drifted) anchor(*one);
+		one->mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
+		one->mirror->set_key_lock(tile->state().key_lock);
+		one->mirror->set_key_shift(tile->state().key_shift);
+	}
+}
+
+void snurra_dj_private::plug(int listener, int deck) {
+	if (listener < 0 || listener >= int(listeners.size())) return;
+	listener_t &one = *listeners[size_t(listener)];
+	unmirror(one);
+	one.deck = deck >= 0 && deck < decks.size() ? deck : -1;
+	if (one.deck >= 0) mirror(one);
+	show_plugs();
+}
+
+void snurra_dj_private::show_plugs() {
+	for (int i = 0; i < decks.size(); ++i) {
+		decks[i]->listen->setVisible(!listeners.empty());
+		const bool here = chosen_listener < int(listeners.size()) && listeners[size_t(chosen_listener)]->deck == i;
+		decks[i]->listen->blockSignals(true);
+		decks[i]->listen->setChecked(here);
+		decks[i]->listen->blockSignals(false);
+	}
+}
+
+int snurra_dj::add_listener(const QString &output) {
+	auto one = std::make_unique<snurra_dj_private::listener_t>();
+	one->engine = std::make_unique<snurra_engine>(output, nullptr);
+	d->listeners.push_back(std::move(one));
+	if (!d->follow) {
+		d->follow = new QTimer(this);
+		d->follow->setInterval(50);
+		connect(d->follow, &QTimer::timeout, this, [this] { d->follow_taps(); });
+		d->follow->start();
+	}
+	d->show_plugs();
+	return int(d->listeners.size()) - 1;
+}
+
+void snurra_dj::plug(int listener, int deck) {
+	d->plug(listener, deck);
+}
+
+int snurra_dj::plugged(int listener) const {
+	return listener >= 0 && listener < int(d->listeners.size()) ? d->listeners[size_t(listener)]->deck : -1;
+}
+
 bool snurra_dj::take_controllers() {
 	if (d->midi) return true;
 	d->midi = new snurra_midi_in(this);
@@ -1188,6 +1330,7 @@ void snurra_dj::set_deck_count(int count) {
 		 * the handover is its to make -- the tile, or with Shift the whole
 		 * player -- onto this deck. */
 		connect(deck->unfold, &QToolButton::clicked, this, [this, i] { unfold(i); });
+		connect(deck->listen, &QToolButton::toggled, this, [this, i](bool on) { d->plug(d->chosen_listener, on ? i : -1); });
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
 			if (!d->server || giver.isEmpty()) return;
 			snurra_wire::message merge;
@@ -1210,6 +1353,7 @@ void snurra_dj::set_deck_count(int count) {
 	}
 	for (int row = 0; row < 2; ++row) d->grid->setRowStretch(row, row < (count + 1) / 2 ? 1 : 0);
 	d->name_sides();
+	d->show_plugs();
 	d->apply_crossfader();
 }
 
