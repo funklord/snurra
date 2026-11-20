@@ -132,6 +132,11 @@ public:
 	/* A name the person gave a hardware index. */
 	void set_alias(const QString &index, const QString &name);
 	QString name_of(const QString &index) const;
+	/* And one they gave a control of snurra's (the holder: "we allow
+	 * (re-)naming, the name is just an alias"): `deck_a_volume` for
+	 * `ch_1_level`. Written so in the text, read back through it. */
+	void set_control_name(const QString &control, const QString &name);
+	QString control_name(const QString &control) const;
 
 	/* As text, a line a binding: "name_or_index -> control". */
 	QStringList lines() const;
@@ -149,6 +154,7 @@ private:
 	};
 	QMap<QString, bound> m_bound;      /* by index */
 	QMap<QString, QString> m_alias;    /* index -> name */
+	QMap<QString, QString> m_names;    /* control -> name */
 };
 
 /*

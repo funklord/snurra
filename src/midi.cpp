@@ -188,10 +188,19 @@ QString snurra_bindings::name_of(const QString &index) const {
 	return m_alias.value(index, index);
 }
 
+void snurra_bindings::set_control_name(const QString &control, const QString &name) {
+	if (name.isEmpty() || name == control) m_names.remove(control);
+	else m_names.insert(control, name);
+}
+
+QString snurra_bindings::control_name(const QString &control) const {
+	return m_names.value(control, control);
+}
+
 QStringList snurra_bindings::lines() const {
 	QStringList made;
 	for (auto it = m_bound.constBegin(); it != m_bound.constEnd(); ++it)
-		made << QStringLiteral("%1 -> %2 (%3)").arg(name_of(it.key()), it->control, snurra_control_kind_name(it->kind));
+		made << QStringLiteral("%1 -> %2 (%3)").arg(name_of(it.key()), control_name(it->control), snurra_control_kind_name(it->kind));
 	return made;
 }
 
@@ -209,9 +218,12 @@ bool snurra_bindings::read(const QStringList &lines) {
 			to = to.section(QLatin1String(" ("), 0, 0);
 		}
 		if (from.isEmpty() || to.isEmpty()) return false;
-		/* A name the person gave: back to the index it stands for. */
+		/* A name the person gave: back to the index it stands for, and to
+		 * the control. */
 		for (auto it = m_alias.constBegin(); it != m_alias.constEnd(); ++it)
 			if (it.value() == from) from = it.key();
+		for (auto it = m_names.constBegin(); it != m_names.constEnd(); ++it)
+			if (it.value() == to) to = it.key();
 		got.insert(from, bound{ to, kind });
 	}
 	m_bound = got;
@@ -226,6 +238,11 @@ void snurra_bindings::load() {
 		const int eq = int(line.indexOf(QLatin1String(" = ")));
 		if (eq > 0) m_alias.insert(line.mid(eq + 3).trimmed(), line.left(eq).trimmed());
 	}
+	m_names.clear();
+	for (const QString &line : settings.value(QStringLiteral("controllers/names")).toStringList()) {
+		const int eq = int(line.indexOf(QLatin1String(" = ")));
+		if (eq > 0) m_names.insert(line.mid(eq + 3).trimmed(), line.left(eq).trimmed());
+	}
 	read(settings.value(QStringLiteral("controllers/bindings")).toStringList());
 }
 
@@ -236,6 +253,10 @@ void snurra_bindings::save() const {
 	/* Only what was chosen: nothing bound and named writes no key. */
 	if (aliases.isEmpty()) settings.remove(QStringLiteral("controllers/aliases"));
 	else settings.setValue(QStringLiteral("controllers/aliases"), aliases);
+	QStringList names;
+	for (auto it = m_names.constBegin(); it != m_names.constEnd(); ++it) names << it.value() + QStringLiteral(" = ") + it.key();
+	if (names.isEmpty()) settings.remove(QStringLiteral("controllers/names"));
+	else settings.setValue(QStringLiteral("controllers/names"), names);
 	if (m_bound.isEmpty()) settings.remove(QStringLiteral("controllers/bindings"));
 	else settings.setValue(QStringLiteral("controllers/bindings"), lines());
 }

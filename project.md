@@ -1283,8 +1283,14 @@ alike.
    `emergency:play` plays that window and neither deck A nor "backup",
    `ch_1_play` deck A alone, a note learned on the window's play button
    replaces what played it; without the player's check, "backup" plays
-   on the emergency button. **Not yet:** renaming snurra's controls, a
-   layout of slots the person arranges, a 14-bit control's fine half
+   on the emergency button. **Both ends named, 2026-11-20:** snurra's
+   controls take names of the person's as hardware controls do
+   (`set_control_name`, the settings' `controllers/names`, lines
+   `deck_a_volume = ch_1_level`), so a binding reads
+   `ch_a_gain -> deck_a_volume (absolute)` and is read back through both
+   names; nothing named writes nothing (tested in
+   `the_control_moved_is_told_from_the_noise`; without the names read
+   back, it fails). **Not yet:** a layout of slots the person arranges, a 14-bit control's fine half
    read (its coarse half moves it), HID and Android MIDI, and Mixxx's
    mappings (whether their JavaScript too is the holder's). A
    window manager that takes Alt-drag to move windows (many on X11) may

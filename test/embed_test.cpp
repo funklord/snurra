@@ -1198,6 +1198,28 @@ void embed_test::the_control_moved_is_told_from_the_noise() {
 	QCOMPARE(kind, snurra_control_kind::button);
 	QCOMPARE(again.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")), QStringLiteral("ch_1_level"));
 	QVERIFY(!again.read({ QStringLiteral("not a binding") }));
+	/* Both ends named (the holder: ch_a_gain -> ch_1_gain): written by the
+	 * names, read back through them, kept in the settings. */
+	again.set_control_name(QStringLiteral("ch_1_level"), QStringLiteral("deck_a_volume"));
+	QVERIFY(again.lines().contains(QStringLiteral("ch_a_gain -> deck_a_volume (absolute)")));
+	snurra_bindings named;
+	named.set_alias(QStringLiteral("Controller:Port 1/ch1/cc7"), QStringLiteral("ch_a_gain"));
+	named.set_control_name(QStringLiteral("ch_1_level"), QStringLiteral("deck_a_volume"));
+	QVERIFY(named.read({ QStringLiteral("ch_a_gain -> deck_a_volume (absolute)") }));
+	QCOMPARE(named.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")), QStringLiteral("ch_1_level"));
+	{
+		QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+		named.save();
+		snurra_bindings loaded;
+		loaded.load();
+		QCOMPARE(loaded.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")), QStringLiteral("ch_1_level"));
+		QCOMPARE(loaded.control_name(QStringLiteral("ch_1_level")), QStringLiteral("deck_a_volume"));
+		QCOMPARE(loaded.name_of(QStringLiteral("Controller:Port 1/ch1/cc7")), QStringLiteral("ch_a_gain"));
+		/* Nothing chosen writes nothing. */
+		snurra_bindings().save();
+		QVERIFY(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).childGroups().contains(QStringLiteral("controllers")) == false
+		        || QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("controllers/bindings")).isNull());
+	}
 	/* Bound again elsewhere, a control leaves its old hardware control. */
 	again.bind(QStringLiteral("Controller:Port 1/ch1/cc8"), QStringLiteral("ch_1_level"), snurra_control_kind::absolute);
 	QVERIFY(again.control_for(QStringLiteral("Controller:Port 1/ch1/cc7")).isEmpty());
