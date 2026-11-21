@@ -475,7 +475,7 @@ public:
 		QList<QStringList> rows;
 		for (const QString &row : chosen.split(QLatin1Char('/'), Qt::SkipEmptyParts)) rows << row.split(QLatin1Char(' '), Qt::SkipEmptyParts);
 		QList<bool> placed(decks.size(), false);
-		int row_at = 0;
+		int row_at = 0, columns_used = 0;
 		for (const QStringList &row : rows) {
 			int column = 0;
 			for (const QString &letter : row) {
@@ -484,6 +484,7 @@ public:
 				grid->addWidget(decks[i], row_at, column++);
 				placed[i] = true;
 			}
+			columns_used = std::max(columns_used, column);
 			if (column > 0) ++row_at;
 		}
 		/* Unnamed decks -- none arranged, or two decks of a four-deck
@@ -492,6 +493,7 @@ public:
 		for (int i = 0; i < decks.size(); ++i) {
 			if (placed[i]) continue;
 			grid->addWidget(decks[i], row_at, column);
+			columns_used = std::max(columns_used, column + 1);
 			if (++column == 2) {
 				column = 0;
 				++row_at;
@@ -499,6 +501,10 @@ public:
 		}
 		const int rows_used = row_at + (column > 0 ? 1 : 0);
 		for (int row = 0; row < 4; ++row) grid->setRowStretch(row, row < rows_used ? 1 : 0);
+		/* And the columns alike: unstretched, a loaded deck's tile gave way
+		 * to an empty deck's text, and on a phone deck A had a quarter of
+		 * the width, its EQ cut off after "lo". */
+		for (int column = 0; column < 4; ++column) grid->setColumnStretch(column, column < columns_used ? 1 : 0);
 	}
 	/* What a deck syncs to: another deck playing, else another loaded. */
 	snurra_tile *other_than(int deck) const {

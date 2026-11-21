@@ -2333,6 +2333,15 @@ controls; each tile very compact but resizeable).
   room, and hovered, the line says the band under the pointer -- "125 Hz
   to 250 Hz: +6.0 dB", "below 125 Hz: killed" -- above its usual help;
   tested from the tooltip (with the line's own tooltip only, it fails).
+  **By touch, 2026-11-21**, on the API 36 emulator (x86_64, the release
+  kit's FFmpeg 9.0 headers given as `FFMPEG_HEADERS`): one rising swipe
+  inside the mid band, `adb shell input swipe`, split it at 1 kHz and
+  again at 2 kHz, each part as drawn -- a finger handed on as the left
+  button, as the line's other strokes. Found on the way: deck A loaded
+  beside an empty deck B had a quarter of the phone's width, its controls
+  elided and the EQ cut off after its low band, the grid's columns never
+  stretched alike; now they are, and `decks_share_a_phones_width`
+  checks it at 412 wide (unstretched, A 114 against B 270, it fails).
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

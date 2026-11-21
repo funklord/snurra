@@ -109,6 +109,7 @@ private slots:
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void the_eq_line_draws_its_slopes_and_splits();
+	void decks_share_a_phones_width();
 	void a_beat_found_once_is_kept_and_shown();
 	void the_library_finds_tempos_only_when_asked();
 	void the_library_shows_each_tunes_key();
@@ -2695,6 +2696,28 @@ void embed_test::the_eq_line_draws_its_slopes_and_splits() {
 	QCOMPARE(deck->state().eq.band_db(2), 4.0f);   /* 1 to 2 kHz */
 	QCOMPARE(deck->state().eq.band_db(3), -8.0f);  /* 2 to 4 kHz */
 	QCOMPARE(deck->state().eq.band_db(0), 0.0f);   /* the low untouched */
+}
+
+/*
+ * The decks share the width alike (project.md sec 3f): on a phone's 412
+ * wide, deck A loaded beside an empty deck B gets half, not what an empty
+ * deck's words leave it -- seen on the API 36 emulator, a quarter, the EQ
+ * line cut off after its low band.
+ */
+void embed_test::decks_share_a_phones_width() {
+	snurra_dj dj;
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	dj.resize(412, 892);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QTest::qWait(100);
+	QWidget *a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	QWidget *b = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b"));
+	QVERIFY(a && b);
+	qInfo("deck A %d wide, deck B %d", a->width(), b->width());
+	QVERIFY2(std::abs(a->width() - b->width()) <= 2, qPrintable(QStringLiteral("A %1, B %2").arg(a->width()).arg(b->width())));
 }
 
 /*
