@@ -177,7 +177,7 @@ public:
 		int channel = 1;
 		bool note = true;    /* a note on, or a controller */
 		int number = 0;
-		int on = 127, off = 0;
+		int on = 127, off = 0;   /* -1: nothing sent */
 		double minimum = 0.5, maximum = 1;
 	};
 	const QList<light> &lights() const { return m_lights; }

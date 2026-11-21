@@ -55,8 +55,8 @@ and everything above it knows nothing of SFTP or fuzznet.
 - Waiting on the holder: a real screen and speaker trial, a Wayland
   compositor (weston), the AcoustID key, the phone (install, a node of
   its own, the fold cover, Android's FFmpeg), moving a joined window, the
-  cross-process drop's entry point, an About window's place, and
-  qtkit's remote (sec 3).
+  cross-process drop's entry point, an About window's place, a deck's
+  hand gain (Mixxx's pregain, sec 3f), and qtkit's remote (sec 3).
 
 ## 2. Decided
 
@@ -1457,10 +1457,20 @@ replaces the first's while what was learned stays. Several hardware
 controls may move one control, as in Mixxx -- and learning that control
 afterwards replaces them all, as a learn does. Of the 132 MIDI mappings Mixxx
 2.5 installs, 108 give bindings, 1501 in all; the rest are their scripts.
-`rate` is taken in Mixxx's raw direction (0 slowest), with no account of
-Mixxx's own slider-direction setting: a guess, to be put right on a real
-controller. Tested in `a_mixxx_mappings_plain_bindings_move_the_decks`
+`rate` is taken in Mixxx's raw direction (0 slowest). Mixxx itself
+turns it by the person's slider-direction preference -- its speed is
+`1 + rate_dir * rateRange * rate` (`ratecontrol.cpp`, 2.5) -- so a
+mapping cannot say which way its fader runs: a guess, to be put right
+on a real controller, where `(absolute, inverted)` in the binding's line
+turns it. Tested in `a_mixxx_mappings_plain_bindings_move_the_decks`
 (with the any-port lookup removed, it fails).
+
+**Open, the holder's:** the plain binding most left untaken is `pregain`,
+a deck's gain knob (157 in the installed mappings; then `headMix`, 60).
+snurra levels each track by its analysis (sec 3a's loudness), so a hand
+gain would sit on top of that trim; whether decks get one is a design
+choice, not the import's to make. Best guess: +-12 dB on the trim,
+centred flat, carried in the tile's state as its EQ is.
 
 **The controller's lights, 2026-11-21:** a mapping's `<outputs>` light
 the buttons with the states snurra has -- a deck playing (`play` and
@@ -1473,9 +1483,12 @@ messages -- so no other program is sent lights unasked, and a
 controller plugged in gets every light again once it is first heard.
 The deck view's states are looked at ten times a second and a light
 sent only as it changes. Other lights (VU meters, hot cues, effects)
-are not taken, and the import says so. Where a mapping gives no
-`<minimum>`, 0.5 is assumed, so a stopped deck is dark (Mixxx's own
-default not read; 75 of 2257 outputs leave it out). Of the installed
+are not taken, and the import says so. Mixxx's mapping format makes
+`<minimum>` required (its wiki, *Midi Controller Mapping File Format*);
+where one leaves it out -- 75 of 2257 installed outputs -- 0.5 is taken,
+so a stopped deck is dark. An `<off>` of 0xFF sends nothing, as the
+format says (4 outputs, one mapping); taken as 127 it lit the button
+while off, which the test's key lock light now guards. Of the installed
 mappings, 54 give lights, 306 in all. Tested in
 `a_mappings_lights_show_the_deck_playing`: an ALSA client as the
 controller, nothing sent before it is heard, then its play light off,

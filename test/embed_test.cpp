@@ -1673,6 +1673,7 @@ void embed_test::a_mappings_lights_show_the_deck_playing() {
   </controls>
   <outputs>
    <output><group>[Channel1]</group><key>play_indicator</key><status>0x90</status><midino>0x3B</midino><on>0x7F</on><off>0x01</off><minimum>0.5</minimum></output>
+   <output><group>[Channel1]</group><key>keylock</key><status>0x90</status><midino>0x3C</midino><off>0xFF</off><minimum>0.5</minimum></output>
    <output><group>[Channel1]</group><key>vu_meter</key><status>0xB0</status><midino>0x20</midino><minimum>0.1</minimum></output>
   </outputs>
  </controller>
@@ -1685,7 +1686,7 @@ void embed_test::a_mappings_lights_show_the_deck_playing() {
 		QStringList skipped;
 		QCOMPARE(bindings.import_mixxx(mapping, &skipped), 1);
 		QCOMPARE(skipped, QStringList{ QStringLiteral("[Channel1] vu_meter: a light snurra has no state for") });
-		QCOMPARE(bindings.lights().size(), 1);
+		QCOMPARE(bindings.lights().size(), 2);
 		bindings.save();
 	}
 	snurra_dj dj;
@@ -1701,13 +1702,16 @@ void embed_test::a_mappings_lights_show_the_deck_playing() {
 	QVERIFY(snd_seq_connect_to(controller_seq, pad, in->client(), in->port()) >= 0);
 	snurra_tile *a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
 	QVERIFY(a);
-	/* The last velocity the pad was sent for note 0x3B, -1 for none. */
-	int light = -1;
+	/* The last velocity the pad was sent for note 0x3B, -1 for none; and
+	 * for the key lock's 0x3C, whose off sends nothing. */
+	int light = -1, lock = -1;
 	auto read_lights = [&] {
 		snd_seq_event_t *event = nullptr;
 		while (snd_seq_event_input(controller_seq, &event) >= 0 && event)
-			if (event->type == SND_SEQ_EVENT_NOTEON && event->data.note.channel == 0 && event->data.note.note == 0x3b)
-				light = event->data.note.velocity;
+			if (event->type == SND_SEQ_EVENT_NOTEON && event->data.note.channel == 0) {
+				if (event->data.note.note == 0x3b) light = event->data.note.velocity;
+				if (event->data.note.note == 0x3c) lock = event->data.note.velocity;
+			}
 		return light;
 	};
 	a->request_playing(false);
@@ -1725,6 +1729,9 @@ void embed_test::a_mappings_lights_show_the_deck_playing() {
 	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 0x7f, 2000);
 	a->request_playing(false);
 	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 1, 2000);
+	QCOMPARE(lock, -1);   /* key lock off: its light was sent nothing */
+	a->set_key_lock(true);
+	QTRY_COMPARE_WITH_TIMEOUT((read_lights(), lock), 0x7f, 2000);
 }
 
 /*

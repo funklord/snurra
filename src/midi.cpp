@@ -332,7 +332,8 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 			} else if (at && (name == QLatin1String("on") || name == QLatin1String("off"))) {
 				bool ok = false;
 				const int value = reader.readElementText().trimmed().toInt(&ok, 0);
-				if (ok) (name == QLatin1String("on") ? at->on : at->off) = std::clamp(value, 0, 127);
+				/* An off of 0xFF sends nothing (Mixxx's mapping format). */
+				if (ok) (name == QLatin1String("on") ? at->on : at->off) = value == 0xff ? -1 : std::clamp(value, 0, 127);
 			} else if (at && (name == QLatin1String("minimum") || name == QLatin1String("maximum"))) {
 				bool ok = false;
 				const double value = reader.readElementText().trimmed().toDouble(&ok);
@@ -774,7 +775,7 @@ void snurra_controller::send_lights() {
 		const auto was = m_lit.constFind(i);
 		if (was != m_lit.constEnd() && *was == sent) continue;
 		m_lit[i] = sent;
-		m_midi->send(one.channel, one.note, one.number, sent);
+		if (sent >= 0) m_midi->send(one.channel, one.note, one.number, sent);
 	}
 }
 
