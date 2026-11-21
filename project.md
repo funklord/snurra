@@ -39,9 +39,11 @@ and everything above it knows nothing of SFTP or fuzznet.
   and conducted, a hand taking over, rides and moves written back, a
   deck started by hand, folded back, unpacked into a window; MIDI in with
   learning by Alt-hold, both ends named, each player its own (an
-  emergency mix), 14-bit, browse and load; listeners as plugs on decks
-  and on a window's tiles, several, chosen. The day's new tests passed
-  under ASan and UBSan.
+  emergency mix), 14-bit, browse and load, learning without Alt (the
+  deck view's "learn" button, Ctrl+L in a window -- TDE takes Alt-drag);
+  listeners as plugs on decks and on a window's tiles, several, chosen;
+  a player tile analyses its tracks never analysed. The first day's new
+  tests passed under ASan and UBSan.
 - Earlier the same day: live streams shown as live, an icon, -shuffle,
   -audiofile, --chapters-file, Wayland idle via the portal.
 - The suite takes some 4 to 5 minutes on a quiet machine
