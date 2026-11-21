@@ -185,6 +185,15 @@ void handover_test::tell(const QString &path, const snurra_wire::message &m) {
 	socket.disconnectFromServer();
 }
 
+/* Whether `process` has ended, waiting up to `ms`: waitForFinished() is
+ * false for a process already finished -- noticed by an event loop the
+ * test ran while it polled -- so a process gone before the wait read as
+ * one that stayed (a_window_opens_its_player_in_the_decks, two runs in
+ * eight, 2026-11-21; gdb found no such process). */
+static bool ended(QProcess *process, int ms) {
+	return process->state() == QProcess::NotRunning || process->waitForFinished(ms);
+}
+
 static snurra_wire::message status_request() {
 	snurra_wire::message m;
 	m.type = snurra_wire::STATUS;
@@ -259,7 +268,7 @@ void handover_test::only_the_first_opens_with_controls_and_plays() {
 	merge.type = snurra_wire::MERGE_INTO;
 	merge.path = socket_of(a);
 	tell(socket_of(b), merge);
-	QVERIFY(b->waitForFinished(5000));
+	QVERIFY(ended(b, 5000));
 	const QList<snurra_tile_state> both = ask(socket_of(a), status_request()).states;
 	QCOMPARE(both.size(), 2);
 	for (const snurra_tile_state &state : both)
@@ -284,7 +293,7 @@ void handover_test::a_merge_is_taken_before_it_is_let_go() {
 	merge.path = socket_of(b);
 	merge.side = snurra_wire::RIGHT;
 	tell(socket_of(a), merge);
-	QVERIFY2(a->waitForFinished(5000), "the giver did not go once its tile was taken");
+	QVERIFY2(ended(a, 5000), "the giver did not go once its tile was taken");
 
 	const snurra_wire::message after = ask(socket_of(b), status_request());
 	QCOMPARE(after.states.size(), 2);
@@ -521,7 +530,7 @@ void handover_test::a_merge_crosses_over_in_step_without_a_gap() {
 	merge.type = snurra_wire::MERGE_INTO;
 	merge.path = socket_of(b);
 	tell(socket_of(a), merge);
-	QVERIFY2(a->waitForFinished(5000), "the giver did not go once its fade was heard");
+	QVERIFY2(ended(a, 5000), "the giver did not go once its fade was heard");
 	QTest::qWait(500);
 
 	const snurra_wire::message status = ask(socket_of(b), status_request());
@@ -646,12 +655,12 @@ void handover_test::a_merge_between_two_alsa_outputs_is_heard_in_step() {
 	merge.type = snurra_wire::MERGE_INTO;
 	merge.path = socket_of(b);
 	tell(socket_of(a), merge);
-	QVERIFY2(a->waitForFinished(5000), "the giver did not go once its fade was heard");
+	QVERIFY2(ended(a, 5000), "the giver did not go once its fade was heard");
 	QVERIFY2(recorder.waitForFinished(8000), "arecord did not finish");
 	const snurra_wire::message status = ask(socket_of(b), status_request());
 	QCOMPARE(status.states.size(), 2);
 	b->terminate();
-	QVERIFY2(b->waitForFinished(3000), "the taker did not end on SIGTERM");
+	QVERIFY2(ended(b, 3000), "the taker did not end on SIGTERM");
 
 	/* $SNURRA_KEEP_RECORDING: a copy, to look at a run by hand. */
 	if (qEnvironmentVariableIsSet("SNURRA_KEEP_RECORDING"))
@@ -815,7 +824,7 @@ void handover_test::a_tile_dragged_onto_another_window_joins_it() {
 		run({ QStringLiteral("mouseup"), QStringLiteral("1") });
 	}
 
-	QVERIFY2(a->waitForFinished(8000), "the dragged tile's process did not hand it over and go");
+	QVERIFY2(ended(a, 8000), "the dragged tile's process did not hand it over and go");
 	const snurra_wire::message joined = ask(socket_of(b), status_request());
 	QCOMPARE(joined.states.size(), 2);
 	snurra_tile_state moved;
@@ -925,7 +934,7 @@ void handover_test::a_train_plays_its_tiles_in_sequence_crossed_at_equal_power()
 	merge.path = socket_of(a);
 	merge.side = snurra_wire::RIGHT;
 	tell(socket_of(b), merge);
-	QVERIFY2(b->waitForFinished(5000), "B did not join A");
+	QVERIFY2(ended(b, 5000), "B did not join A");
 	QTRY_VERIFY_WITH_TIMEOUT(!ask(socket_of(a), status_request()).states.value(1).playing
 	                                 && ask(socket_of(a), status_request()).states.size() == 2
 	                                 && QFileInfo(capture_dir() + QStringLiteral("/%1.capture").arg(a->processId())).size()
@@ -995,7 +1004,7 @@ void handover_test::a_stack_plays_its_lanes_at_once_from_one_time() {
 	merge.path = socket_of(a);
 	merge.side = snurra_wire::BELOW;
 	tell(socket_of(b), merge);
-	QVERIFY2(b->waitForFinished(5000), "B did not join A");
+	QVERIFY2(ended(b, 5000), "B did not join A");
 	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(a), status_request()).states.size(), 2, 5000);
 	QList<snurra_tile_state> states = ask(socket_of(a), status_request()).states;
 	QCOMPARE(states.at(1).row, 1);
@@ -1078,7 +1087,7 @@ void handover_test::a_stack_finds_its_time_in_a_lane_that_is_a_train() {
 		merge.path = socket_of(a);
 		merge.side = side;
 		tell(socket_of(p), merge);
-		return p->waitForFinished(5000);
+		return ended(p, 5000);
 	};
 	auto control = [&](snurra_wire::type_t type, int index, qint64 time) {
 		snurra_wire::message m;
@@ -1274,10 +1283,9 @@ void handover_test::mplayers_keys_drive_the_tile() {
 	key(QStringLiteral("BackSpace"));
 	QCOMPARE(now().tempo, 1.0f);
 
-	/* waitForFinished() is false for a process already finished, which
-	 * is what a prompt quit is by the time it is asked. */
+	/* A prompt quit has ended by the time it is asked (ended()). */
 	key(QStringLiteral("q"));
-	QVERIFY2(a->state() == QProcess::NotRunning || a->waitForFinished(5000), "q did not quit");
+	QVERIFY2(ended(a, 5000), "q did not quit");
 }
 
 void handover_test::mplayers_options_say_where_and_how_it_plays() {
@@ -1300,10 +1308,10 @@ void handover_test::mplayers_options_say_where_and_how_it_plays() {
 		QCOMPARE(now.level, 50);
 		QVERIFY(qAbs(now.tempo - 1.5f) < 1e-4f);
 		a->terminate();
-		QVERIFY(a->waitForFinished(5000));
+		QVERIFY(ended(a, 5000));
 	}
 	QProcess *bad = start({ QStringLiteral("-ss"), QStringLiteral("soon"), QStringLiteral("a.flac") });
-	QVERIFY(bad->waitForFinished(5000));
+	QVERIFY(ended(bad, 5000));
 	QCOMPARE(bad->exitCode(), 2);
 }
 
@@ -1357,7 +1365,7 @@ void handover_test::a_playlist_is_a_train_of_what_it_names() {
 	}
 	QCOMPARE(train.values(), radio + mix);
 	a->terminate();
-	QVERIFY(a->waitForFinished(5000));
+	QVERIFY(ended(a, 5000));
 }
 
 /*
@@ -1380,7 +1388,7 @@ void handover_test::shuffle_plays_the_files_in_another_order() {
 		QCOMPARE(sorted, given);
 		if (train.values() != given) ++reordered;
 		a->terminate();
-		QVERIFY(a->waitForFinished(5000));
+		QVERIFY(ended(a, 5000));
 	}
 	QVERIFY2(reordered > 0, "-shuffle played the files in the order given, twice");
 }
@@ -1400,7 +1408,7 @@ void handover_test::audiofile_gives_the_first_file_its_sound() {
 		QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 2, 5000);
 		for (const snurra_tile_state &state : states) QCOMPARE(state.sound, state.column == 0 ? sound : QString());
 		a->terminate();
-		QVERIFY(a->waitForFinished(5000));
+		QVERIFY(ended(a, 5000));
 	}
 }
 
@@ -1426,7 +1434,7 @@ void handover_test::a_chapters_file_gives_the_first_file_its_tracklist() {
 	const QList<QPair<qint64, QString>> none;
 	for (const snurra_tile_state &state : states) QCOMPARE(state.chapters, state.column == 0 ? expected : none);
 	a->terminate();
-	QVERIFY(a->waitForFinished(5000));
+	QVERIFY(ended(a, 5000));
 
 	snurra_node node;
 	snurra_tile_state state;
@@ -1558,7 +1566,7 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 		return true;
 	};
 	QTRY_VERIFY_WITH_TIMEOUT(unfolded(), 10000);
-	QVERIFY2(window->waitForFinished(10000), "the window, empty, stayed");
+	QVERIFY2(ended(window, 10000), "the window, empty, stayed");
 }
 
 void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
@@ -1591,7 +1599,7 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	const qint64 expected = given.position_now(moved.sampled_at_us);
 	QVERIFY2(qAbs(moved.position_us - expected) <= 2000,
 	         qPrintable(QStringLiteral("position %1 us, expected %2").arg(moved.position_us).arg(expected)));
-	QVERIFY2(window->waitForFinished(5000), "the window, empty, stayed");
+	QVERIFY2(ended(window, 5000), "the window, empty, stayed");
 
 	/* A whole player: a train of two onto deck A. */
 	QProcess *train = start({ QStringLiteral("a.flac"), QStringLiteral("b.flac") });
@@ -1608,7 +1616,7 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	QCOMPARE(int(player.player.size()), 2);
 	QVERIFY(player.playing);
 	QVERIFY(player.duration_us > 180000000);   /* two stand-ins' length, less their crossing */
-	QVERIFY(train->waitForFinished(5000));
+	QVERIFY(ended(train, 5000));
 
 	/* Deck C out into a window of its own. */
 	snurra_wire::message release;
@@ -1670,7 +1678,7 @@ void handover_test::started_with_nothing_it_plays_nothing() {
 	QCOMPARE(a->state(), QProcess::Running);
 	QCOMPARE(ask(socket_of(a), status_request()).states.size(), 0);
 	a->terminate();
-	QVERIFY(a->waitForFinished(5000));
+	QVERIFY(ended(a, 5000));
 }
 
 QProcess *handover_test::start_process_for_options(const QString &time) {

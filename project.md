@@ -47,7 +47,10 @@ and everything above it knows nothing of SFTP or fuzznet.
 - Earlier the same day: live streams shown as live, an icon, -shuffle,
   -audiofile, --chapters-file, Wayland idle via the portal.
 - The suite takes some 4 to 5 minutes on a quiet machine
-  (`TEST_TIMEOUT` 600 s). Read its exit code, not its FAIL lines. Its
+  (`TEST_TIMEOUT` 600 s). Read its exit code, not its FAIL lines. A
+  test waiting for a snurra process to end by itself uses `ended()`:
+  `waitForFinished()` is false for one already gone, which read as a
+  window that stayed (2026-11-21). Its
   test binary runs one function when named, but QtTest fails every class
   that lacks the name -- read the named class's line. `make check-mk`
   is not part of `make test`; run it after a change to the build lists
