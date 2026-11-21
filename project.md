@@ -2309,6 +2309,19 @@ controls; each tile very compact but resizeable).
   kHz, partway at 125 Hz and still above the bottom at 105 Hz (drawn as
   steps, at the bottom there, it fails); a press sets the band under it
   alone; joined at 125 Hz, four bands; the menu, twelve.
+  **Split by drawing, 2026-11-21** (the holder: "maybe automatically by
+  dragging that part"): a stroke that stays in one band and reaches both
+  sides of its middle crossover of the grid at heights two steps or more
+  apart -- a slope drawn inside one band -- splits the band there, each
+  half the height it was drawn at last; drawing on, a half splits again
+  the same way, down to the grid's twelve. Pulled straight up or down, a
+  band stays whole, and the two-step margin keeps a hand's wobble from
+  splitting one. Bands are joined again by a double-click on their split,
+  or by the menu. Tested in the same test: three bands, a stroke in the
+  mid from 400 Hz flat to 2.5 kHz at +4 dB splits it at 1 kHz, each half
+  as drawn; on from 1.2 kHz to 3.5 kHz at -8 dB it splits at 2 kHz; a
+  band pulled straight up stays one (with the split held back, three
+  bands stay and it fails).
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

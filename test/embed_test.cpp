@@ -2582,7 +2582,8 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
  * at the bottom under the sub, on the middle at 1 kHz, and partway down
  * on the slope at 125 Hz where they cross and just below it, not a step; a press sets the
  * band under it alone; a double-click on a split joins the two bands
- * there, the lower's height taken; the menu splits it into twelve.
+ * there, the lower's height taken; the menu splits it into twelve; and a
+ * slope drawn inside one band splits it.
  */
 void embed_test::the_eq_line_draws_its_slopes_and_splits() {
 	snurra_dj dj;
@@ -2655,6 +2656,36 @@ void embed_test::the_eq_line_draws_its_slopes_and_splits() {
 	QCoreApplication::sendEvent(line, &asked);
 	QCOMPARE(deck->state().eq.bands(), 12);
 	QCOMPARE(deck->state().eq.db[0], SNURRA_EQ_KILL);   /* each band its middle's height */
+
+	/* Drawn into more bands: three, and a stroke inside the mid from
+	 * 400 Hz on the middle to 2.5 kHz at +4 dB splits it at 1 kHz, each
+	 * half as drawn; on inside the upper half, from 1.2 kHz at +4 to 3.5
+	 * kHz at -8, it splits again at 2 kHz. Pulled straight up, a band
+	 * does not split. */
+	deck->set_eq(snurra_eq{});
+	QCOMPARE(deck->state().eq.bands(), 3);
+	auto y_of = [h](int step) { return int(std::lround(2.5 + (12 - step) / 24.0 * (h - 5))); };
+	auto move_to = [line](QPoint to) {
+		QMouseEvent moved(QEvent::MouseMove, to, line->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(line, &moved);
+	};
+	QTest::mousePress(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(600), y_of(0)));
+	move_to(QPoint(x_of(600), y_of(8)));
+	QTest::mouseRelease(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(600), y_of(8)));
+	QCOMPARE(deck->state().eq.bands(), 3);
+	QCOMPARE(deck->state().eq.band_db(1), 4.0f);
+	QTest::mousePress(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(400), y_of(0)));
+	move_to(QPoint(x_of(2500), y_of(8)));
+	QCOMPARE(deck->state().eq.bands(), 4);
+	QCOMPARE(deck->state().eq.band_db(1), 0.0f);   /* 250 Hz to 1 kHz */
+	QCOMPARE(deck->state().eq.band_db(2), 4.0f);   /* 1 to 4 kHz */
+	move_to(QPoint(x_of(1200), y_of(8)));
+	move_to(QPoint(x_of(3500), y_of(-4)));
+	QTest::mouseRelease(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(3500), y_of(-4)));
+	QCOMPARE(deck->state().eq.bands(), 5);
+	QCOMPARE(deck->state().eq.band_db(2), 4.0f);   /* 1 to 2 kHz */
+	QCOMPARE(deck->state().eq.band_db(3), -8.0f);  /* 2 to 4 kHz */
+	QCOMPARE(deck->state().eq.band_db(0), 0.0f);   /* the low untouched */
 }
 
 /*

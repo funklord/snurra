@@ -112,9 +112,13 @@ private:
  *
  * Held, the band under the pointer or finger goes to its height; moved
  * across while held, every band it passes takes the height it passed at,
- * so one stroke draws the whole curve. A double-click puts the band back
- * to 0, or, on a split, joins the two bands there. The wheel steps a
- * band. The context menu splits into 3, 5, 7 or 12 bands.
+ * so one stroke draws the whole curve. Drawn across a band's middle at
+ * two heights -- a slope inside one band -- the band splits there, at the
+ * grid's crossover nearest its middle (eq.h), each half the height it
+ * was drawn at: the line grows the bands the drawing asks for. A
+ * double-click puts the band back to 0, or, on a split, joins the two
+ * bands there. The wheel steps a band. The context menu splits into 3,
+ * 5, 7 or 12 bands.
  */
 class snurra_eq_line : public QWidget {
 public:
@@ -195,7 +199,9 @@ protected:
 		}
 		m_held = true;
 		m_last_band = band_at(event->position().x());
+		m_sides = 0;
 		set(m_last_band, step_at(event->position().y()));
+		note_side(event->position().x(), step_at(event->position().y()));
 		event->accept();
 	}
 	void mouseMoveEvent(QMouseEvent *event) override {
@@ -208,10 +214,12 @@ protected:
 		 * was drawn at. */
 		const int band = band_at(event->position().x());
 		const int to = step_at(event->position().y());
+		if (band != m_last_band) m_sides = 0;
 		const int way = band > m_last_band ? 1 : -1;
 		for (int b = m_last_band + way; band != m_last_band && b != band; b += way) set(b, to);
 		set(band, to);
 		m_last_band = band;
+		note_side(event->position().x(), to);
 		event->accept();
 	}
 	void mouseReleaseEvent(QMouseEvent *event) override {
@@ -284,6 +292,31 @@ private:
 	}
 	int band_at(double x) const {
 		return m_eq.band_of(snurra_eq::fine_at(snurra_eq_hz_at(x / std::max(1, width()))));
+	}
+	/* Within one band, the height drawn last on each side of its middle
+	 * crossover: both reached two steps or more apart, it splits there. */
+	int m_side_step[2] = { 0, 0 };
+	int m_sides = 0;   /* bits: which sides this stroke has drawn in the band */
+	static constexpr int SPLIT_STEPS = 2;
+	int middle_split(int band) const {
+		const int first = m_eq.first_of(band), last = m_eq.last_of(band);
+		return first < last ? (first + last) / 2 : -1;
+	}
+	void note_side(double x, int to) {
+		const int band = m_last_band, middle = middle_split(band);
+		if (middle < 0) return;
+		const int side = snurra_eq::fine_at(snurra_eq_hz_at(x / std::max(1, width()))) > middle ? 1 : 0;
+		m_side_step[side] = std::clamp(to, LOWEST, HIGHEST);
+		m_sides |= 1 << side;
+		if (m_sides != 3 || std::abs(m_side_step[0] - m_side_step[1]) < SPLIT_STEPS) return;
+		m_eq.split(middle, true);
+		m_eq.set_band(band, db_of(m_side_step[0]));
+		m_eq.set_band(band + 1, db_of(m_side_step[1]));
+		remake();
+		m_last_band = band + side;
+		m_sides = 0;
+		update();
+		if (changed) changed();
 	}
 	/* The split within a few pixels of x, or -1. */
 	int split_near(double x) const {
