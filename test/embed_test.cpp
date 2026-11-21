@@ -353,11 +353,21 @@ void embed_test::a_drawer_adds_room_and_leaves_every_waveform_as_it_was() {
 	QVERIFY(drawer->isVisible());
 	for (snurra_tile *tile : { a, b, c }) QCOMPARE(waveform_of(tile)->height(), height);
 	QCOMPARE(top(b), top(a));
-	QCOMPARE(drawer->geometry().top(), a->geometry().bottom() + 1);
+	/* The window's one panel (2026-11-21): under every lane, as wide as
+	 * the lanes, the lanes left where they were. */
+	QCOMPARE(drawer->geometry().top(), c->geometry().bottom() + 1);
 	QCOMPARE(drawer->geometry().left(), a->geometry().left());
-	QCOMPARE(drawer->width(), a->width());
-	QCOMPARE(top(c) - c_top, drawer->height());
+	QCOMPARE(drawer->geometry().right(), b->geometry().right());
+	QCOMPARE(top(c), c_top);
 	QCOMPARE(node.height() - window, drawer->height());
+	/* Touched, another tile takes the panel: one, never two. */
+	QTest::mouseClick(waveform_of(c), Qt::LeftButton, Qt::NoModifier, QPoint(4, 4));
+	QTRY_VERIFY_WITH_TIMEOUT(c->controls(), 2000);
+	QVERIFY(!a->controls() && !b->controls());
+	QTRY_VERIFY_WITH_TIMEOUT(c->drawer_below()->isVisible() && !drawer->isVisible(), 2000);
+	QTRY_COMPARE_WITH_TIMEOUT(c->drawer_below()->geometry().top(), c->geometry().bottom() + 1, 2000);
+	c->set_controls(false);
+	a->set_controls(true);
 
 	a->set_controls(false);
 	QTRY_COMPARE_WITH_TIMEOUT(node.height(), window, 2000);
@@ -373,15 +383,19 @@ void embed_test::the_look_is_drawers_or_square_as_asked() {
 		QVERIFY(node.testAttribute(Qt::WA_TranslucentBackground));
 	}
 	/* Cut to what it holds (the holder, 2026-11-13: no large square
-	 * window): A with its controls drawer open, B beside it with none --
-	 * the corner under B, beside A's drawer, is not the window's; the
-	 * frame between A and B is, to move the window by. */
+	 * window): A and B in a train, C a lane below under A alone, A's
+	 * controls out -- the window's one panel, under every lane -- so the
+	 * corner under B, beside C, is not the window's; the frame between A
+	 * and B is, to move the window by. */
 	{
 		snurra_node node;
 		snurra_tile_state a = placed(QStringLiteral("a"), 0, 0);
 		a.controls = true;
 		snurra_tile *first = node.add_tile(a);
 		snurra_tile *second = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+		snurra_tile_state c = placed(QStringLiteral("c"), 1, 0);
+		c.duration_us = 1000000;   /* short: under A's start alone */
+		snurra_tile *third = node.add_tile(c);
 		node.show();
 		QVERIFY(QTest::qWaitForWindowExposed(&node));
 		QWidget *drawer = first->drawer_below();
@@ -394,7 +408,7 @@ void embed_test::the_look_is_drawers_or_square_as_asked() {
 		QVERIFY(shape.contains(drawer->geometry().center()));
 		const QPoint between((first->geometry().right() + second->geometry().left()) / 2, first->geometry().center().y());
 		QVERIFY2(shape.contains(between), "the frame between the tiles is cut away");
-		const QPoint corner(second->geometry().center().x(), drawer->geometry().center().y());
+		const QPoint corner(second->geometry().center().x(), third->geometry().center().y());
 		QVERIFY2(!shape.contains(corner), "the empty corner under B is still the window's");
 	}
 	qputenv("SNURRA_LAYOUT", "square");

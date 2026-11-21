@@ -362,6 +362,13 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
 	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) {
 		m_current = touched;
+		/* The panel follows the hand: out, it moves to the tile touched. */
+		if (!touched->controls())
+			for (snurra_tile *other : m_tiles)
+				if (other->controls()) {
+					touched->set_controls(true);
+					break;
+				}
 		show_bar();
 	});
 	tile->set_grouped(true);
@@ -377,8 +384,19 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	 * shows: the train goes on. */
 	connect(tile, &snurra_tile::files_dropped, this,
 	        [this](const QStringList &files) { add_files(files, snurra_wire::RIGHT); });
-	connect(tile, &snurra_tile::controls_changed, this, [this] {
+	connect(tile, &snurra_tile::controls_changed, this, [this](snurra_tile *changed) {
+		if (m_moving_panel) return;
+		/* One panel (the holder, 2026-11-21: "Each player only has one
+		 * control panel"): out on this tile, in on every other. */
+		m_moving_panel = true;
+		if (changed->controls())
+			for (snurra_tile *other : m_tiles)
+				if (other != changed && other->controls()) other->set_controls(false);
+		m_moving_panel = false;
 		show_bar();
+		setUpdatesEnabled(false);
+		lay_out_timeline();
+		setUpdatesEnabled(true);
 		/* What plays is what can be stopped (sec 3c): with no controls
 		 * out anywhere, the group stops. */
 		fit_to_drawers();
@@ -419,6 +437,15 @@ void snurra_node::place_tiles() {
 	 * closed takes no room. Spare height goes below the last lane. */
 	setUpdatesEnabled(false);
 	for (snurra_tile *tile : m_tiles) tile->set_place(rows.value(tile->row()), columns.value(tile->column()));
+	/* One panel: tiles joined with their controls out keep them out on
+	 * one -- the one last touched, else the first. */
+	m_moving_panel = true;
+	snurra_tile *keep = nullptr;
+	for (snurra_tile *tile : ordered())
+		if (tile->controls() && (!keep || tile == m_current)) keep = tile;
+	for (snurra_tile *tile : m_tiles)
+		if (tile != keep && tile->controls()) tile->set_controls(false);
+	m_moving_panel = false;
 	lay_out_timeline();
 	setUpdatesEnabled(true);
 	/* As wide as it was, or as the tiles ask -- a few lines a tile -- and
@@ -562,11 +589,21 @@ void snurra_node::lay_out_timeline() {
 	 * the whole timeline at it. */
 	double per_frame = 0;
 	for (const span_t &span : spans) {
-		const int least = std::max({ span.tile->minimumSizeHint().width(), span.tile->drawer_above()->isVisible() ? span.tile->drawer_above()->minimumSizeHint().width() : 0,
-		                             span.tile->drawer_below()->isVisible() ? span.tile->drawer_below()->minimumSizeHint().width() : 0 });
+		const int least = std::max(span.tile->minimumSizeHint().width(), span.tile->drawer_above()->isVisible() ? span.tile->drawer_above()->minimumSizeHint().width() : 0);
 		per_frame = std::max(per_frame, double(least) / double(span.to - span.from));
 	}
 	m_timeline_wanted = edges.size() > 1 ? int(std::ceil(per_frame * double(edges.back() - edges.front()))) : 0;
+	/*
+	 * The window's one control panel (the holder, 2026-11-21: "Each
+	 * player only has one control panel and once a tile is connected to
+	 * it, it becomes a part of that player"): the controls of the tile
+	 * they are out on, under every lane and the window's width -- not a
+	 * drawer under that tile's own span.
+	 */
+	snurra_tile *panel = nullptr;
+	for (const span_t &span : spans)
+		if (!panel && span.tile->controls()) panel = span.tile;
+	if (panel) m_timeline_wanted = std::max(m_timeline_wanted, panel->drawer_below()->minimumSizeHint().width());
 	auto column_of = [&edges](int64_t at) { return int(std::lower_bound(edges.begin(), edges.end(), at) - edges.begin()); };
 	for (const span_t &span : spans) {
 		m_grid->removeWidget(span.tile);
@@ -584,10 +621,11 @@ void snurra_node::lay_out_timeline() {
 		const int across = std::max(1, column_of(span.to) - column);
 		m_grid->addWidget(span.tile->drawer_above(), lane, column, 1, across);
 		m_grid->addWidget(span.tile, lane + 1, column, 1, across);
-		m_grid->addWidget(span.tile->drawer_below(), lane + 2, column, 1, across);
 		span.tile->show();
 	}
-	m_grid->setRowStretch(3 * int(rows().size()), 1);
+	const int lanes = int(rows().size());
+	if (panel) m_grid->addWidget(panel->drawer_below(), 3 * lanes, 0, 1, std::max(1, int(edges.size()) - 1));
+	m_grid->setRowStretch(3 * lanes + 1, 1);
 }
 
 /* A length known, a tempo moved, beats found, a lane's begin set: laid

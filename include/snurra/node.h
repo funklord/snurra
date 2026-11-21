@@ -176,6 +176,7 @@ private:
 	QLabel *m_bar_title = nullptr;
 	QToolButton *m_bar_controls = nullptr;
 	bool m_bar_held = false;
+	bool m_moving_panel = false;   /* the panel being moved between tiles */
 	QPoint m_bar_press;
 	QPoint m_bar_window_from;
 	void show_bar();

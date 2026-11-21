@@ -897,6 +897,19 @@ they asked for.
 - A handover carries whether a tile's controls are out.
 - Effects and configuration are to follow the same rule when they come:
   pulled out from the tile they apply to, never shown by default.
+- **One panel to a window** (the holder, 2026-11-21: "Each player only
+  has one control panel and once a tile is connected to it, it becomes a
+  part of that player"): in a window the controls are out on one tile at
+  most, shown under every lane and as wide as the lanes -- not a drawer
+  under that tile's own span. A press on another tile moves them there;
+  tiles joined with their controls out keep them out on one, the tile
+  last touched, else the first. The bar's handle pulls them out and in
+  (sec 3b), and pushed in, the group stops, as before. A tile pulled out
+  into a window of its own carries its controls as it had them. Tested in
+  `a_drawer_adds_room_and_leaves_every_waveform_as_it_was` (under the
+  last lane, the width of the lanes, the lanes left where they were;
+  touched, another tile takes them, never two -- with two allowed, it
+  fails).
 
 ## 3d. A marker for where a drag lands
 
