@@ -56,7 +56,8 @@ and everything above it knows nothing of SFTP or fuzznet.
   compositor (weston), the AcoustID key, the phone (install, a node of
   its own, the fold cover, Android's FFmpeg), moving a joined window, the
   cross-process drop's entry point, an About window's place, a deck's
-  hand gain (Mixxx's pregain, sec 3f), and qtkit's remote (sec 3).
+  hand gain (Mixxx's pregain, sec 3f), what the phone's deck view cuts
+  (sec 3f step 3), and qtkit's remote (sec 3).
 
 ## 2. Decided
 
@@ -1228,7 +1229,15 @@ alike.
    player taken out inside a crossfade has both its tracks playing full
    until the overlap ends (the train's fades are started by the window
    only for a next it starts itself). **Not yet:** the deck view's own
-   look at four decks on a small screen.
+   look at four decks on a small screen. Measured 2026-11-21 offscreen at
+   412 x 892 (a phone upright): the width fits -- two decks to a row, the
+   view's minimum 338 wide -- but each loaded deck is given 286 px of the
+   301 its tile needs, cutting its EQ off, and the view's minimum is some
+   800 px tall: more than a phone has under its bars. So the phone's view
+   has to be cut down, not merely laid out; which controls stay is the
+   holder's ("an optimized cut down version"). Best guess: two decks on a
+   phone, each its waveform, play, cue, level and tempo, the EQ and keys
+   behind the deck's pull-out, the browser a tab of its own.
 4. A train unfolded onto the decks, its automation driving them, a hand
    taking over. **Built 2026-11-20** (`snurra_dj::unfold`, the deck's
    "Unfold across the decks"): a deck holding a whole player spreads it
@@ -1272,6 +1281,15 @@ alike.
    50 while playing: the envelope ends its ride at half, then 1 as it
    was, the fader back at 100; not written, it fails). **Not yet:** a
    crossfade done by hand on the channel faders becoming the overlap.
+   What is written already (2026-11-21 reading): the incoming track's
+   start, when the hand starts it (`start_now`), and both faders' rides
+   in the envelopes. What is not: an outgoing track faded to nothing
+   before its end keeps its silent tail, so the overlap stays as long as
+   the track. Whether that tail is cut -- the track's end moved to where
+   the hand let it fall silent, shortening the overlap -- or kept as the
+   envelope's silence is the holder's: one edits the track, the other
+   only its level. Best guess: cut, since a train's overlap is what the
+   person hears crossing.
    **A deck started by hand, 2026-11-20** (`snurra_dj::start_now`;
    Shift with a cued deck's play): the track cued there comes in now
    from its start, and where it follows another and the train can say
