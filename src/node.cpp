@@ -1361,12 +1361,8 @@ void snurra_node::leave_if_empty() {
 	hide();
 	if (m_stays_open) return;
 	/* After the event loop has written what is queued: a COMMIT must
-	 * reach the taker before this process goes. exit(), not quit(): in Qt
-	 * 6 quit() asks every window to close first and is dropped if one
-	 * will not, and a window emptied into the decks stayed, empty, two
-	 * times in five (a_window_opens_its_player_in_the_decks; 7 of 7 with
-	 * exit). A process with nothing in it has nothing to ask. */
-	QTimer::singleShot(0, this, [] { QCoreApplication::exit(0); });
+	 * reach the taker before this process goes. */
+	QTimer::singleShot(0, this, [] { QCoreApplication::quit(); });
 }
 
 /* ---- giving ------------------------------------------------------------ */
@@ -1523,12 +1519,12 @@ void snurra_node::adopt(const QString &from, const QString &token, int index, co
 		m.index = index;
 		send(socket, m);
 	});
-	connect(socket, &QLocalSocket::errorOccurred, this, [] { QCoreApplication::exit(0); });
+	connect(socket, &QLocalSocket::errorOccurred, this, [] { QCoreApplication::quit(); });
 	socket->connectToServer(from);
 	/* Never a process with nothing in it for long: a giver that has gone
 	 * or refused leaves this one to end. */
 	QTimer::singleShot(ADOPT_WAIT_MS + 2000, this, [this] {
-		if (m_tiles.isEmpty()) QCoreApplication::exit(0);
+		if (m_tiles.isEmpty()) QCoreApplication::quit();
 	});
 }
 
