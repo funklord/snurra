@@ -6,6 +6,9 @@
  * plays, holds where the bytes stop and goes on when they come, and closing
  * it leaves no deck behind in the engine, whichever goes first.
  */
+#include <QMenu>
+#include <QTimer>
+#include <QApplication>
 #include <QDial>
 #include <QMimeData>
 #include <QHeaderView>
@@ -104,6 +107,7 @@ private slots:
 	void a_deck_started_by_hand_is_where_its_track_comes_in();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
+	void the_eq_line_draws_its_slopes_and_splits();
 	void a_beat_found_once_is_kept_and_shown();
 	void the_library_finds_tempos_only_when_asked();
 	void the_library_shows_each_tunes_key();
@@ -2570,6 +2574,87 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QCOMPARE(back.eq.part_db(0), SNURRA_EQ_KILL);
 	QTest::mouseDClick(eq, Qt::LeftButton, Qt::NoModifier, at(0, 0));
 	QCOMPARE(deck->state().eq.part_db(0), 0.0f);
+}
+
+/*
+ * The EQ line split (project.md sec 4, The EQ): five bands set on the
+ * tile, the sub killed, are drawn as the isolator does them -- the line
+ * at the bottom under the sub, on the middle at 1 kHz, and partway down
+ * on the slope at 125 Hz where they cross and just below it, not a step; a press sets the
+ * band under it alone; a double-click on a split joins the two bands
+ * there, the lower's height taken; the menu splits it into twelve.
+ */
+void embed_test::the_eq_line_draws_its_slopes_and_splits() {
+	snurra_dj dj;
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(deck);
+	QWidget *line = deck->findChild<QWidget *>(QStringLiteral("snurra-eq"));
+	QVERIFY(line && line->width() > 100);
+	snurra_eq five;
+	five.set_layout(snurra_eq::FIVE);
+	five.set_band(0, SNURRA_EQ_KILL);
+	deck->set_eq(five);
+	QCOMPARE(deck->state().eq.bands(), 5);
+	const int w = line->width(), h = line->height();
+	auto x_of = [w](double hz) { return int(std::lround(snurra_eq_fraction_of(hz) * w)); };
+	/* Where the line is drawn in a column: the rows in the highlight's
+	 * colour, averaged; -1 for none. */
+	const QImage drawn = line->grab().toImage();
+	const QColor ink = line->palette().color(QPalette::Highlight);
+	auto row_at = [&](int x) {
+		double rows = 0;
+		int found = 0;
+		const qreal ratio = drawn.devicePixelRatio();
+		for (int y = 0; y < drawn.height(); ++y) {
+			const QColor at = drawn.pixelColor(int(x * ratio), y);
+			if (std::abs(at.red() - ink.red()) + std::abs(at.green() - ink.green()) + std::abs(at.blue() - ink.blue()) < 60) {
+				rows += y / ratio;
+				++found;
+			}
+		}
+		return found ? rows / found : -1.0;
+	};
+	const double sub = row_at(x_of(45)), crossing = row_at(x_of(125)), flat = row_at(x_of(1000));
+	qInfo("the line at 45 Hz row %.1f, at 125 Hz %.1f, at 1 kHz %.1f, of %d", sub, crossing, flat, h);
+	QVERIFY2(sub > h * 0.85, "the killed sub not drawn at the bottom");
+	QVERIFY2(std::abs(flat - h / 2.0) < h * 0.1, "the flat band not drawn on the middle");
+	QVERIFY2(crossing > flat + h * 0.05 && crossing < sub - h * 0.05, "no slope where the bands cross");
+	/* Inside the sub, a sixth of an octave from its split: a step would
+	 * be at the bottom already, the crossover's slope is not yet. */
+	const double near = row_at(x_of(105));
+	qInfo("at 105 Hz row %.1f", near);
+	QVERIFY2(near < sub - h * 0.1, "drawn as a step, not the crossover's slope");
+
+	/* A press at the top of the band from 125 to 250 Hz: that band +6
+	 * dB, the sub still killed, the mid still flat. */
+	QTest::mousePress(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(175), 3));
+	QTest::mouseRelease(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(175), 3));
+	QCOMPARE(deck->state().eq.band_db(1), 6.0f);
+	QCOMPARE(deck->state().eq.band_db(0), SNURRA_EQ_KILL);
+	QCOMPARE(deck->state().eq.band_db(2), 0.0f);
+	/* Joined at 125 Hz: four bands, the joined one killed as the sub was. */
+	QTest::mouseDClick(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(125), h / 2));
+	QCOMPARE(deck->state().eq.bands(), 4);
+	QCOMPARE(deck->state().eq.band_db(0), SNURRA_EQ_KILL);
+	QCOMPARE(deck->state().eq.db[3], SNURRA_EQ_KILL);   /* up to 250 Hz */
+	/* The menu: twelve bands. */
+	QTimer::singleShot(200, [] {
+		QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+		if (!menu) return;
+		for (QAction *action : menu->actions())
+			if (action->text().startsWith(QLatin1String("12"))) action->trigger();
+		menu->close();
+	});
+	QContextMenuEvent asked(QContextMenuEvent::Mouse, QPoint(w / 2, h / 2), line->mapToGlobal(QPoint(w / 2, h / 2)));
+	QCoreApplication::sendEvent(line, &asked);
+	QCOMPARE(deck->state().eq.bands(), 12);
+	QCOMPARE(deck->state().eq.db[0], SNURRA_EQ_KILL);   /* each band its middle's height */
 }
 
 /*

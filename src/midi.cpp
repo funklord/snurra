@@ -17,6 +17,7 @@
 #include <algorithm>
 
 #include "snurra/clock.h"
+#include "snurra/eq.h"
 
 #if SNURRA_ALSA
 #include <alsa/asoundlib.h>
@@ -791,10 +792,12 @@ void snurra_controller::name_widget(QWidget *widget, const QString &control) {
 			        if (event->type() == QEvent::MouseButtonPress
 			            && (m_learn_mode || (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier))) {
 				        QString control = name;
-				        /* An EQ is one line over three bands: the band under the hand. */
+				        /* An EQ is one line over its bands: a DJ's low, mid or
+				         * high, by the frequency under the hand (eq.h). */
 				        if (control.endsWith(QLatin1String("_eq"))) {
-					        const int third = int(3 * static_cast<QMouseEvent *>(event)->position().x() / std::max(1, widget->width()));
-					        control += third <= 0 ? QStringLiteral("_low") : third == 1 ? QStringLiteral("_mid") : QStringLiteral("_high");
+					        const double hz = snurra_eq_hz_at(static_cast<QMouseEvent *>(event)->position().x() / std::max(1, widget->width()));
+					        const int part = snurra_eq::part_of(snurra_eq::fine_at(hz));
+					        control += part == 0 ? QStringLiteral("_low") : part == 1 ? QStringLiteral("_mid") : QStringLiteral("_high");
 				        }
 				        start(control);
 				        return true;   /* a learn, not a use of the control */

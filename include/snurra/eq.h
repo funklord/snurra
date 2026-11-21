@@ -4,6 +4,7 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <cmath>
 
 /* A band's dB for none of it: below everything, a kill (deck.h). */
 constexpr float SNURRA_EQ_KILL = -1000.0f;
@@ -20,6 +21,16 @@ constexpr int SNURRA_EQ_BANDS = 12;
  * (bits 3 and 7), and each count offered nests the one before.
  */
 constexpr float SNURRA_EQ_CROSSOVERS[SNURRA_EQ_BANDS - 1] = { 32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000 };
+
+/* The EQ's line runs 20 Hz to 20 kHz, octaves evenly: where a frequency
+ * is across it, from 0 to 1, and back. A controller learned on the line
+ * takes the part under the hand by the same reckoning. */
+inline double snurra_eq_fraction_of(double hz) {
+	return std::clamp(std::log(hz / 20.0) / std::log(1000.0), 0.0, 1.0);
+}
+inline double snurra_eq_hz_at(double fraction) {
+	return 20.0 * std::pow(1000.0, std::clamp(fraction, 0.0, 1.0));
+}
 
 struct snurra_eq {
 	static constexpr quint16 THREE = (1u << 3) | (1u << 7);
@@ -85,6 +96,12 @@ struct snurra_eq {
 	 * to 4 kHz, high above -- each layout's bands in that part moved
 	 * together. 0, 1, 2. */
 	static int part_of(int fine) { return fine < 4 ? 0 : fine < 8 ? 1 : 2; }
+	/* The narrowest band a frequency is in. */
+	static int fine_at(double hz) {
+		int fine = 0;
+		while (fine < SNURRA_EQ_BANDS - 1 && hz >= SNURRA_EQ_CROSSOVERS[fine]) ++fine;
+		return fine;
+	}
 	void set_part(int part, float value) {
 		for (int band = 0; band < bands(); ++band)
 			if (part_of(first_of(band)) == part) set_band(band, value);

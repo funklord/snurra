@@ -2291,6 +2291,24 @@ controls; each tile very compact but resizeable).
   each tone measured within 0.1 dB of the isolator's computed response
   (`snurra_isolator::response`, what the line will draw). Without the
   allpass between splits, 40 Hz comes out 3 dB down and it fails.
+  **The line shows the slopes, 2026-11-21:** it draws what the isolator
+  does to each frequency, 20 Hz to 20 kHz in octaves, from the isolator's
+  own sections (`response`, a point every two pixels) -- so the slopes
+  between bands are the crossovers', a killed band a notch as wide as it
+  sounds, and a narrow band set low dips less than its setting, as it is
+  heard. dB to height as the steps were (0.5 dB up, 2 dB down to -22),
+  the last step stretched to -60 where the kill sits; a faint line at
+  each split; lo, mid and hi named only at three bands. The bands are
+  found by frequency under the pointer, as a controller learned on the
+  line takes its low, mid or high (`snurra_eq_hz_at`). A double-click on
+  a split joins the two bands there, the lower's height taken; the
+  context menu splits into 3, 5, 7 or 12 bands, each new band taking the
+  height its middle had. Tested in
+  `the_eq_line_draws_its_slopes_and_splits` from the pixels: five bands,
+  the sub killed, the line at the bottom at 45 Hz, on the middle at 1
+  kHz, partway at 125 Hz and still above the bottom at 105 Hz (drawn as
+  steps, at the bottom there, it fails); a press sets the band under it
+  alone; joined at 125 Hz, four bands; the menu, twelve.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
