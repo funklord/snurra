@@ -10,6 +10,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QVariant>
 #include <QPixmap>
 #include <QContextMenuEvent>
 #include <QGridLayout>
@@ -125,6 +126,117 @@ static bool look_with_drawers() {
 	return platform == QLatin1String("wayland") || platform == QLatin1String("xcb");
 }
 
+/*
+ * The beats and bars along the top of a window's lanes (the holder,
+ * 2026-11-21: "a timeline at the top, below the top bar with
+ * beats/bars"): drawn on the lanes' own scale -- each tile's span of the
+ * timeline where the tile is -- from the first track's beat at its tempo,
+ * a tick a beat, a longer one and its number a bar of four; where no beat
+ * is known, seconds. A mark where the window is in its timeline. What it
+ * draws it is asked for at each paint (`fill`), so it is never stale.
+ */
+class snurra_ruler : public QWidget {
+public:
+	struct segment {
+		int64_t from, to;    /* timeline frames */
+		double left, right;  /* where, across this widget */
+	};
+	std::vector<segment> segments;
+	double period = 0;   /* timeline frames a beat; 0: no beat */
+	double first = 0;    /* a beat's timeline frame: bar 1's first */
+	int rate = 48000;
+	int64_t now = -1;
+	std::function<void(snurra_ruler &)> fill;
+
+	explicit snurra_ruler(QWidget *parent) : QWidget(parent) {
+		setObjectName(QStringLiteral("snurra-ruler"));
+		QFont small = font();
+		small.setPointSizeF(small.pointSizeF() * 0.8);
+		setFont(small);
+		setFixedHeight(fontMetrics().height() + 4);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		setAttribute(Qt::WA_StyledBackground);
+		setStyleSheet(QStringLiteral("#snurra-ruler { background: palette(window); }"));
+	}
+	/* Across, where timeline frame `at` is; -1 off every tile. */
+	double x_of(double at) const {
+		for (const segment &one : segments)
+			if (at >= double(one.from) && at <= double(one.to) && one.to > one.from)
+				return one.left + (at - double(one.from)) / double(one.to - one.from) * (one.right - one.left);
+		return -1;
+	}
+
+protected:
+	void paintEvent(QPaintEvent *event) override {
+		QWidget::paintEvent(event);
+		segments.clear();
+		period = 0;
+		now = -1;
+		if (fill) fill(*this);
+		if (segments.empty()) return;
+		int64_t from = segments.front().from, to = segments.front().to;
+		for (const segment &one : segments) {
+			from = std::min(from, one.from);
+			to = std::max(to, one.to);
+		}
+		QPainter painter(this);
+		QColor ink = palette().color(QPalette::WindowText);
+		QColor faint = ink;
+		faint.setAlphaF(0.45f);
+		const int h = height();
+		const QFontMetrics metrics = fontMetrics();
+		QVariantList bars;
+		double free_from = -1e9;
+		auto mark = [&](double x, bool long_one, const QString &said) {
+			painter.setPen(long_one ? ink : faint);
+			painter.drawLine(QPointF(x, long_one ? 0 : h * 0.6), QPointF(x, h));
+			if (said.isEmpty() || x < free_from) return;
+			painter.drawText(QPointF(x + 2, metrics.ascent() + 1), said);
+			free_from = x + metrics.horizontalAdvance(said) + 6;
+		};
+		if (period > 0) {
+			const double pixels = (x_of(double(to)) - x_of(double(from))) / std::max(1.0, double(to - from)) * period;
+			const int each = pixels >= 3 ? 1 : 4;   /* beats too close: bars only */
+			const int64_t k0 = int64_t(std::ceil((double(from) - first) / period));
+			const int64_t k1 = int64_t(std::floor((double(to) - first) / period));
+			for (int64_t k = k0; k <= k1 && k - k0 < 20000; ++k) {
+				const bool bar = ((k % 4) + 4) % 4 == 0;
+				if (!bar && (k % each) != 0) continue;
+				const double x = x_of(first + double(k) * period);
+				if (x < 0) continue;
+				if (bar) bars << x;
+				mark(x, bar, bar ? QString::number(k / 4 + (k >= 0 ? 1 : 0)) : QString());
+			}
+		} else {
+			const double pixels = (x_of(double(to)) - x_of(double(from))) / std::max(1.0, double(to - from)) * rate;
+			int step = 1;
+			for (int s : { 1, 5, 10, 30, 60, 300 })
+				if (pixels * s >= 8) {
+					step = s;
+					break;
+				}
+			const int said_each = step * (pixels * step >= metrics.horizontalAdvance(QStringLiteral("00:00")) + 6 ? 1 : 6);
+			for (int64_t s = 0; s * rate <= to && s < 100000; s += step) {
+				const double x = x_of(double(s * rate));
+				if (x < 0) continue;
+				const bool said = s % said_each == 0;
+				mark(x, said, said ? QStringLiteral("%1:%2").arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')) : QString());
+			}
+		}
+		setProperty("bars", bars);
+		if (now >= 0) {
+			const double x = x_of(double(now));
+			if (x >= 0) {
+				painter.setRenderHint(QPainter::Antialiasing);
+				painter.setPen(Qt::NoPen);
+				painter.setBrush(palette().color(QPalette::Highlight));
+				const double r = h * 0.35;
+				painter.drawPolygon(QPolygonF({ QPointF(x - r, h - r * 1.6), QPointF(x + r, h - r * 1.6), QPointF(x, h) }));
+			}
+		}
+	}
+};
+
 snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	m_drawers_look = look_with_drawers();
 	if (m_drawers_look && see_through()) setAttribute(Qt::WA_TranslucentBackground);
@@ -196,6 +308,10 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	bar->addWidget(close);
 	for (QWidget *child : m_bar->findChildren<QWidget *>()) child->setFocusPolicy(Qt::NoFocus);
 	outer->addWidget(m_bar);
+	snurra_ruler *bars = new snurra_ruler(this);
+	bars->fill = [this](snurra_ruler &made) { fill_ruler(made); };
+	m_ruler = bars;
+	outer->addWidget(m_ruler);
 	m_grid = new QGridLayout;
 	m_grid->setHorizontalSpacing(2);
 	m_grid->setVerticalSpacing(0);   /* drawers meet their tiles */
@@ -627,6 +743,7 @@ void snurra_node::lay_out_timeline() {
 	const int lanes = int(rows().size());
 	if (panel) m_grid->addWidget(panel->drawer_below(), 3 * lanes, 0, 1, std::max(1, int(edges.size()) - 1));
 	m_grid->setRowStretch(3 * lanes + 1, 1);
+	if (m_ruler) m_ruler->update();
 }
 
 /* A length known, a tempo moved, beats found, a lane's begin set: laid
@@ -749,6 +866,7 @@ void snurra_node::reshape() {
 			if (part && part->isVisible()) shape += part->geometry().adjusted(-2, -2, 2, 2);
 		};
 		add(m_bar);
+		add(m_ruler);
 		for (snurra_tile *tile : m_tiles) {
 			add(tile);
 			add(tile->drawer_above());
@@ -818,6 +936,12 @@ int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
 }
 
 void snurra_node::run_trains() {
+	if (m_ruler)
+		for (snurra_tile *tile : m_tiles)
+			if (tile->playing()) {
+				m_ruler->update();
+				break;
+			}
 	const qint64 now = snurra_clock_us();
 	constexpr qint64 LEAD_US = 1500000;   /* for the next one's reader to be ahead */
 
@@ -1913,6 +2037,40 @@ int snurra_node::new_lane_at(const QPoint &local, snurra_tile *moving, snurra_ti
 /* The preview of a new lane: the tile, faint, where it would sound -- at
  * the same moment, so across where it is now -- on the line between the
  * lanes it would come between, and that line drawn. */
+/* What the ruler draws: each tile's span of the timeline where the tile
+ * is, as lay_out_timeline spread them; the first track's beat on the
+ * timeline -- its grid at its tempo, from where it comes in, less its
+ * offset; and where the window is now. */
+void snurra_node::fill_ruler(snurra_ruler &made) const {
+	made.rate = m_engine->rate();
+	for (int row : rows()) {
+		const QList<snurra_tile *> tiles = lane(row);
+		for (int i = 0; i < tiles.size(); ++i) {
+			snurra_tile *tile = tiles.at(i);
+			const int64_t from = lane_start(tile);
+			const int64_t to = i + 1 < tiles.size() ? lane_start(tiles.at(i + 1)) : from + timeline_length(tile);
+			const double left = tile->x() - made.x();
+			made.segments.push_back({ from, std::max(to, from + 1), left, left + tile->width() });
+		}
+	}
+	const QList<snurra_tile *> all = ordered();
+	if (all.isEmpty()) return;
+	snurra_tile *leader = all.first();
+	const snurra_beat_grid grid = leader->beats();
+	if (grid.valid() && grid.rate > 0) {
+		const double scale = double(m_engine->rate()) / grid.rate;
+		const double tempo = std::max(0.01, double(leader->deck()->tempo()));
+		const double offset = double(snurra_us_to_frames(leader->offset_us(), m_engine->rate()));
+		made.period = grid.period * scale / tempo;
+		made.first = double(lane_start(leader)) + (grid.first * scale - offset) / tempo;
+	}
+	for (snurra_tile *tile : m_tiles)
+		if (tile->playing()) {
+			made.now = group_time(tile);
+			break;
+		}
+}
+
 void snurra_node::show_ghost(snurra_tile *moving, int row) {
 	if (!moving || row < 0) {
 		if (m_ghost) m_ghost->hide();

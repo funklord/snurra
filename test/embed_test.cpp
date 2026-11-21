@@ -71,6 +71,7 @@ private slots:
 	void an_envelope_is_drawn_on_the_waveform();
 	void a_handover_carries_the_envelope();
 	void a_tile_dragged_below_another_is_a_lane_of_its_own();
+	void a_ruler_marks_the_bars_on_the_lanes_scale();
 	void a_window_has_one_bar_for_its_tiles();
 	void a_drawer_adds_room_and_leaves_every_waveform_as_it_was();
 	void the_look_is_drawers_or_square_as_asked();
@@ -327,6 +328,37 @@ void embed_test::a_tile_dragged_below_another_is_a_lane_of_its_own() {
 	/* It comes in where it did: after a, as the train had it. */
 	QVERIFY2(b->state().lane_start_us > came_in, qPrintable(QString::number(b->state().lane_start_us)));
 	QVERIFY(b->state().lane_start_us >= 2000000);
+}
+
+/*
+ * The beats and bars along the top (the holder, 2026-11-21): under the
+ * bar, over the lanes, on the lanes' own scale -- a 4 s track at 120 BPM
+ * is two bars, so its bars lie half its width apart, the first where it
+ * begins.
+ */
+void embed_test::a_ruler_marks_the_bars_on_the_lanes_scale() {
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_beat_grid grid;
+	grid.rate = 48000;
+	grid.period = 24000;   /* 120 BPM */
+	grid.first = 0;
+	a->set_beats(grid);
+	node.resize(600, node.height());
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QWidget *ruler = node.findChild<QWidget *>(QStringLiteral("snurra-ruler"));
+	QWidget *bar = node.findChild<QWidget *>(QStringLiteral("snurra-bar"));
+	QVERIFY(ruler && ruler->isVisible() && bar);
+	QVERIFY(ruler->geometry().top() > bar->geometry().top());
+	QVERIFY(ruler->geometry().bottom() < a->geometry().top());
+	ruler->repaint();
+	const QVariantList bars = ruler->property("bars").toList();
+	QVERIFY2(bars.size() >= 2, qPrintable(QString::number(bars.size())));
+	const double left = a->x() - ruler->x();
+	QVERIFY2(std::abs(bars[0].toDouble() - left) < 1.5, qPrintable(QStringLiteral("%1 against %2").arg(bars[0].toDouble()).arg(left)));
+	const double apart = bars[1].toDouble() - bars[0].toDouble();
+	QVERIFY2(std::abs(apart - a->width() / 2.0) < 2, qPrintable(QStringLiteral("%1 apart, tile %2 wide").arg(apart).arg(a->width())));
 }
 
 void embed_test::a_window_has_one_bar_for_its_tiles() {

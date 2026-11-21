@@ -494,6 +494,20 @@ does the same with a tile's playback:
   where the train had it -- never moved, it fails), and looked at in
   Xvfb. The lane's late begin ("+2:55") is said at the waveform's right
   where its name has the left.
+- **Beats and bars along the top** (the holder, 2026-11-21: "We should
+  probably also put a timeline at the top, below the top bar with
+  beats/bars"): under the bar and over the lanes, a ruler on the lanes'
+  own scale -- each tile's span of the timeline where the tile is, so it
+  reads true however lay_out_timeline spread them. From the first
+  track's beat (its grid at its tempo, from where it comes in, less its
+  offset): a tick a beat, a longer one and its number each bar of four,
+  bars only where beats would crowd; with no beat known, seconds, said
+  as m:ss where there is room. A mark where the window is while it
+  plays. It asks what to draw at each paint, so it is never stale, and
+  is part of the drawers look's shape (left out, it was cut away and
+  looked empty -- seen in Xvfb). Tested in
+  `a_ruler_marks_the_bars_on_the_lanes_scale`: a 4 s track at 120 BPM,
+  its bars half its width apart, the first where it begins.
 - **Started with no file: the music library** (the holder, 2026-11-13:
   started without a file, snurra said it could not play "untitled" and
   played three minutes of silence anyway). It opens a library instead,

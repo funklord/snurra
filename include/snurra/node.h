@@ -13,6 +13,7 @@
 class QGridLayout;
 class QLabel;
 class QToolButton;
+class snurra_ruler;
 class QLocalServer;
 class QLocalSocket;
 class QTimer;
@@ -177,6 +178,9 @@ private:
 	QToolButton *m_bar_controls = nullptr;
 	bool m_bar_held = false;
 	bool m_moving_panel = false;   /* the panel being moved between tiles */
+	/* The beats and bars along the top (sec 3b). */
+	QWidget *m_ruler = nullptr;
+	void fill_ruler(snurra_ruler &made) const;
 	/* A tile dragged into a lane of its own (sec 3b): where, and its
 	 * preview. */
 	int new_lane_at(const QPoint &local, snurra_tile *moving, snurra_tile **over) const;
