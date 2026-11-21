@@ -838,11 +838,12 @@ void handover_test::a_tile_dragged_onto_another_window_joins_it() {
 	};
 
 	/* Dropped on nothing, a tile of a group is pulled out into a process
-	 * of its own -- the same gesture, with no window to land in. */
+	 * of its own -- dragged by its waveform (the window's bar moves the
+	 * window), with no window to land in. */
 	QTest::qWait(300);
 	const QRect group = ask(socket_of(b), where).frame;
-	const QPoint second_title(group.x() + group.width() / 2 + 24, group.y() + 12);
-	drag(second_title, QPoint(200, 650));
+	const QPoint second_waveform(group.x() + group.width() / 2 + 24, group.y() + 55);
+	drag(second_waveform, QPoint(200, 650));
 	QString pulled;
 	QElapsedTimer waited;
 	waited.start();

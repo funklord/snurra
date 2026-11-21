@@ -70,6 +70,7 @@ private slots:
 	void an_engine_gone_first_leaves_the_tile_safe_to_close();
 	void an_envelope_is_drawn_on_the_waveform();
 	void a_handover_carries_the_envelope();
+	void a_window_has_one_bar_for_its_tiles();
 	void a_drawer_adds_room_and_leaves_every_waveform_as_it_was();
 	void the_look_is_drawers_or_square_as_asked();
 	void a_jump_is_the_tracks_step();
@@ -277,6 +278,62 @@ static snurra_tile_state placed(const QString &name, int row, int column) {
  * stay on one line, the drawer sits right under A at A's width, and C --
  * and the window -- move down by just the drawer. Closed, all as before.
  */
+/*
+ * One bar for the window (the holder, 2026-11-21): the tiles' own title
+ * rows are hidden, each named on its waveform instead; the bar names the
+ * tile last touched, its controls' handle pulls the controls out and in,
+ * and its close takes every tile. A click on a waveform seeks when let
+ * go -- a press alone does not, being maybe the start of a drag.
+ */
+void embed_test::a_window_has_one_bar_for_its_tiles() {
+	QTemporaryDir dir;
+	QStringList paths;
+	for (const QString &name : { QStringLiteral("a.wav"), QStringLiteral("b.wav") }) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(48000 * 4));
+		paths << file.fileName();
+	}
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(paths[0], 0, 0));
+	snurra_tile *b = node.add_tile(placed(paths[1], 0, 1));
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QWidget *bar = node.findChild<QWidget *>(QStringLiteral("snurra-bar"));
+	QVERIFY(bar && bar->isVisible());
+	for (snurra_tile *tile : { a, b }) {
+		QLabel *handle = tile->findChild<QLabel *>(QStringLiteral("snurra-handle"));
+		QVERIFY(handle && !handle->isVisible());
+		QVERIFY(bar->geometry().bottom() < tile->geometry().top());
+	}
+	QLabel *said = bar->findChild<QLabel *>(QStringLiteral("snurra-bar-title"));
+	QVERIFY(said);
+	QVERIFY2(said->text().startsWith(a->title()), qPrintable(said->text()));
+
+	QWidget *wave = waveform_of(b);
+	QTRY_VERIFY_WITH_TIMEOUT(b->deck()->length() > 0, 3000);
+	const qint64 before = b->state().position_us;
+	QTest::mousePress(wave, Qt::LeftButton, Qt::NoModifier, QPoint(wave->width() / 2, wave->height() / 2));
+	QVERIFY2(said->text().startsWith(b->title()), qPrintable(said->text()));
+	QCOMPARE(b->state().position_us, before);   /* pressed: not yet */
+	QTest::mouseRelease(wave, Qt::LeftButton, Qt::NoModifier, QPoint(wave->width() / 2, wave->height() / 2));
+	QTRY_VERIFY_WITH_TIMEOUT(b->state().position_us > before + 1000000, 2000);
+
+	QToolButton *controls = bar->findChild<QToolButton *>(QStringLiteral("snurra-bar-controls"));
+	QVERIFY(controls);
+	const bool out = a->controls() || b->controls();
+	QCOMPARE(controls->isChecked(), out);
+	controls->click();
+	QCOMPARE(a->controls() || b->controls(), !out);
+	controls->click();
+	QCOMPARE(a->controls() || b->controls(), out);
+
+	QToolButton *close = bar->findChild<QToolButton *>(QStringLiteral("snurra-bar-close"));
+	QVERIFY(close);
+	close->click();
+	QCOMPARE(node.tile_count(), 0);
+}
+
 void embed_test::a_drawer_adds_room_and_leaves_every_waveform_as_it_was() {
 	snurra_node node;
 	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));

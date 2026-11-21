@@ -12,6 +12,10 @@
 #include <QPixmap>
 #include <QContextMenuEvent>
 #include <QGridLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QStyle>
+#include <QToolButton>
 #include <QMenu>
 #include <QScreen>
 #include <QGuiApplication>
@@ -131,6 +135,66 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	QVBoxLayout *outer = new QVBoxLayout(this);
 	outer->setContentsMargins(2, 2, 2, 2);
 	outer->setSpacing(0);
+	/*
+	 * One bar for the window (the holder, 2026-11-21: "Each player only
+	 * has one control panel ... with a single top bar with all the close
+	 * minimize buttons etc"): what it plays, the controls' handle, the way
+	 * to the decks, minimise and close. Held, it moves the window -- a
+	 * lone tile's as that tile, so it snaps to another as a title did
+	 * (sec 3d); the tiles themselves are dragged by their waveforms.
+	 */
+	m_bar = new QWidget(this);
+	m_bar->setObjectName(QStringLiteral("snurra-bar"));
+	m_bar->setAttribute(Qt::WA_StyledBackground);
+	m_bar->setStyleSheet(QStringLiteral(
+	        "#snurra-bar { background: palette(window); border: 1px solid palette(mid); border-radius: 3px; }"));
+	QHBoxLayout *bar = new QHBoxLayout(m_bar);
+	bar->setContentsMargins(6, 1, 2, 1);
+	bar->setSpacing(2);
+	m_bar_title = new QLabel(QStringLiteral("snurra"), m_bar);
+	m_bar_title->setObjectName(QStringLiteral("snurra-bar-title"));
+	m_bar_title->setCursor(Qt::OpenHandCursor);
+	m_bar_title->setMinimumWidth(1);
+	m_bar_title->installEventFilter(this);
+	bar->addWidget(m_bar_title, 1);
+	m_bar_controls = new QToolButton(m_bar);
+	m_bar_controls->setObjectName(QStringLiteral("snurra-bar-controls"));
+	m_bar_controls->setAutoRaise(true);
+	m_bar_controls->setCheckable(true);
+	m_bar_controls->setArrowType(Qt::DownArrow);
+	m_bar_controls->setAccessibleName(tr("Pull the controls out"));
+	m_bar_controls->setToolTip(m_bar_controls->accessibleName());
+	connect(m_bar_controls, &QToolButton::toggled, this, [this](bool out) {
+		if (out) {
+			if (snurra_tile *tile = panel_tile()) tile->set_controls(true);
+		} else {
+			for (snurra_tile *tile : m_tiles) tile->set_controls(false);
+		}
+	});
+	bar->addWidget(m_bar_controls);
+	QToolButton *decks = new QToolButton(m_bar);
+	decks->setObjectName(QStringLiteral("snurra-bar-decks"));
+	decks->setAutoRaise(true);
+	decks->setText(tr("decks"));
+	decks->setAccessibleName(tr("Open in the decks"));
+	decks->setToolTip(tr("This player onto a DJ's decks, each track on its deck"));
+	connect(decks, &QToolButton::clicked, this, &snurra_node::open_decks);
+	bar->addWidget(decks);
+	QToolButton *minimise = new QToolButton(m_bar);
+	minimise->setAutoRaise(true);
+	minimise->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));
+	minimise->setAccessibleName(tr("Minimise"));
+	connect(minimise, &QToolButton::clicked, this, &QWidget::showMinimized);
+	bar->addWidget(minimise);
+	QToolButton *close = new QToolButton(m_bar);
+	close->setObjectName(QStringLiteral("snurra-bar-close"));
+	close->setAutoRaise(true);
+	close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+	close->setAccessibleName(tr("Close"));
+	connect(close, &QToolButton::clicked, this, &snurra_node::close_all);
+	bar->addWidget(close);
+	for (QWidget *child : m_bar->findChildren<QWidget *>()) child->setFocusPolicy(Qt::NoFocus);
+	outer->addWidget(m_bar);
 	m_grid = new QGridLayout;
 	m_grid->setHorizontalSpacing(2);
 	m_grid->setVerticalSpacing(0);   /* drawers meet their tiles */
@@ -290,12 +354,16 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	start.anchored = held;   /* in step with a giver: only a handover's taker */
 	snurra_tile *tile = new snurra_tile(state, m_engine->add(start), this);
 	tile->take_drawers_out();
+	tile->set_bar_shown(false);
 	name_controls(tile);
 	connect(tile, &snurra_tile::listen_requested, this, [this](snurra_tile *asking, bool on) { listen_at(asking, on); });
 	tile->set_listen_available(!m_peer_listeners.isEmpty());
 	connect(tile, &snurra_tile::handle_moved, this, &snurra_node::handle_moved);
 	connect(tile, &snurra_tile::handle_released, this, &snurra_node::handle_released);
-	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) { m_current = touched; });
+	connect(tile, &snurra_tile::touched, this, [this](snurra_tile *touched) {
+		m_current = touched;
+		show_bar();
+	});
 	tile->set_grouped(true);
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
 	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
@@ -310,6 +378,7 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	connect(tile, &snurra_tile::files_dropped, this,
 	        [this](const QStringList &files) { add_files(files, snurra_wire::RIGHT); });
 	connect(tile, &snurra_tile::controls_changed, this, [this] {
+		show_bar();
 		/* What plays is what can be stopped (sec 3c): with no controls
 		 * out anywhere, the group stops. */
 		fit_to_drawers();
@@ -375,7 +444,86 @@ void snurra_node::place_tiles() {
 		if (m_tiles.size() > 1) title += QStringLiteral(" +%1").arg(m_tiles.size() - 1);
 	}
 	setWindowTitle(title);
+	show_bar();
 	reshape();
+}
+
+/* The bar says what the window plays -- the tile last touched, else the
+ * first -- and whether the controls are out. */
+void snurra_node::show_bar() {
+	snurra_tile *shown = panel_tile();
+	QString said = shown ? shown->title() : QStringLiteral("snurra");
+	if (m_tiles.size() > 1) said += QStringLiteral("  (%1)").arg(tr("%n tracks", nullptr, int(m_tiles.size())));
+	m_bar_title->setText(said);
+	m_bar_title->setToolTip(shown ? shown->state().source : QString());
+	bool out = false;
+	for (snurra_tile *tile : m_tiles) out = out || tile->controls();
+	m_bar_controls->blockSignals(true);
+	m_bar_controls->setChecked(out);
+	m_bar_controls->blockSignals(false);
+	m_bar_controls->setArrowType(out ? Qt::UpArrow : Qt::DownArrow);
+	m_bar_controls->setAccessibleName(out ? tr("Push the controls in") : tr("Pull the controls out"));
+	m_bar_controls->setToolTip(m_bar_controls->accessibleName());
+}
+
+/* The tile the window's controls act on: the one last touched, else the
+ * first with its controls out, else the first. */
+snurra_tile *snurra_node::panel_tile() const {
+	if (m_current && m_tiles.contains(m_current)) return m_current;
+	for (snurra_tile *tile : ordered())
+		if (tile->controls()) return tile;
+	const QList<snurra_tile *> all = ordered();
+	return all.isEmpty() ? nullptr : all.first();
+}
+
+/* The bar's close: every tile, and so the window. */
+void snurra_node::close_all() {
+	for (snurra_tile *tile : QList<snurra_tile *>(m_tiles)) remove_tile(tile);
+	leave_if_empty();
+}
+
+bool snurra_node::eventFilter(QObject *watched, QEvent *event) {
+	if (watched != m_bar_title) return QWidget::eventFilter(watched, event);
+	switch (event->type()) {
+	case QEvent::MouseButtonPress: {
+		const QMouseEvent *press = static_cast<QMouseEvent *>(event);
+		if (press->button() != Qt::LeftButton) break;
+		m_bar_held = true;
+		m_bar_press = press->globalPosition().toPoint();
+		m_bar_window_from = pos();
+		m_bar_title->setCursor(Qt::ClosedHandCursor);
+		/* Several tiles: the window moves as one, by the window system
+		 * where it can -- on Wayland the only way. */
+		if (m_tiles.size() != 1 && windowHandle() && windowHandle()->startSystemMove()) {
+			m_bar_held = false;
+			m_bar_title->setCursor(Qt::OpenHandCursor);
+		}
+		return true;
+	}
+	case QEvent::MouseMove: {
+		if (!m_bar_held) break;
+		const QMouseEvent *moved = static_cast<QMouseEvent *>(event);
+		if (!(moved->buttons() & Qt::LeftButton)) {
+			m_bar_held = false;
+			m_bar_title->setCursor(Qt::OpenHandCursor);
+			break;
+		}
+		const QPoint global = moved->globalPosition().toPoint();
+		if (m_tiles.size() == 1) handle_moved(m_tiles.first(), global);
+		else move(m_bar_window_from + (global - m_bar_press));
+		return true;
+	}
+	case QEvent::MouseButtonRelease: {
+		if (!m_bar_held) break;
+		m_bar_held = false;
+		m_bar_title->setCursor(Qt::OpenHandCursor);
+		if (m_tiles.size() == 1) handle_released(m_tiles.first(), static_cast<QMouseEvent *>(event)->globalPosition().toPoint());
+		return true;
+	}
+	default:
+		break;
+	}
+	return QWidget::eventFilter(watched, event);
 }
 
 /*
@@ -561,6 +709,7 @@ void snurra_node::reshape() {
 		auto add = [&shape](const QWidget *part) {
 			if (part && part->isVisible()) shape += part->geometry().adjusted(-2, -2, 2, 2);
 		};
+		add(m_bar);
 		for (snurra_tile *tile : m_tiles) {
 			add(tile);
 			add(tile->drawer_above());

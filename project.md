@@ -456,6 +456,27 @@ does the same with a tile's playback:
   the full-screen picture -- a window of its own, all of the player
   there is to see -- they go on the train. An embedded tile takes no
   drops: where a host's files come from is the host's.
+- **One bar for a window, tiles dragged by their waveforms** (the holder,
+  2026-11-21: "Each player only has one control panel and once a tile is
+  connected to it, it becomes a part of that player, with a single top
+  bar with all the close minimize buttons etc, we move/drag/drop tiles by
+  dragging the waveform tile itself"). A window has one bar on top: what
+  it plays -- the tile last touched, and how many tracks -- the controls'
+  handle, "decks" (sec 3f), minimise and close (every tile, so the
+  window). Its tiles show no title row of their own (the tile still has
+  one, shown where it is embedded alone, a deck's or a host's): each is
+  named small in its waveform's corner. Held, the bar moves the window --
+  a lone tile's as that tile, so it snaps as a title did (sec 3d), a
+  group's by the window system where it can. A tile is dragged by its
+  waveform: pulled out, onto another window, onto a deck view, traded
+  with another; so a click on a waveform seeks when let go, not when
+  pressed, a press being maybe a drag's start (a Ctrl drag still moves
+  the lane along the timeline). This settles "moving a whole joined
+  window" above: by its bar. Tested in `a_window_has_one_bar_for_its_tiles`
+  (the tiles' rows hidden -- shown, it fails -- the bar naming the tile
+  touched, a press not seeking and its release seeking, the handle and
+  close) and in Xvfb, a tile of a group pulled out by its waveform
+  (`a_tile_dragged_onto_another_window_joins_it`).
 - **Started with no file: the music library** (the holder, 2026-11-13:
   started without a file, snurra said it could not play "untitled" and
   played three minutes of silence anyway). It opens a library instead,

@@ -103,6 +103,12 @@ public:
 	 * time counts up with nothing to count to, and it cannot be sought. */
 	bool live() const;
 	void set_controls(bool out);
+	/* (sec 3b) Its own title row -- name, controls' handle, close -- or,
+	 * in a window whose one bar has them, none: named on its waveform
+	 * and dragged by it. Shown by default. */
+	void set_bar_shown(bool shown);
+	/* Its name, and the chapter playing where it has them. */
+	QString title() const;
 	bool controls() const { return m_state.controls; }
 	int row() const { return m_state.row; }
 	int column() const { return m_state.column; }
@@ -321,6 +327,8 @@ private:
 	QLabel *m_title;
 	snurra_waveform *m_waveform;
 	QToolButton *m_pull;
+	QToolButton *m_close = nullptr;
+	bool m_bar_shown = true;
 	static QString drawer_style(const QString &name);
 	static QString clock_text(qint64 us);
 	QLabel *m_time = nullptr;

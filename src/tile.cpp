@@ -13,6 +13,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QToolTip>
+#include <QApplication>
 #include <QMenu>
 #include <QMetaMethod>
 #include <QMimeData>
@@ -485,6 +486,18 @@ public:
 
 	/* A drag with Ctrl: the lane moved, by fractions of this track. */
 	std::function<void(double fraction, bool done, bool snap)> on_shift;
+	/* Pressed and moved, the tile itself dragged (the holder, 2026-11-21:
+	 * "we move/drag/drop tiles by dragging the waveform tile itself"):
+	 * where the pointer is, and whether it was let go. Set, a click seeks
+	 * when let go rather than when pressed, so a drag seeks nothing. */
+	std::function<void(const QPoint &global, bool done)> on_drag;
+	/* Said small in the top left corner, where the tile has no title of
+	 * its own: which track this is. */
+	void set_name(const QString &name) {
+		if (name == m_name) return;
+		m_name = name;
+		update();
+	}
 
 	/* A train's crossfade, as fractions of the track: the fade in from
 	 * its start, the fade out to its end; 0 for none. */
@@ -503,6 +516,20 @@ protected:
 		paint_beats();
 		paint_crossfade();
 		paint_envelope();
+		if (!m_name.isEmpty()) {
+			QPainter painter(this);
+			QFont small = font();
+			small.setPointSizeF(small.pointSizeF() * 0.85);
+			painter.setFont(small);
+			const QFontMetrics metrics(small);
+			const QString said = metrics.elidedText(m_name, Qt::ElideMiddle, std::max(0, width() - 8));
+			const QRect box(2, 1, metrics.horizontalAdvance(said) + 6, metrics.height());
+			QColor under = palette().color(QPalette::Window);
+			under.setAlpha(170);
+			painter.fillRect(box, under);
+			painter.setPen(palette().color(QPalette::WindowText));
+			painter.drawText(box.adjusted(3, 0, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, said);
+		}
 		if (!m_chapter_starts.isEmpty()) {
 			QPainter painter(this);
 			painter.setPen(palette().color(QPalette::Text));
@@ -662,6 +689,13 @@ protected:
 			return;
 		}
 		if (!m_editing) {
+			if (event->button() != Qt::LeftButton) return;
+			if (on_drag) {
+				m_pressed = true;
+				m_moving = false;
+				m_press_at = event->position();
+				return;
+			}
 			if (on_seek && width() > 0) on_seek(qBound(0.0, event->position().x() / width(), 1.0));
 			return;
 		}
@@ -681,6 +715,20 @@ protected:
 	}
 
 	void mouseMoveEvent(QMouseEvent *event) override {
+		if (m_pressed) {
+			/* A drag and drop swallows the release: the button is up. */
+			if (!(event->buttons() & Qt::LeftButton)) {
+				m_pressed = m_moving = false;
+				setCursor(Qt::IBeamCursor);
+				return;
+			}
+			if (!m_moving && (event->position() - m_press_at).manhattanLength() >= QApplication::startDragDistance()) {
+				m_moving = true;
+				setCursor(Qt::ClosedHandCursor);
+			}
+			if (m_moving && on_drag) on_drag(event->globalPosition().toPoint(), false);
+			return;
+		}
 		if (m_shifting) {
 			on_shift((event->position().x() - m_shift_x) / qMax(1, width()), false,
 			         !(event->modifiers() & Qt::ShiftModifier));
@@ -700,6 +748,14 @@ protected:
 	}
 
 	void mouseReleaseEvent(QMouseEvent *event) override {
+		if (m_pressed) {
+			const bool moved = m_moving;
+			m_pressed = m_moving = false;
+			setCursor(Qt::IBeamCursor);
+			if (moved && on_drag) on_drag(event->globalPosition().toPoint(), true);
+			else if (!moved && on_seek && width() > 0) on_seek(qBound(0.0, m_press_at.x() / width(), 1.0));
+			return;
+		}
 		if (m_shifting) {
 			m_shifting = false;
 			on_shift((event->position().x() - m_shift_x) / qMax(1, width()), true,
@@ -730,6 +786,10 @@ private:
 	double m_loop_to = 0;
 	QList<double> m_chapter_starts;
 	bool m_shifting = false;   /* a Ctrl drag moving the lane */
+	bool m_pressed = false;    /* on_drag's: pressed, not yet let go */
+	bool m_moving = false;     /* and moved far enough to be a drag */
+	QPointF m_press_at;
+	QString m_name;
 	double m_shift_x = 0;      /* where it began, in pixels */
 	double m_fade_in = 0;    /* fractions of the track; 0: none */
 	double m_fade_out = 0;
@@ -1089,6 +1149,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	connect(m_listen, &QToolButton::toggled, this, [this](bool on) { emit listen_requested(this, on); });
 	top->addWidget(m_listen);
 	QToolButton *close = new QToolButton(this);
+	m_close = close;
 	close->setAutoRaise(true);
 	close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
 	close->setAccessibleName(tr("Close"));
@@ -2338,6 +2399,33 @@ void snurra_tile::set_controls(bool out) {
 	emit controls_changed(this);
 }
 
+/*
+ * In a window, the window's one bar has what a tile's title row had (the
+ * holder, 2026-11-21: "a single top bar with all the close minimize
+ * buttons"): the tile is its waveform, named in its corner, and dragged
+ * by it. A plug's "listen" stays, shown where a listener is.
+ */
+void snurra_tile::set_bar_shown(bool shown) {
+	m_bar_shown = shown;
+	m_title->setVisible(shown);
+	m_pull->setVisible(shown);
+	m_close->setVisible(shown);
+	m_waveform->set_name(shown ? QString() : m_title->text());
+	if (shown) {
+		m_waveform->on_drag = nullptr;
+	} else {
+		m_waveform->on_drag = [this](const QPoint &global, bool done) {
+			emit touched(this);
+			if (done) emit handle_released(this, global);
+			else emit handle_moved(this, global);
+		};
+	}
+}
+
+QString snurra_tile::title() const {
+	return m_title->text();
+}
+
 void snurra_tile::set_place(int row, int column) {
 	m_state.row = row;
 	m_state.column = column;
@@ -2426,6 +2514,7 @@ void snurra_tile::tick() {
 			m_chapter_shown = now;
 			const QString title = now >= 0 ? m_chapters[size_t(now)].title : QString();
 			m_title->setText(title.isEmpty() ? m_title_base : m_title_base + QStringLiteral(" -- ") + title);
+			if (!m_bar_shown) m_waveform->set_name(m_title->text());
 		}
 	}
 	if (m_state.playing && m_deck->ended()) {

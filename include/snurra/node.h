@@ -11,6 +11,8 @@
 #include "snurra/wire.h"
 
 class QGridLayout;
+class QLabel;
+class QToolButton;
 class QLocalServer;
 class QLocalSocket;
 class QTimer;
@@ -107,6 +109,7 @@ protected:
 	bool event(QEvent *event) override;
 	/* mplayer's keys, on the tile last touched (src/node.cpp). */
 	void keyPressEvent(QKeyEvent *event) override;
+	bool eventFilter(QObject *watched, QEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
@@ -168,6 +171,16 @@ private:
 	void swap_tiles(snurra_tile *a, snurra_tile *b);
 	void replace_tile(snurra_tile *tile, const QString &file);
 	void leave_if_empty();
+	/* The window's one bar (sec 3b). */
+	QWidget *m_bar = nullptr;
+	QLabel *m_bar_title = nullptr;
+	QToolButton *m_bar_controls = nullptr;
+	bool m_bar_held = false;
+	QPoint m_bar_press;
+	QPoint m_bar_window_from;
+	void show_bar();
+	void close_all();
+	snurra_tile *panel_tile() const;
 	void run_trains();
 	void show_crossfades();
 	/* The group's transport (project.md sec 3b, step 4): every lane at
