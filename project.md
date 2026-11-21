@@ -1435,8 +1435,12 @@ The holder, 2026-11-21: "plain Mixxx mappings, no JavaScript" (QJSEngine
 is in QtQml, which this player does not link). `snurra --import-mapping
 <file.midi.xml>` reads a mapping's `<controls>` into the bindings
 (`snurra_bindings::import_mixxx`) and says, a line each, what it did not
-take: a control bound to a script, one snurra has no control for, an
-inverted one, a note on a fader. Mixxx's controls map to the deck view's
+take: a control bound to a script, one snurra has no control for, a
+note on a fader. A fader or knob marked `<invert/>` -- ten mappings'
+crossfaders and tempo faders -- is taken upside down, written
+`(absolute, inverted)` in its binding's line (2026-11-21; tested by an
+inverted tempo fader at its top giving the slowest tempo, which without
+the inversion gives the fastest). Mixxx's controls map to the deck view's
 slots: `[ChannelN]` volume, play, cue_default, pfl, rate,
 LoadSelectedTrack, beatsync and sync_enabled, keylock, filterLow/Mid/High
 to ch_N_level ... ch_N_eq_high (`ch_N_key_lock` a deck control from

@@ -137,7 +137,7 @@ public:
 	/* The control an event moves, and how; empty where none. A binding
 	 * from any port -- its index's port written as a star, as an imported
 	 * mapping makes -- moves it where none names the port it came from. */
-	QString control_for(const QString &index, snurra_control_kind *kind = nullptr) const;
+	QString control_for(const QString &index, snurra_control_kind *kind = nullptr, bool *inverted = nullptr) const;
 	/* A name the person gave a hardware index. */
 	void set_alias(const QString &index, const QString &name);
 	QString name_of(const QString &index) const;
@@ -147,7 +147,8 @@ public:
 	void set_control_name(const QString &control, const QString &name);
 	QString control_name(const QString &control) const;
 
-	/* As text, a line a binding: "name_or_index -> control". */
+	/* As text, a line a binding: "name_or_index -> control (kind)", the
+	 * kind "absolute, inverted" where it reads upside down. */
 	QStringList lines() const;
 	/* Read back; a line naming an alias resolves through it. False where
 	 * a line is not a binding. */
@@ -188,6 +189,9 @@ private:
 	struct bound {
 		QString control;
 		snurra_control_kind kind = snurra_control_kind::absolute;
+		/* Read upside down: a fader at its top is the control's bottom
+		 * (a mapping's tempo fader or crossfader made the other way). */
+		bool inverted = false;
 	};
 	QMap<QString, bound> m_bound;      /* by index */
 	QMap<QString, QString> m_alias;    /* index -> name */

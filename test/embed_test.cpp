@@ -1568,6 +1568,7 @@ void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
    <control><group>[Channel2]</group><key>play</key><status>0x81</status><midino>0x3B</midino><options><normal/></options></control>
    <control><group>[Channel1]</group><key>keylock</key><status>0x90</status><midino>0x40</midino><options><normal/></options></control>
    <control><group>[Master]</group><key>crossfader</key><status>0xB0</status><midino>0x08</midino><options><normal/></options></control>
+   <control><group>[Channel1]</group><key>rate</key><status>0xB0</status><midino>0x09</midino><options><invert/></options></control>
    <control><group>[EqualizerRack1_[Channel1]_Effect1]</group><key>parameter1</key><status>0xB0</status><midino>16</midino></control>
    <control><group>[Channel1]</group><key>jog</key><status>0xB0</status><midino>0x20</midino><options><Script-Binding/></options></control>
    <control><group>[Channel1]</group><key>hotcue_1_activate</key><status>0x90</status><midino>0x01</midino><options><normal/></options></control>
@@ -1587,7 +1588,8 @@ void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
 		bindings.bind(QStringLiteral("pads/ch2/cc7"), QStringLiteral("ch_2_tempo"), snurra_control_kind::absolute);
 		bindings.bind(QStringLiteral("*/ch16/cc1"), QStringLiteral("crossfader"), snurra_control_kind::absolute);
 		QStringList skipped;
-		QCOMPARE(bindings.import_mixxx(mapping, &skipped), 6);
+		QCOMPARE(bindings.import_mixxx(mapping, &skipped), 7);
+		QVERIFY(bindings.lines().contains(QStringLiteral("*/ch1/cc9 -> ch_1_tempo (absolute, inverted)")));
 		QVERIFY(skipped.contains(QStringLiteral("[Channel1] jog: a script's")));
 		QVERIFY(skipped.contains(QStringLiteral("[Channel1] hotcue_1_activate: snurra has no such control")));
 		QCOMPARE(skipped.size(), 2);
@@ -1627,6 +1629,9 @@ void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
 	QCOMPARE(dj.crossfader(), 1.0);
 	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 16, 0);
 	QVERIFY(a->state().eq_db[0] <= SNURRA_EQ_KILL);
+	/* The tempo fader made the other way: at its top, the slowest. */
+	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 9, 127);
+	QCOMPARE(a->tempo(), float(1 - snurra_tile::tempo_range()));
 	const bool playing = b->playing();
 	send(QStringLiteral("Some Controller:MIDI 1"), 2, snurra_midi_event::note_on, 0x3b, 127);
 	QTRY_COMPARE_WITH_TIMEOUT(b->playing(), !playing, 2000);

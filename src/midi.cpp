@@ -180,12 +180,13 @@ void snurra_bindings::unbind(const QString &index) {
 	m_bound.remove(index);
 }
 
-QString snurra_bindings::control_for(const QString &index, snurra_control_kind *kind) const {
+QString snurra_bindings::control_for(const QString &index, snurra_control_kind *kind, bool *inverted) const {
 	auto it = m_bound.constFind(index);
 	/* Bound by its port first, then from any (an imported mapping). */
 	if (it == m_bound.constEnd()) it = m_bound.constFind(QStringLiteral("*/") + index.section(QLatin1Char('/'), -2));
 	if (it == m_bound.constEnd()) return {};
 	if (kind) *kind = it->kind;
+	if (inverted) *inverted = it->inverted;
 	return it->control;
 }
 
@@ -210,7 +211,9 @@ QString snurra_bindings::control_name(const QString &control) const {
 QStringList snurra_bindings::lines() const {
 	QStringList made;
 	for (auto it = m_bound.constBegin(); it != m_bound.constEnd(); ++it)
-		made << QStringLiteral("%1 -> %2 (%3)").arg(name_of(it.key()), control_name(it->control), snurra_control_kind_name(it->kind));
+		made << QStringLiteral("%1 -> %2 (%3%4)")
+		            .arg(name_of(it.key()), control_name(it->control), snurra_control_kind_name(it->kind),
+		                 it->inverted ? QStringLiteral(", inverted") : QString());
 	return made;
 }
 
@@ -223,8 +226,14 @@ bool snurra_bindings::read(const QStringList &lines) {
 		QString from = line.left(arrow).trimmed();
 		QString to = line.mid(arrow + 4).trimmed();
 		snurra_control_kind kind = snurra_control_kind::absolute;
+		bool inverted = false;
 		if (to.endsWith(QLatin1Char(')')) && to.contains(QLatin1String(" ("))) {
-			kind = snurra_control_kind_from(to.section(QLatin1String(" ("), 1).chopped(1));
+			QString how = to.section(QLatin1String(" ("), 1).chopped(1);
+			if (how.endsWith(QLatin1String(", inverted"))) {
+				inverted = true;
+				how.chop(10);
+			}
+			kind = snurra_control_kind_from(how);
 			to = to.section(QLatin1String(" ("), 0, 0);
 		}
 		if (from.isEmpty() || to.isEmpty()) return false;
@@ -234,7 +243,7 @@ bool snurra_bindings::read(const QStringList &lines) {
 			if (it.value() == from) from = it.key();
 		for (auto it = m_names.constBegin(); it != m_names.constEnd(); ++it)
 			if (it.value() == to) to = it.key();
-		got.insert(from, bound{ to, kind });
+		got.insert(from, bound{ to, kind, inverted });
 	}
 	m_bound = got;
 	return true;
@@ -377,8 +386,8 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 			continue;
 		}
 		if (has("fourteen-bit-lsb")) continue;   /* the finer half, taken with its coarse one */
-		if (has("invert") || has("rot64inv")) {
-			skip(c, QStringLiteral("inverted, which a binding here is not"));
+		if (has("rot64inv")) {
+			skip(c, QStringLiteral("an encoder turned the other way, which a binding here is not"));
 			continue;
 		}
 		const bool relative = has("selectknob") || has("diff") || has("rot64") || has("rot64fast") || has("spread64")
@@ -415,8 +424,13 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 		}
 		/* Several hardware controls may move one of snurra's, as in
 		 * Mixxx; a note's on and off are one. */
+		const bool inverted = has("invert");
+		if (inverted && kind != snurra_control_kind::absolute && kind != snurra_control_kind::fine && kind != snurra_control_kind::bend) {
+			skip(c, QStringLiteral("inverted, which only a fader or knob can be here"));
+			continue;
+		}
 		if (!m_bound.contains(index)) ++bound_count;
-		m_bound.insert(index, bound{ control, kind });
+		m_bound.insert(index, bound{ control, kind, inverted });
 	}
 	/* The lights: a deck's play, its plug and its key lock, the states
 	 * snurra has to show. */
@@ -838,7 +852,8 @@ void snurra_controller::received(const snurra_midi_event &event) {
 		if (m_bindings.lights().size() != lights) m_lit.clear();
 	}
 	snurra_control_kind kind = snurra_control_kind::absolute;
-	QString control = m_bindings.control_for(event.control(), &kind);
+	bool inverted = false;
+	QString control = m_bindings.control_for(event.control(), &kind, &inverted);
 	snurra_midi_event heard = event;
 	/* A fine control (a controller and its partner 32 above, MIDI's 14
 	 * bits): either half moves it, the two read as one value of 0 to
@@ -851,7 +866,7 @@ void snurra_controller::received(const snurra_midi_event &event) {
 			snurra_midi_event partner = event;
 			partner.number = event.number - 32;
 			coarse = partner.control();
-			control = m_bindings.control_for(coarse, &coarse_kind);
+			control = m_bindings.control_for(coarse, &coarse_kind, &inverted);
 			if (coarse_kind != snurra_control_kind::fine) control.clear();
 			else m_finer[coarse] = event.value;
 		} else if (kind == snurra_control_kind::fine) {
@@ -864,6 +879,9 @@ void snurra_controller::received(const snurra_midi_event &event) {
 		}
 	}
 	if (control.isEmpty()) return;
+	/* Upside down: a fader's top its control's bottom. */
+	if (inverted && (kind == snurra_control_kind::absolute || kind == snurra_control_kind::fine || kind == snurra_control_kind::bend))
+		heard.value = (heard.kind == snurra_midi_event::bend ? 16383 : 127) - heard.value;
 	/* Another player's binding is that player's to take. */
 	const int colon = int(control.indexOf(QLatin1Char(':')));
 	const QString player = colon < 0 ? QString() : control.left(colon);
