@@ -190,8 +190,11 @@ public:
 	int chapter_count() const { return int(m_chapters.size()); }
 	QString chapter_title() const;
 	void step_chapter(int direction);
-	/* The EQ (deck.h), low, mid and high in dB; its dials follow. */
+	/* The EQ (eq.h): low, mid and high in dB, each layout's bands in
+	 * those parts moved together; or any layout and its bands. Its line
+	 * follows. */
 	void set_eq(float low_db, float mid_db, float high_db);
+	void set_eq(const snurra_eq &eq);
 	qint64 cue_us() const { return m_state.cue_us; }
 
 	/* The envelope, as in snurra_tile_state: shown on the waveform, heard

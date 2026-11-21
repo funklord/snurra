@@ -14,16 +14,17 @@
 #include <utility>
 #include <vector>
 
+#include "snurra/eq.h"
 #include "snurra/spsc.h"
 #include "snurra/stretch.h"
 
 class snurra_bytes;
 class snurra_source;
 
-/* An EQ band at none of its sound (snurra_deck::set_eq): below -24 dB,
- * the deepest a band otherwise goes, is this. Finite, so a state carrying
- * it streams, compares and rounds as any gain. */
-constexpr float SNURRA_EQ_KILL = -1000.0f;
+/* SNURRA_EQ_KILL, an EQ band at none of its sound (snurra_deck::set_eq):
+ * below -24 dB, the deepest a band otherwise goes. Finite, so a state
+ * carrying it streams, compares and rounds as any gain. In eq.h, with the
+ * EQ's bands. */
 
 /*
  * One stream in the engine (project.md sec 3a, Mixxx's EngineDeck and
@@ -41,29 +42,44 @@ constexpr float SNURRA_EQ_KILL = -1000.0f;
  * moment.
  */
 /*
- * A DJ's three-band isolator, the deck's EQ: the track split at 250 Hz and
- * 4 kHz by Linkwitz-Riley 8 crossovers, whose bands add back to an
- * allpass, each band weighted. Its own type so a player's nested track
- * (timeline.h) is equalised as a deck equalises it.
+ * The deck's EQ, an isolator: the track split at a layout's crossovers
+ * (eq.h; a DJ's three at 250 Hz and 4 kHz) by Linkwitz-Riley 8
+ * crossovers, whose bands add back to an allpass, each band weighted. Its
+ * own type so a player's nested track (timeline.h) is equalised as a deck
+ * equalises it, and so the EQ's line draws what it does (response).
  */
 struct snurra_isolator {
+	/* In double: at 32 and 64 Hz a float section's poles sit too near 1,
+	 * and twelve bands at unity came out 0.024 dB down at 64 Hz. */
 	struct biquad_t {
-		float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-		float z1[2] = { 0, 0 };
-		float z2[2] = { 0, 0 };
-		float run(float x, int channel) {
-			const float y = b0 * x + z1[channel];
+		double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+		double z1[2] = { 0, 0 };
+		double z2[2] = { 0, 0 };
+		double run(double x, int channel) {
+			const double y = b0 * x + z1[channel];
 			z1[channel] = b1 * x - a1 * y + z2[channel];
 			z2[channel] = b2 * x - a2 * y;
 			return y;
 		}
 		void rest() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
 	};
-	biquad_t low[4], above_low[4], mid[4], high[4], align[2];
-	/* Its crossovers, fixed for `rate`. */
-	void make(int rate);
+	/* By the grid's crossover: its low and high pass, and the allpass
+	 * the bands below it go through to stay in phase with those above. */
+	biquad_t below[SNURRA_EQ_BANDS - 1][4], above[SNURRA_EQ_BANDS - 1][4], align[SNURRA_EQ_BANDS - 1][2];
+	int used[SNURRA_EQ_BANDS - 1] = {};   /* the crossovers split at, low to high */
+	int count = 0;
+	quint16 splits = 0;
+	/* Its crossovers, for `rate` and a layout's splits (eq.h) -- those
+	 * the rate can carry, under 0.45 of it. At rest. */
+	void make(int rate, quint16 splits = snurra_eq::THREE);
+	/* Its bands, count + 1: what each band's gain is, from an EQ whose
+	 * splits are these (the band's narrowest first). */
+	void gains(const snurra_eq &eq, float gain[SNURRA_EQ_BANDS]) const;
 	/* One channel's frame, split and weighted by band. */
-	float run(float x, int channel, const float gain[3]);
+	float run(float x, int channel, const float gain[SNURRA_EQ_BANDS]);
+	/* What it does to `hz`, as a gain (not dB), for these band gains:
+	 * the line the EQ is drawn as. */
+	double response(double hz, int rate, const float gain[SNURRA_EQ_BANDS]) const;
 	void rest();
 };
 
@@ -157,6 +173,9 @@ public:
 	 * 10 ms rather than stepping.
 	 */
 	void set_eq(float low_db, float mid_db, float high_db);
+	/* Any layout of bands (eq.h). A new layout is heard once the old has
+	 * faded out to the dry track and the new in, 10 ms each way. */
+	void set_eq(const snurra_eq &eq);
 
 	/* The gain the last fade asked ends at: a crossfader's, held. */
 	float fade_to() const { return m_fade_to.load(std::memory_order_relaxed); }
@@ -279,14 +298,16 @@ private:
 	std::atomic<float> m_heard_gain{ 0 };
 	std::atomic<float> m_trim{ 1 };
 	float m_trim_now = -1;   /* the callback's: where the trim has got to; -1 before the first */
-	std::atomic<float> m_eq_db[3] = { 0, 0, 0 };   /* asked: low, mid, high */
+	std::atomic<float> m_eq_db[SNURRA_EQ_BANDS] = {};   /* asked, by the grid's narrowest bands */
+	std::atomic<int> m_eq_splits{ snurra_eq::THREE };     /* asked: the layout */
 	/* The callback's own: the isolator's fixed crossovers (make_eq), each
 	 * section with its two channels' state; the bands' gains as heard,
 	 * moving toward the asked; and how much of the isolator is heard
 	 * against the dry track, 0 while every band is at 0 dB. */
 	snurra_isolator m_eq;
-	float m_eq_gain[3] = { 1, 1, 1 };
+	float m_eq_gain[SNURRA_EQ_BANDS] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 	float m_eq_wet = 0;
+	quint16 m_eq_layout = snurra_eq::THREE;   /* the callback's: the layout m_eq is made for */
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
 	std::atomic<int> m_key_shift{ 0 };

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "snurra/clock.h"
+#include "snurra/eq.h"
 
 /*
  * What a tile is playing, as it moves between processes (project.md
@@ -70,9 +71,9 @@ struct snurra_tile_state {
 	 * track, -1 for none. */
 	qint64 cue_us = -1;
 
-	/* The EQ, low, mid and high, in dB from -24 to +6, or SNURRA_EQ_KILL
-	 * (deck.h). */
-	float eq_db[3] = { 0, 0, 0 };
+	/* The EQ: its bands and each one's dB, -24 to +6 or SNURRA_EQ_KILL
+	 * (eq.h); a DJ's three unless split. */
+	snurra_eq eq;
 
 	/* The key moved on its own, in semitones (deck.h). */
 	int key_shift = 0;
@@ -111,7 +112,9 @@ struct snurra_tile_state {
 
 inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state) {
 	out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
-	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq_db[0] << state.eq_db[1] << state.eq_db[2] << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters << quint32(state.player.size());
+	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq.splits;
+	for (float db : state.eq.db) out << db;
+	out << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters << quint32(state.player.size());
 	for (const snurra_tile_state &inner : state.player) out << inner;
 	return out;
 }
@@ -123,7 +126,10 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 audio_track = -1;
 	qint32 key_shift = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq_db[0] >> state.eq_db[1] >> state.eq_db[2] >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
+	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq.splits;
+	for (float &db : state.eq.db) in >> db;
+	state.eq.splits &= snurra_eq::TWELVE;
+	in >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
 	quint32 inner = 0;
 	in >> inner;
 	/* No more than a stream can hold: a count read from bytes that are not

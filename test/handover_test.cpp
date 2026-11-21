@@ -1456,6 +1456,10 @@ void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
 		state.player[size_t(i)].column = i;
 	}
 	state.player[1].overlap_us = 500000;
+	/* Its EQ split into five, the sub killed: carried as it is. */
+	state.player[1].eq.set_layout(snurra_eq::FIVE);
+	state.player[1].eq.set_band(0, SNURRA_EQ_KILL);
+	state.player[1].eq.set_band(3, 4.5f);
 	{
 		snurra_node node;
 		snurra_tile *tile = node.add_tile(state);
@@ -1474,6 +1478,8 @@ void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
 	QCOMPARE(got.size(), 1);
 	QCOMPARE(int(got.first().states.first().player.size()), 2);
 	QCOMPARE(got.first().states.first().player[1].overlap_us, qint64(500000));
+	QVERIFY(got.first().states.first().player[1].eq == state.player[1].eq);
+	QCOMPARE(got.first().states.first().player[1].eq.bands(), 5);
 	QCOMPARE(snurra_wire::encode(got.first()), sent);
 
 	auto nested = [](int depth) {

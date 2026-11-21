@@ -62,6 +62,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/bytes_input.h \
     $$SNURRA_ROOT/include/snurra/clock.h \
     $$SNURRA_ROOT/include/snurra/deck.h \
+    $$SNURRA_ROOT/include/snurra/eq.h \
     $$SNURRA_ROOT/include/snurra/fingerprint.h \
     $$SNURRA_ROOT/include/snurra/embed.h \
     $$SNURRA_ROOT/include/snurra/engine.h \

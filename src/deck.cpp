@@ -1,6 +1,7 @@
 #include "snurra/deck.h"
 
 #include <algorithm>
+#include <complex>
 #include <chrono>
 #include <cmath>
 
@@ -15,7 +16,7 @@ snurra_deck::snurra_deck(const start_t &start)
 	      return true;
       }) {
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
-	m_eq.make(m_rate);
+	m_eq.make(m_rate, snurra_eq::THREE);
 
 	/*
 	 * Anchored -- a handover's taker, which must sound in step with the
@@ -390,10 +391,17 @@ bool snurra_deck::next_frame(float &left, float &right) {
 }
 
 void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
+	snurra_eq eq;
+	eq.set_part(0, low_db);
+	eq.set_part(1, mid_db);
+	eq.set_part(2, high_db);
+	set_eq(eq);
+}
+
+void snurra_deck::set_eq(const snurra_eq &eq) {
 	auto band = [](float db) { return std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f); };
-	m_eq_db[0].store(band(low_db), std::memory_order_relaxed);
-	m_eq_db[1].store(band(mid_db), std::memory_order_relaxed);
-	m_eq_db[2].store(band(high_db), std::memory_order_relaxed);
+	for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine) m_eq_db[fine].store(band(eq.db[fine]), std::memory_order_relaxed);
+	m_eq_splits.store(eq.splits & snurra_eq::TWELVE, std::memory_order_relaxed);
 }
 
 /*
@@ -406,7 +414,7 @@ void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
  * band goes through that split's allpass too, or the three would not add
  * up flat: the band's own phase against the two above it.
  */
-void snurra_isolator::make(int rate) {
+void snurra_isolator::make(int rate, quint16 layout) {
 	enum kind_t { low_pass, high_pass, all_pass };
 	auto section = [rate](biquad_t &made, double hz, double q, kind_t kind) {
 		const double w = 2 * M_PI * hz / rate;
@@ -426,43 +434,103 @@ void snurra_isolator::make(int rate) {
 		}
 		const double a0 = 1 + alpha;
 		made = biquad_t{};
-		made.b0 = float(b0 / a0);
-		made.b1 = float(b1 / a0);
-		made.b2 = float(b2 / a0);
-		made.a1 = float(-2 * cosw / a0);
-		made.a2 = float((1 - alpha) / a0);
+		made.b0 = (b0 / a0);
+		made.b1 = (b1 / a0);
+		made.b2 = (b2 / a0);
+		made.a1 = (-2 * cosw / a0);
+		made.a2 = ((1 - alpha) / a0);
 	};
 	const double q[2] = { 1 / (2 * std::cos(M_PI / 8)), 1 / (2 * std::cos(3 * M_PI / 8)) };
-	for (int i = 0; i < 4; ++i) {
-		section(low[i], 250, q[i % 2], low_pass);
-		section(above_low[i], 250, q[i % 2], high_pass);
-		section(mid[i], 4000, q[i % 2], low_pass);
-		section(high[i], 4000, q[i % 2], high_pass);
+	splits = 0;
+	count = 0;
+	for (int j = 0; j < SNURRA_EQ_BANDS - 1; ++j) {
+		if (!((layout >> j) & 1) || SNURRA_EQ_CROSSOVERS[j] >= 0.45 * rate) continue;
+		const double hz = SNURRA_EQ_CROSSOVERS[j];
+		for (int i = 0; i < 4; ++i) {
+			section(below[j][i], hz, q[i % 2], low_pass);
+			section(above[j][i], hz, q[i % 2], high_pass);
+		}
+		for (int i = 0; i < 2; ++i) section(align[j][i], hz, q[i], all_pass);
+		used[count++] = j;
+		splits = quint16(splits | (1u << j));
 	}
-	for (int i = 0; i < 2; ++i) section(align[i], 4000, q[i], all_pass);
+	rest();
+}
+
+void snurra_isolator::gains(const snurra_eq &eq, float gain[SNURRA_EQ_BANDS]) const {
+	int fine = 0;
+	for (int band = 0; band <= count; ++band) {
+		const float db = eq.db[fine];
+		gain[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
+		if (band < count) fine = used[band] + 1;
+	}
 }
 
 namespace {
 
-template <size_t N, typename section_t> float through(section_t (&sections)[N], float x, int channel) {
+template <size_t N, typename section_t> double through(section_t (&sections)[N], double x, int channel) {
 	for (section_t &made : sections) x = made.run(x, channel);
 	return x;
 }
 
 }   // namespace
 
-float snurra_isolator::run(float x, int channel, const float gain[3]) {
-	const float bottom = through(align, through(low, x, channel), channel);
-	const float above = through(above_low, x, channel);
-	const float middle = through(mid, above, channel);
-	const float top = through(high, above, channel);
-	return gain[0] * bottom + gain[1] * middle + gain[2] * top;
+/*
+ * Split from the bottom: at each crossover, the rest so far into the band
+ * below it and the rest above. The bands already taken go through that
+ * crossover's allpass before the new one joins them, so all add up flat:
+ * each band's phase against those above it. With splits at 250 Hz and
+ * 4 kHz this is the three-band isolator it was.
+ */
+float snurra_isolator::run(float x, int channel, const float gain[SNURRA_EQ_BANDS]) {
+	double sum = 0, rest = x;
+	for (int k = 0; k < count; ++k) {
+		const int j = used[k];
+		const double band = through(below[j], rest, channel);
+		rest = through(above[j], rest, channel);
+		if (k > 0) sum = through(align[j], sum, channel);
+		sum += double(gain[k]) * band;
+	}
+	return float(sum + double(gain[count]) * rest);
+}
+
+namespace {
+
+/* A section at e^{jw}, as it runs: (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2). */
+std::complex<double> at(const snurra_isolator::biquad_t &made, std::complex<double> z1) {
+	const std::complex<double> z2 = z1 * z1;
+	return (double(made.b0) + double(made.b1) * z1 + double(made.b2) * z2) / (1.0 + double(made.a1) * z1 + double(made.a2) * z2);
+}
+
+template <size_t N> std::complex<double> chain(const snurra_isolator::biquad_t (&sections)[N], std::complex<double> z1) {
+	std::complex<double> made = 1;
+	for (const snurra_isolator::biquad_t &one : sections) made *= at(one, z1);
+	return made;
+}
+
+}   // namespace
+
+double snurra_isolator::response(double hz, int rate, const float gain[SNURRA_EQ_BANDS]) const {
+	const std::complex<double> z1 = std::polar(1.0, -2 * M_PI * hz / rate);
+	std::complex<double> sum = 0, rest = 1;
+	for (int k = 0; k < count; ++k) {
+		const int j = used[k];
+		const std::complex<double> band = rest * chain(below[j], z1);
+		rest *= chain(above[j], z1);
+		if (k > 0) sum *= chain(align[j], z1);
+		sum += double(gain[k]) * band;
+	}
+	return std::abs(sum + double(gain[count]) * rest);
 }
 
 void snurra_isolator::rest() {
-	for (biquad_t *sections : { low, above_low, mid, high })
-		for (int i = 0; i < 4; ++i) sections[i].rest();
-	for (biquad_t &made : align) made.rest();
+	for (int j = 0; j < SNURRA_EQ_BANDS - 1; ++j) {
+		for (int i = 0; i < 4; ++i) {
+			below[j][i].rest();
+			above[j][i].rest();
+		}
+		for (biquad_t &made : align[j]) made.rest();
+	}
 }
 
 
@@ -533,15 +601,26 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 
 	const fade_t fade = fade_snapshot();
 	/* The EQ asked: a gain a band, and whether it is heard at all. From
-	 * the dry track it starts at rest and fades in, and back. */
-	float eq_target[3];
+	 * the dry track it starts at rest and fades in, and back. Another
+	 * layout fades this one out first, to be made anew in the quiet. */
+	snurra_eq asked;
 	bool eq_asked = false;
-	for (int band = 0; band < 3; ++band) {
-		const float db = m_eq_db[band].load(std::memory_order_relaxed);
-		eq_target[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
-		eq_asked = eq_asked || db != 0;
+	for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine) {
+		asked.db[fine] = m_eq_db[fine].load(std::memory_order_relaxed);
+		eq_asked = eq_asked || asked.db[fine] != 0;
 	}
-	if (eq_asked && m_eq_wet == 0) {
+	asked.splits = quint16(m_eq_splits.load(std::memory_order_relaxed));
+	const bool relayout = asked.splits != m_eq_layout;
+	if (relayout && m_eq_wet == 0) {
+		m_eq.make(m_rate, asked.splits);
+		m_eq_layout = asked.splits;
+	}
+	const bool eq_heard = eq_asked && asked.splits == m_eq_layout;
+	float eq_target[SNURRA_EQ_BANDS];
+	/* Fading out for another layout, or flat: the gains held as heard. */
+	if (eq_heard) m_eq.gains(asked, eq_target);
+	else std::copy(m_eq_gain, m_eq_gain + SNURRA_EQ_BANDS, eq_target);
+	if (eq_heard && m_eq_wet == 0) {
 		m_eq.rest();
 		for (float &gain : m_eq_gain) gain = 1;
 	}
@@ -619,9 +698,9 @@ void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
 		if (m_tail_at < m_tail_len && i >= m_tail_from)
 			gain *= std::min(1.0f, float(m_tail_at + (i - m_tail_from)) / float(m_tail_len));
 		last_gain = gain;
-		if (eq_asked || m_eq_wet > 0) {
-			m_eq_wet += std::clamp((eq_asked ? 1.0f : 0.0f) - m_eq_wet, -eq_step, eq_step);
-			for (int band = 0; band < 3; ++band)
+		if (eq_heard || m_eq_wet > 0) {
+			m_eq_wet += std::clamp((eq_heard ? 1.0f : 0.0f) - m_eq_wet, -eq_step, eq_step);
+			for (int band = 0; band <= m_eq.count; ++band)
 				m_eq_gain[band] += std::clamp(eq_target[band] - m_eq_gain[band], -eq_step, eq_step);
 			left += m_eq_wet * (m_eq.run(left, 0, m_eq_gain) - left);
 			right += m_eq_wet * (m_eq.run(right, 1, m_eq_gain) - right);

@@ -64,7 +64,7 @@ struct part {
 	std::vector<std::pair<int64_t, float>> envelope;   /* track frames, gain */
 	float trim = 1;               /* the level match's, as its deck's would be */
 	bool eq = false;              /* any band moved: the isolator heard */
-	float eq_gain[3] = { 1, 1, 1 };
+	snurra_eq eq_asked;           /* its bands, as its deck would have them */
 };
 
 /* A part being heard: its source open, read through its stretch. */
@@ -79,6 +79,7 @@ struct voice {
 	int64_t next_time = -1;       /* the timeline frame its next frame out is for */
 	int segment = 0;              /* the envelope's, carried as the deck's is */
 	snurra_isolator isolator;     /* its EQ, as a deck's (snurra_deck) */
+	float eq_gain[SNURRA_EQ_BANDS] = {};
 };
 
 float envelope_gain(const std::vector<std::pair<int64_t, float>> &points, int &segment, double frame) {
@@ -121,11 +122,8 @@ public:
 				if (snurra_cached_beats(made.name, state.audio_track, rate, grid))
 					made.trim = snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE);
 			}
-			for (int band = 0; band < 3; ++band) {
-				const float db = state.eq_db[band];
-				made.eq_gain[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
-				made.eq = made.eq || db != 0;
-			}
+			made.eq_asked = state.eq;
+			made.eq = !state.eq.flat();
 			for (const auto &point : state.envelope)
 				made.envelope.emplace_back(snurra_us_to_frames(point.first, rate), std::clamp(point.second, 0.0f, 1.0f));
 			m_parts.push_back(std::move(made));
@@ -191,8 +189,8 @@ private:
 				continue;
 			}
 			if (one.eq) {
-				left = heard.isolator.run(left, 0, one.eq_gain);
-				right = heard.isolator.run(right, 1, one.eq_gain);
+				left = heard.isolator.run(left, 0, heard.eq_gain);
+				right = heard.isolator.run(right, 1, heard.eq_gain);
 			}
 			/* As a deck: its level, its envelope at the frame heard, and a
 			 * train's crossfades on a quarter circle (snurra_deck::fade). */
@@ -217,7 +215,8 @@ private:
 			                                   : snurra_open_source(one.name, m_rate, one.fallback, m_interrupted);
 			if (one.audio_track >= 0) heard.source->choose_audio_track(one.audio_track);
 			heard.chunk.assign(2 * 1024, 0.0f);
-			heard.isolator.make(m_rate);
+			heard.isolator.make(m_rate, one.eq_asked.splits);
+			heard.isolator.gains(one.eq_asked, heard.eq_gain);
 			voice *self = &heard;
 			heard.pull = [self](float &left, float &right) {
 				if (self->chunk_at >= self->chunk_len) {

@@ -1628,7 +1628,7 @@ void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
 	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 8, 127);
 	QCOMPARE(dj.crossfader(), 1.0);
 	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 16, 0);
-	QVERIFY(a->state().eq_db[0] <= SNURRA_EQ_KILL);
+	QVERIFY(a->state().eq.part_db(0) <= SNURRA_EQ_KILL);
 	/* The tempo fader made the other way: at its top, the slowest. */
 	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 9, 127);
 	QCOMPARE(a->tempo(), float(1 - snurra_tile::tempo_range()));
@@ -2240,8 +2240,8 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 	QVERIFY(folded && folded->playing());
 	QCOMPARE(int(folded->state().player.size()), 2);
 	QCOMPARE(folded->state().player[0].envelope, envelope);
-	QCOMPARE(folded->state().player[0].eq_db[0], -6.0f);
-	QCOMPARE(folded->state().player[0].eq_db[2], SNURRA_EQ_KILL);
+	QCOMPARE(folded->state().player[0].eq.part_db(0), -6.0f);
+	QCOMPARE(folded->state().player[0].eq.part_db(2), SNURRA_EQ_KILL);
 	QVERIFY2(folded->state().position_us > before && folded->state().position_us < before + 1500000,
 	         qPrintable(QStringLiteral("folded at %1 us, was at %2").arg(folded->state().position_us).arg(before)));
 	QVERIFY(!dj.fold());
@@ -2518,25 +2518,25 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 		QMouseEvent moved(QEvent::MouseMove, to, eq->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
 		QCoreApplication::sendEvent(eq, &moved);
 	};
-	QCOMPARE(deck->state().eq_db[0], 0.0f);
+	QCOMPARE(deck->state().eq.part_db(0), 0.0f);
 	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, 12));
-	QCOMPARE(deck->state().eq_db[0], 6.0f);
-	QCOMPARE(deck->state().eq_db[1], 0.0f);   /* the others untouched */
+	QCOMPARE(deck->state().eq.part_db(0), 6.0f);
+	QCOMPARE(deck->state().eq.part_db(1), 0.0f);   /* the others untouched */
 	move_to(at(0, -12));
-	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
+	QCOMPARE(deck->state().eq.part_db(0), SNURRA_EQ_KILL);
 	move_to(at(2, 0));   /* across the mid, at the middle */
-	QCOMPARE(deck->state().eq_db[1], 0.0f);
-	QCOMPARE(deck->state().eq_db[2], 0.0f);
+	QCOMPARE(deck->state().eq.part_db(1), 0.0f);
+	QCOMPARE(deck->state().eq.part_db(2), 0.0f);
 	move_to(at(2, -6));
-	QCOMPARE(deck->state().eq_db[2], -12.0f);
+	QCOMPARE(deck->state().eq.part_db(2), -12.0f);
 	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, -6));
 	move_to(at(2, 12));   /* not held: nothing */
-	QCOMPARE(deck->state().eq_db[2], -12.0f);
+	QCOMPARE(deck->state().eq.part_db(2), -12.0f);
 	/* A stroke skips no band: low to high in one move, the mid too. */
 	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, 6));
 	move_to(at(2, 6));
-	QCOMPARE(deck->state().eq_db[1], 3.0f);
-	QCOMPARE(deck->state().eq_db[2], 3.0f);
+	QCOMPARE(deck->state().eq.part_db(1), 3.0f);
+	QCOMPARE(deck->state().eq.part_db(2), 3.0f);
 	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, 6));
 	/* Drawn band by band, each keeps its own height: low down, mid
 	 * flat, high up -- moving on into the next does not take the last
@@ -2545,19 +2545,19 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	move_to(at(1, 0));
 	move_to(at(2, 4));
 	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(2, 4));
-	QCOMPARE(deck->state().eq_db[0], -8.0f);
-	QCOMPARE(deck->state().eq_db[1], 0.0f);
-	QCOMPARE(deck->state().eq_db[2], 2.0f);
+	QCOMPARE(deck->state().eq.part_db(0), -8.0f);
+	QCOMPARE(deck->state().eq.part_db(1), 0.0f);
+	QCOMPARE(deck->state().eq.part_db(2), 2.0f);
 	deck->set_eq(3, 3, 3);
 	QTest::mouseDClick(eq, Qt::LeftButton, Qt::NoModifier, at(1, 6));
-	QCOMPARE(deck->state().eq_db[1], 0.0f);
-	QCOMPARE(deck->state().eq_db[0], 3.0f);
+	QCOMPARE(deck->state().eq.part_db(1), 0.0f);
+	QCOMPARE(deck->state().eq.part_db(0), 3.0f);
 	QTest::mousePress(eq, Qt::LeftButton, Qt::NoModifier, at(0, -12));
 	QTest::mouseRelease(eq, Qt::LeftButton, Qt::NoModifier, at(0, -12));
-	QCOMPARE(deck->state().eq_db[0], SNURRA_EQ_KILL);
+	QCOMPARE(deck->state().eq.part_db(0), SNURRA_EQ_KILL);
 	/* And a step short of the bottom is -22 dB. */
 	deck->set_eq(-22, 0, 0);
-	QCOMPARE(deck->state().eq_db[0], -22.0f);
+	QCOMPARE(deck->state().eq.part_db(0), -22.0f);
 	deck->set_eq(SNURRA_EQ_KILL, 3, 3);
 
 	QByteArray bytes;
@@ -2567,9 +2567,9 @@ void embed_test::the_cue_is_set_paused_and_returned_to_playing() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.cue_us, deck->cue_us());
-	QCOMPARE(back.eq_db[0], SNURRA_EQ_KILL);
+	QCOMPARE(back.eq.part_db(0), SNURRA_EQ_KILL);
 	QTest::mouseDClick(eq, Qt::LeftButton, Qt::NoModifier, at(0, 0));
-	QCOMPARE(deck->state().eq_db[0], 0.0f);
+	QCOMPARE(deck->state().eq.part_db(0), 0.0f);
 }
 
 /*
@@ -2742,7 +2742,7 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 	QDataStream in(bytes);
 	in >> back;
 	QCOMPARE(back.key_shift, 2);
-	QCOMPARE(back.eq_db[0], 0.0f);
+	QCOMPARE(back.eq.part_db(0), 0.0f);
 	QTest::mouseDClick(knob, Qt::LeftButton);
 	QCOMPARE(tile->state().key_shift, 0);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 8A"));

@@ -415,7 +415,7 @@ void beats_test::a_nested_tracks_eq_is_the_decks() {
 	std::vector<snurra_tile_state> player(1);
 	player[0].source = QStringLiteral("tone:8000");
 	player[0].duration_us = 1000000;
-	player[0].eq_db[2] = SNURRA_EQ_KILL;
+	player[0].eq.set_part(2, SNURRA_EQ_KILL);
 	std::unique_ptr<snurra_source> source = snurra_open_timeline(player, RATE);
 	std::vector<float> heard(size_t(2 * RATE));
 	QCOMPARE(source->read(heard.data(), RATE), RATE);

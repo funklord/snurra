@@ -940,7 +940,7 @@ void snurra_dj_private::keep_moves(int deck) {
 	if (track < 0 || !tile) return;
 	snurra_tile_state &kept = score->states[size_t(track)];
 	const snurra_tile_state now = tile->state();
-	for (int band = 0; band < 3; ++band) kept.eq_db[band] = now.eq_db[band];
+	kept.eq = now.eq;
 	kept.tempo = now.tempo;
 	kept.key_lock = now.key_lock;
 	kept.key_shift = now.key_shift;
@@ -1474,7 +1474,7 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 		tile->set_tempo(float(relative ? tile->tempo() + step * 0.001 : 1 + (at * 2 - 1) * range));
 	} else if (what.startsWith(QLatin1String("eq_"))) {
 		const int band = what == QLatin1String("eq_low") ? 0 : what == QLatin1String("eq_mid") ? 1 : 2;
-		float db[3] = { tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2] };
+		float db[3] = { tile->state().eq.part_db(0), tile->state().eq.part_db(1), tile->state().eq.part_db(2) };
 		if (relative) {
 			db[band] = std::clamp((db[band] <= SNURRA_EQ_KILL ? -24.0f : db[band]) + 0.5f * float(step), -24.0f, 6.0f);
 		} else {
@@ -1563,7 +1563,7 @@ void snurra_dj_private::follow_remote(listener_t &one, const snurra_tile_state &
 			one.trim = snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE);
 	}
 	one.mirror->set_trim(one.trim);
-	one.mirror->set_eq(state.eq_db[0], state.eq_db[1], state.eq_db[2]);
+	one.mirror->set_eq(state.eq);
 	one.mirror->set_key_lock(state.key_lock);
 	one.mirror->set_key_shift(state.key_shift);
 	const int64_t there = snurra_us_to_frames(state.position_now(now), rate);
@@ -1593,7 +1593,7 @@ void snurra_dj_private::anchor(listener_t &one) {
 	one.mirror->set_tempo(deck->tempo());
 	one.mirror->set_key_lock(tile->state().key_lock);
 	one.mirror->set_key_shift(tile->state().key_shift);
-	one.mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
+	one.mirror->set_eq(tile->state().eq);
 	one.mirror->set_trim(deck->trim());
 	one.playing = tile->playing();
 	if (!one.playing) {
@@ -1630,7 +1630,7 @@ void snurra_dj_private::follow_taps() {
 		const int64_t apart = one->mirror->position_at(now) - tile->deck()->position_at(now);
 		const bool drifted = one->playing && std::abs(apart) > one->engine->rate() / 100;
 		if (tile->playing() != one->playing || tile->deck()->tempo() != one->tempo || drifted) anchor(*one);
-		one->mirror->set_eq(tile->state().eq_db[0], tile->state().eq_db[1], tile->state().eq_db[2]);
+		one->mirror->set_eq(tile->state().eq);
 		one->mirror->set_key_lock(tile->state().key_lock);
 		one->mirror->set_key_shift(tile->state().key_shift);
 		/* The level match too: a cue hears the deck after its gain, as the

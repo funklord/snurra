@@ -1185,7 +1185,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	set_tempo(state.tempo);
 	set_key_lock(state.key_lock);
 	set_key_shift(state.key_shift);
-	set_eq(state.eq_db[0], state.eq_db[1], state.eq_db[2]);
+	set_eq(state.eq);
 	tick();
 
 	/* A URL (mplayer's http://...) is played and its picture shown, but
@@ -1821,16 +1821,28 @@ void snurra_tile::seek(qint64 position_us) {
 }
 
 void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
-	const float asked[3] = { low_db, mid_db, high_db };
-	int steps[3];
-	for (int band = 0; band < 3; ++band) {
-		const float db = std::isnan(asked[band]) ? 0.0f : asked[band] < -24.0f ? SNURRA_EQ_KILL : std::min(asked[band], 6.0f);
-		m_state.eq_db[band] = db;
-		/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
-		steps[band] = db <= SNURRA_EQ_KILL ? -12 : db < 0 ? std::max(-11, int(std::lround(db / 2))) : int(std::lround(db * 2));
+	snurra_eq eq = m_state.eq;
+	eq.set_part(0, low_db);
+	eq.set_part(1, mid_db);
+	eq.set_part(2, high_db);
+	set_eq(eq);
+}
+
+void snurra_tile::set_eq(const snurra_eq &asked) {
+	snurra_eq eq = asked;
+	eq.splits &= snurra_eq::TWELVE;
+	for (float &db : eq.db) db = std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f);
+	m_state.eq = eq;
+	if (m_eq) {
+		int steps[3];
+		for (int part = 0; part < 3; ++part) {
+			const float db = eq.part_db(part);
+			/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
+			steps[part] = db <= SNURRA_EQ_KILL ? -12 : db < 0 ? std::max(-11, int(std::lround(db / 2))) : int(std::lround(db * 2));
+		}
+		m_eq->show_steps(steps);
 	}
-	if (m_eq) m_eq->show_steps(steps);
-	m_deck->set_eq(m_state.eq_db[0], m_state.eq_db[1], m_state.eq_db[2]);
+	m_deck->set_eq(eq);
 }
 
 void snurra_tile::cue() {

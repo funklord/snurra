@@ -141,6 +141,7 @@ private slots:
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
 	void the_eq_cuts_its_band_and_leaves_the_rest();
+	void the_eq_splits_into_more_bands_and_is_heard_as_drawn();
 	void a_trim_is_there_from_the_start_and_eased_into_later();
 	void a_nudge_bends_without_a_gap();
 	void a_jump_while_playing_has_no_gap();
@@ -598,6 +599,80 @@ void deck_test::the_eq_cuts_its_band_and_leaves_the_rest() {
 		const double in = level(hz, 0, 0, -0.001f);
 		qInfo("%d Hz through the bands at unity: %.3f dB", hz, in);
 		QVERIFY2(std::abs(in) < 0.01, qPrintable(QStringLiteral("%1 Hz through the bands at unity at %2 dB").arg(hz).arg(in)));
+	}
+}
+
+/*
+ * The EQ split further (project.md sec 4, The EQ): twelve bands at unity
+ * add back flat, at their crossovers too; five bands' sub band, below
+ * 125 Hz, killed takes 60 Hz and leaves 400 Hz; a layout changed while
+ * playing is heard; and what a tone measures through seven bands set
+ * unevenly is what the isolator's response says -- the line the EQ is
+ * drawn as is the sound.
+ */
+void deck_test::the_eq_splits_into_more_bands_and_is_heard_as_drawn() {
+	auto level = [this](int hz, const snurra_eq &eq, const snurra_eq *then = nullptr) {
+		snurra_deck::start_t start = start_for(nullptr, QStringLiteral("tone:%1").arg(hz));
+		start.fallback_length = RATE * 20;
+		snurra_deck deck(start);
+		deck.set_eq(eq);
+		int64_t present = snurra_clock_us();
+		play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 5; });
+		if (then) {
+			deck.set_eq(*then);
+			play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 5; });
+		}
+		const std::vector<rendered_t> blocks = play(deck, present, 4000, [](const std::vector<rendered_t> &b) { return advanced_by(b) > RATE / 2; });
+		std::vector<double> mono;
+		for (const rendered_t &block : blocks)
+			for (int64_t i = 0; i < block.advanced; ++i) mono.push_back(block.samples[size_t(2 * i)]);
+		/* Over whole cycles: at 40 Hz half a second is twenty, and a
+		 * part of one more moved the level by 0.02 dB. */
+		const size_t n = size_t(std::floor(double(mono.size()) * hz / RATE) * RATE / hz);
+		double sum = 0;
+		for (size_t i = 0; i < n; ++i) sum += mono[i] * mono[i];
+		return 10 * std::log10(sum / double(n) / (0.2 * 0.2 / 2));
+	};
+	snurra_eq twelve;
+	twelve.set_layout(snurra_eq::TWELVE);
+	QCOMPARE(twelve.bands(), 12);
+	twelve.db[11] = -0.001f;   /* in, at unity */
+	for (int hz : { 40, 64, 250, 700, 2000, 6000, 12000 }) {
+		const double in = level(hz, twelve);
+		qInfo("%d Hz through twelve bands at unity: %.3f dB", hz, in);
+		QVERIFY2(std::abs(in) < 0.01, qPrintable(QStringLiteral("%1 Hz at %2 dB").arg(hz).arg(in)));
+	}
+
+	snurra_eq five;
+	five.set_layout(snurra_eq::FIVE);
+	QCOMPARE(five.bands(), 5);
+	five.set_band(0, SNURRA_EQ_KILL);
+	const double sub_60 = level(60, five), sub_400 = level(400, five);
+	qInfo("five bands, the sub killed: 60 Hz %.1f dB, 400 Hz %.2f dB", sub_60, sub_400);
+	QVERIFY(sub_60 < -40);
+	QVERIFY(std::abs(sub_400) < 0.2);
+
+	/* Three bands with the mid killed, then five with only the sub: 1
+	 * kHz, killed at first, comes back as the new layout is heard. */
+	snurra_eq three;
+	three.set_band(1, SNURRA_EQ_KILL);
+	const double before = level(1000, three), after = level(1000, three, &five);
+	qInfo("1 kHz: the mid killed %.1f dB, then the sub alone %.2f dB", before, after);
+	QVERIFY(before < -40);
+	QVERIFY(std::abs(after) < 1);
+
+	snurra_eq seven;
+	seven.set_layout(snurra_eq::SEVEN);
+	const float set[7] = { 3, -8, 0, -14, 5, -4, 2 };
+	for (int band = 0; band < 7; ++band) seven.set_band(band, set[band]);
+	snurra_isolator drawn;
+	drawn.make(RATE, seven.splits);
+	float gain[SNURRA_EQ_BANDS];
+	drawn.gains(seven, gain);
+	for (int hz : { 45, 90, 180, 600, 2500, 6000, 10000 }) {
+		const double heard = level(hz, seven), said = 20 * std::log10(drawn.response(hz, RATE, gain));
+		qInfo("%d Hz through seven bands: heard %.2f dB, drawn %.2f dB", hz, heard, said);
+		QVERIFY2(std::abs(heard - said) < 0.1, qPrintable(QStringLiteral("%1 Hz heard %2, drawn %3").arg(hz).arg(heard).arg(said)));
 	}
 }
 

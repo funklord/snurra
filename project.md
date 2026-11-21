@@ -2268,6 +2268,29 @@ controls; each tile very compact but resizeable).
   (`the_eq_cuts_its_band_and_leaves_the_rest`), which the low band's
   allpass taken out (-0.11 dB at 250 Hz) and one wrong Q (-1.9 dB at
   150 Hz) each fail. Not yet: the phone's layout tried on a phone.
+  **More bands, 2026-11-21** (the holder: "splittable into 3/5/7/12?
+  Maybe automatically by dragging that part"): the isolator splits at any
+  of a grid of eleven crossovers -- octaves from 32 Hz to 8 kHz, then 12
+  and 16 kHz (`eq.h`) -- so a layout is a set of bits and three, five,
+  seven and twelve bands nest (250 Hz and 4 kHz; then 125 Hz and 8 kHz;
+  then 64 Hz and 1 kHz; then all). Split from the bottom, the bands taken
+  so far go through each new crossover's allpass before the next band
+  joins them, so any layout adds back flat; with the two splits it is the
+  three-band isolator it was, figure for figure. A state keeps the layout
+  and a dB for each of the grid's twelve narrowest bands (a band of
+  several holds one value in each), streamed in place of the three; a
+  DJ's low, mid and high (a controller's, `set_eq(low, mid, high)`) move
+  every band starting in that part. A new layout is heard once the old
+  has faded to the dry track, 10 ms, and the new faded in. The sections
+  run in double: in float, twelve bands at unity came out 0.024 dB down
+  at 64 Hz, the poles of a 32 Hz section too near 1. Tested in
+  `the_eq_splits_into_more_bands_and_is_heard_as_drawn`: twelve bands at
+  unity within 0.01 dB from 40 Hz to 12 kHz; five bands' sub killed, 60
+  Hz -51 dB and 400 Hz untouched; three bands' mid killed then five
+  bands' sub alone, 1 kHz back from -91 dB; and seven bands set unevenly,
+  each tone measured within 0.1 dB of the isolator's computed response
+  (`snurra_isolator::response`, what the line will draw). Without the
+  allpass between splits, 40 Hz comes out 3 dB down and it fails.
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a
