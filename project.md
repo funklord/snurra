@@ -970,6 +970,16 @@ start overlapping").
   editable and played again -- the one model, not a recording beside it.
 - Switching views moves nothing: both show the one timeline, and both may
   be open at once.
+- **The way there from a window** (the holder, 2026-11-21: "I don't know
+  how to switch to deck mode"): until then only `--dj`, or a tile
+  dragged over a deck view already open. A window's menu (right-click)
+  has "Open in the decks": a new process opens the deck view, connects
+  back and asks for the player by a token (ADOPT, as a tile pulled out
+  is asked for), every tile onto its deck A, gapless; it unfolds what it
+  took across the decks once the crossfade is over, and the window, empty,
+  goes. Tested from a real right-click in Xvfb
+  (`a_window_opens_its_player_in_the_decks`: the decks hold the two
+  tracks, each on its own; without the unfold it fails).
 
 **Nested: a deck plays a player.** The holder, the same day: "a deck's
 input can be a whole train or another deck view's mix -- because they

@@ -56,6 +56,7 @@ private slots:
 	void a_chapters_file_gives_the_first_file_its_tracklist();
 	void a_tile_plays_a_player_and_the_wire_carries_it();
 	void tiles_go_onto_decks_and_back_out_in_step();
+	void a_window_opens_its_player_in_the_decks();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1513,6 +1514,52 @@ void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
  * the group's time; and deck C pulled out opens a window of its own that
  * plays on, the deck left empty.
  */
+/*
+ * The way to the decks from a window (the holder, 2026-11-21: "I don't
+ * know how to switch to deck mode"): its menu's "Open in the decks", by
+ * a real right-click and keys in Xvfb, starts the deck view, which takes
+ * the player of two whole and unfolds it -- each track on its own deck --
+ * and the window, empty, goes.
+ */
+void handover_test::a_window_opens_its_player_in_the_decks() {
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	QProcess *window = start({ QStringLiteral("a.flac"), QStringLiteral("b.flac") }, QStringLiteral("null"), x11);
+	QVERIFY(window->waitForStarted() && wait_for_socket(socket_of(window)));
+	snurra_wire::message where;
+	where.type = snurra_wire::WHERE;
+	QRect frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(window), where).frame).isValid(), 5000);
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(window), status_request()).states.size(), 2, 5000);
+	xdotool(name, { QStringLiteral("mousemove"), QString::number(frame.center().x()), QString::number(frame.center().y()) });
+	QTest::qWait(200);
+	xdotool(name, { QStringLiteral("click"), QStringLiteral("3") });
+	QTest::qWait(400);
+	xdotool(name, { QStringLiteral("key"), QStringLiteral("Down"), QStringLiteral("Return") });
+
+	QString decks;
+	QElapsedTimer waited;
+	waited.start();
+	while (decks.isEmpty() && waited.elapsed() < 10000) {
+		for (const QString &path : sockets())
+			if (path.endsWith(QLatin1String(snurra_wire::DECKS_SUFFIX))) decks = path;
+		QTest::qWait(100);
+	}
+	QVERIFY2(!decks.isEmpty(), "no deck view opened");
+	auto unfolded = [&] {
+		const snurra_wire::message status = ask(decks, status_request(), 500);
+		if (status.states.size() != 2) return false;
+		for (const snurra_tile_state &state : status.states)
+			if (!state.player.empty()) return false;
+		return true;
+	};
+	QTRY_VERIFY_WITH_TIMEOUT(unfolded(), 10000);
+	QVERIFY2(window->waitForFinished(10000), "the window, empty, stayed");
+}
+
 void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	QProcess *decks = start({ QStringLiteral("--decks"), QStringLiteral("4") });
 	QVERIFY(decks->waitForStarted());

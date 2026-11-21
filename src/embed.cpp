@@ -282,6 +282,7 @@ public:
 		bool ready = false;
 	};
 	QHash<QString, taking_t> taking;
+	QString adopted;   /* the token of a player asked for by adopt(): unfolded when taken */
 	/* A deck being given to a window: it plays on until READY. */
 	struct giving_t {
 		QPointer<QLocalSocket> socket;
@@ -693,6 +694,17 @@ void snurra_dj_private::fade_in(const QString &token, qint64 start_us, qint64 le
 	const auto it = taking.constFind(token);
 	if (it == taking.constEnd()) return;
 	if (it->tile) it->tile->deck()->fade(start_us, length_us, 0, 1);
+	/* A player asked for from a window: across the decks once the fade
+	 * is over, where the deck view is a view of it (sec 3f). */
+	if (token == adopted && it->tile && !it->tile->state().player.empty()) {
+		adopted.clear();
+		const QPointer<snurra_tile> tile = it->tile;
+		const int wait_ms = int(std::max<qint64>(0, start_us + length_us - snurra_clock_us()) / 1000) + 50;
+		QTimer::singleShot(wait_ms, q, [this, tile] {
+			for (int deck = 0; deck < decks.size(); ++deck)
+				if (tile && decks[deck]->tile == tile) unfold(deck);
+		});
+	}
 	last_started = start_us;
 	last_stopped = start_us + length_us;
 	end_take(token);
@@ -1240,6 +1252,21 @@ bool snurra_dj::start_now(int deck) {
 
 bool snurra_dj::fold() {
 	return d->fold();
+}
+
+void snurra_dj::adopt(const QString &from, const QString &token) {
+	d->adopted = token;
+	QLocalSocket *socket = new QLocalSocket(this);
+	d->watch(socket);
+	connect(socket, &QLocalSocket::connected, this, [this, socket, token] {
+		snurra_wire::message m;
+		m.type = snurra_wire::ADOPT;
+		m.token = token;
+		m.deck = 0;
+		d->send(socket, m);
+	});
+	connect(socket, &QLocalSocket::errorOccurred, socket, &QObject::deleteLater);
+	socket->connectToServer(from);
 }
 
 QString snurra_dj::socket_path() const {

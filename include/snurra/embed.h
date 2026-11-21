@@ -151,6 +151,10 @@ public:
 	 * host need not. False where the socket cannot be made. */
 	bool listen();
 	QString socket_path() const;
+	/* (5) Started from a window's "Open in the decks": asks the window at
+	 * `from` for its player by `token`, onto deck A, and unfolds it there
+	 * once it is heard. */
+	void adopt(const QString &from, const QString &token);
 
 	/* (5) The player deck `deck` holds -- a whole player handed onto it --
 	 * unfolded across the decks (project.md sec 3f): each of its tracks on

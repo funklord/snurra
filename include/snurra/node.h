@@ -65,6 +65,11 @@ public:
 	/* Started as the taker of a tile another process releases. */
 	void adopt(const QString &from, const QString &token, int index, const QPoint &at);
 
+	/* This player into the deck view (project.md sec 3f): a new process
+	 * opens the decks and takes it whole onto deck A, unfolded across
+	 * them, gapless; this window then goes. Empty, the decks just open. */
+	void open_decks();
+
 	int tile_count() const { return int(m_tiles.size()); }
 
 	/* Files dropped from a file manager: a tile each, to the right a
@@ -102,6 +107,7 @@ protected:
 	bool event(QEvent *event) override;
 	/* mplayer's keys, on the tile last touched (src/node.cpp). */
 	void keyPressEvent(QKeyEvent *event) override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
 	struct pending_give {

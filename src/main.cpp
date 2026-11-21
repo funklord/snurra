@@ -219,6 +219,8 @@ int main(int argc, char *argv[]) {
 		 * control learns one (project.md sec 3f). */
 		player->take_controllers();
 		for (const QString &spec : parser.values(listen)) player->add_listener(spec);
+		/* Opened from a window's "Open in the decks": its player, asked for. */
+		if (parser.isSet(adopt)) player->adopt(parser.value(adopt), parser.value(token));
 		const QStringList given = parser.positionalArguments();
 		for (int deck = 0; deck < player->deck_count() && deck < given.size(); ++deck) {
 			snurra_media media;

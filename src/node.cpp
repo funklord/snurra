@@ -10,7 +10,9 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPixmap>
+#include <QContextMenuEvent>
 #include <QGridLayout>
+#include <QMenu>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QLocalServer>
@@ -1156,6 +1158,39 @@ void snurra_node::release(int index, const QPoint &at) {
 	                          QStringLiteral("--at"), QStringLiteral("%1,%2").arg(at.x()).arg(at.y()) });
 }
 
+/*
+ * The way from a window to the decks (the holder, 2026-11-21: "I don't
+ * know how to switch to deck mode"): as a tile pulled out, a new process
+ * -- the deck view -- connects back and asks for the player by the token
+ * (ADOPT), here every tile, onto its deck A; the player plays on here
+ * until it says READY, so the switch is heard as nothing. The deck view
+ * unfolds what it took across its decks.
+ */
+void snurra_node::open_decks() {
+	if (m_tiles.isEmpty()) {
+		QProcess::startDetached(QCoreApplication::applicationFilePath(), { QStringLiteral("--dj") });
+		return;
+	}
+	const QString token = new_token();
+	pending_give placeholder;
+	for (snurra_tile *tile : m_tiles) placeholder.tiles << tile;
+	placeholder.expiry = new QTimer(this);
+	placeholder.expiry->setSingleShot(true);
+	connect(placeholder.expiry, &QTimer::timeout, this, [this, token] { abort_give(token); });
+	placeholder.expiry->start(ADOPT_WAIT_MS);
+	m_giving.insert(token, placeholder);
+	QProcess::startDetached(QCoreApplication::applicationFilePath(),
+	                        { QStringLiteral("--dj"), QStringLiteral("--adopt"), m_path, QStringLiteral("--token"), token });
+}
+
+void snurra_node::contextMenuEvent(QContextMenuEvent *event) {
+	QMenu menu(this);
+	QAction *decks = menu.addAction(tr("Open in the decks"));
+	decks->setToolTip(tr("This player onto a DJ's decks, each track on its deck"));
+	connect(decks, &QAction::triggered, this, &snurra_node::open_decks);
+	menu.exec(event->globalPos());
+}
+
 /* ---- taking ------------------------------------------------------------ */
 
 void snurra_node::adopt(const QString &from, const QString &token, int index, const QPoint &at) {
@@ -1322,11 +1357,14 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 	case snurra_wire::ADOPT: {
 		const auto it = m_giving.find(m.token);
 		if (it == m_giving.end() || it->tiles.isEmpty() || !it->tiles.first()) break;
-		/* The placeholder release() left becomes the real offer. */
-		snurra_tile *tile = it->tiles.first();
+		/* The placeholder release() or open_decks() left becomes the real
+		 * offer: one tile, or the whole player onto the deck asked. */
+		QList<snurra_tile *> tiles;
+		for (const QPointer<snurra_tile> &tile : it->tiles)
+			if (tile) tiles << tile;
 		if (it->expiry) it->expiry->deleteLater();
 		m_giving.erase(it);
-		offer(socket, m.token, snurra_wire::RIGHT, { tile });
+		offer(socket, m.token, snurra_wire::RIGHT, tiles, m.deck);
 		break;
 	}
 	case snurra_wire::MERGE_INTO:
