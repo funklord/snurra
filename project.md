@@ -307,7 +307,10 @@ and everything above it knows nothing of SFTP or fuzznet.
   workspace's GUIs carry one in a Help menu (harmonization.md); snurra
   has no menu at all, by design -- a tile, a drawer, a library. Best
   guess: About in a right-click menu on the title, as XMMS and gmplayer
-  put theirs, or none beyond `--version`. Not built until decided.
+  put theirs, or none beyond `--version`. Not built until decided. Since
+  2026-11-21 a window has a right-click menu (Remove, Into a window of
+  its own, Open in the decks) and one bar, so the guess would be one
+  more entry there.
 - **Open (2026-11-20): the theme onto qtkit.** qtkit's
   `qtkit_follow_desktop` asks the portal, reads `~/.config/kdeglobals`,
   abstains on identical colours and follows a change, which snurra's own
@@ -479,7 +482,11 @@ does the same with a tile's playback:
   (the tiles' rows hidden -- shown, it fails -- the bar naming the tile
   touched, a press not seeking and its release seeking, the handle and
   close) and in Xvfb, a tile of a group pulled out by its waveform
-  (`a_tile_dragged_onto_another_window_joins_it`).
+  (`a_tile_dragged_onto_another_window_joins_it`). A tile's own close went
+  with its row, so a right-click on a tile offers "Remove" it -- that one
+  track -- and, in a group, "Into a window of its own", beside the
+  window (`a_tracks_menu_removes_it_from_its_window`; without the entry it
+  fails).
 - **Above or below, a lane of its own, shown before the drop** (the
   holder, 2026-11-21: "we allow them to be placed above or below in
   separate tracks, the preview should show what is going to happen

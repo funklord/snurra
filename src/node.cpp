@@ -1616,6 +1616,28 @@ void snurra_node::open_decks() {
 
 void snurra_node::contextMenuEvent(QContextMenuEvent *event) {
 	QMenu menu(this);
+	/* The track under the hand: what its own title row's close and drag
+	 * did, before the window's one bar took the row (sec 3b). */
+	const QPointer<snurra_tile> over = tile_at(event->pos(), false);
+	if (over) {
+		const QString name = fontMetrics().elidedText(over->title(), Qt::ElideMiddle, fontMetrics().averageCharWidth() * 40);
+		QAction *remove = menu.addAction(tr("Remove %1").arg(name));
+		remove->setObjectName(QStringLiteral("snurra-remove"));
+		connect(remove, &QAction::triggered, this, [this, over] {
+			if (!over) return;
+			remove_tile(over);
+			leave_if_empty();
+		});
+		if (m_tiles.size() > 1) {
+			QAction *out = menu.addAction(tr("Into a window of its own"));
+			out->setObjectName(QStringLiteral("snurra-pull-out"));
+			const QPoint beside = frameGeometry().topRight() + QPoint(fontMetrics().height(), 0);
+			connect(out, &QAction::triggered, this, [this, over, beside] {
+				if (over && m_tiles.size() > 1) release(int(m_tiles.indexOf(over)), can_place_windows() ? beside : QPoint());
+			});
+		}
+		menu.addSeparator();
+	}
 	QAction *decks = menu.addAction(tr("Open in the decks"));
 	decks->setToolTip(tr("This player onto a DJ's decks, each track on its deck"));
 	connect(decks, &QAction::triggered, this, &snurra_node::open_decks);
