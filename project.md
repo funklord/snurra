@@ -1366,8 +1366,10 @@ alike.
    by a "learn" button by the crossfader: while it is on, a control
    pressed learns as Alt held with it does (`snurra_controller::set_learning`).
    The end-to-end test learns its fader that way; with the mode ignored,
-   it fails. A window's own controls (an emergency player's play) still
-   learn by Alt only.
+   it fails. In a window with controllers (an emergency player) Ctrl+L
+   turns the same mode on and off -- free among mplayer's keys -- and the
+   emergency player's test learns its play button so; with the key
+   ignored, it fails.
 
 7. Taps and listeners: a listener's output, the sockets, the plug moved.
    **First part built 2026-11-20** (`snurra_dj::add_listener`, `plug`;

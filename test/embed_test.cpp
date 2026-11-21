@@ -1584,9 +1584,12 @@ void embed_test::each_player_takes_the_bindings_named_for_it() {
 	QWidget *play = mix->play_button();
 	QVERIFY(play);
 	QCOMPARE(play->property("snurra_control").toString(), QStringLiteral("play"));
-	QTest::mousePress(play, Qt::LeftButton, Qt::AltModifier, play->rect().center());
+	/* Without Alt -- Ctrl+L, as where the window manager takes Alt. */
+	QTest::keyClick(&emergency, Qt::Key_L, Qt::ControlModifier);
+	QTest::mousePress(play, Qt::LeftButton, Qt::NoModifier, play->rect().center());
 	note(52);
-	QTest::mouseRelease(play, Qt::LeftButton, Qt::AltModifier, play->rect().center());
+	QTest::mouseRelease(play, Qt::LeftButton, Qt::NoModifier, play->rect().center());
+	QTest::keyClick(&emergency, Qt::Key_L, Qt::ControlModifier);
 	QVERIFY(!mix->playing());
 	snurra_bindings kept;
 	kept.load();

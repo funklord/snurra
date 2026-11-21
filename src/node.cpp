@@ -1694,6 +1694,12 @@ void snurra_node::mousePressEvent(QMouseEvent *event) {
  * pulled out first: what plays is what can be stopped (sec 3c).
  */
 void snurra_node::keyPressEvent(QKeyEvent *event) {
+	/* Ctrl+L: learning without Alt, as the deck view's "learn" button --
+	 * where the window manager takes Alt with the pointer (sec 3f). */
+	if (m_controller && event->key() == Qt::Key_L && (event->modifiers() & Qt::ControlModifier)) {
+		m_controller->set_learning(!m_controller->learning_mode());
+		return;
+	}
 	snurra_tile *tile = m_current && m_tiles.contains(m_current) ? m_current.data() : nullptr;
 	for (snurra_tile *candidate : m_tiles)
 		if (!tile && candidate->controls()) tile = candidate;
