@@ -1030,7 +1030,11 @@ start overlapping").
   took across the decks once the crossfade is over, and the window, empty,
   goes. Tested from a real right-click in Xvfb
   (`a_window_opens_its_player_in_the_decks`: the decks hold the two
-  tracks, each on its own; without the unfold it fails).
+  tracks, each on its own; without the unfold it fails). The window then
+  stayed, empty, two runs in five: Qt 6's `quit()` asks every window to
+  close first and is dropped if one will not, so an emptied process now
+  ends with `exit()`, as does one asked to by SIGTERM -- which, dropped,
+  left a dmix's shared memory to the kill that followed (7 runs in 7).
 
 **Nested: a deck plays a player.** The holder, the same day: "a deck's
 input can be a whole train or another deck view's mix -- because they

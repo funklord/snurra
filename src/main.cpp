@@ -58,7 +58,9 @@ void quit_on_signals(QCoreApplication &app) {
 	fcntl(quit_pipe[1], F_SETFD, FD_CLOEXEC);
 	fcntl(quit_pipe[1], F_SETFL, O_NONBLOCK);
 	QSocketNotifier *notifier = new QSocketNotifier(quit_pipe[0], QSocketNotifier::Read, &app);
-	QObject::connect(notifier, &QSocketNotifier::activated, &app, [] { QCoreApplication::quit(); });
+	/* exit(), not quit(), which a window refusing to close drops (node.cpp,
+	 * leave_if_empty): asked to end, it ends. */
+	QObject::connect(notifier, &QSocketNotifier::activated, &app, [] { QCoreApplication::exit(0); });
 	struct sigaction action {};
 	action.sa_handler = ask_to_quit;
 	sigemptyset(&action.sa_mask);
