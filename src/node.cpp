@@ -285,6 +285,19 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 		}
 	});
 	bar->addWidget(m_bar_controls);
+	m_bar_picture = new QToolButton(m_bar);
+	m_bar_picture->setObjectName(QStringLiteral("snurra-bar-picture"));
+	m_bar_picture->setAutoRaise(true);
+	m_bar_picture->setCheckable(true);
+	m_bar_picture->setText(tr("video"));
+	m_bar_picture->setAccessibleName(tr("Show the video"));
+	m_bar_picture->setToolTip(m_bar_picture->accessibleName());
+	m_bar_picture->hide();   /* until a tile has a picture */
+	connect(m_bar_picture, &QToolButton::toggled, this, [this](bool open) {
+		m_picture_open = open;
+		if (snurra_tile *tile = picture_tile()) tile->set_video_open(open);
+	});
+	bar->addWidget(m_bar_picture);
 	QToolButton *decks = new QToolButton(m_bar);
 	decks->setObjectName(QStringLiteral("snurra-bar-decks"));
 	decks->setAutoRaise(true);
@@ -490,7 +503,12 @@ snurra_tile *snurra_node::add_tile(const snurra_tile_state &state, bool held) {
 	});
 	tile->set_grouped(true);
 	connect(tile, &snurra_tile::play_requested, this, &snurra_node::play_group);
-	connect(tile, &snurra_tile::drawers_changed, this, &snurra_node::fit_to_drawers);
+	connect(tile, &snurra_tile::drawers_changed, this, [this] {
+		fit_to_drawers();
+		/* A picture found or opened that is not the window's: closed
+		 * once it has said so -- one picture to a window. */
+		QTimer::singleShot(0, this, [this] { show_picture(); });
+	});
 	connect(tile, &snurra_tile::timing_changed, this, &snurra_node::timing_changed);
 	connect(tile, &snurra_tile::nudge_requested, this, &snurra_node::nudge_lane);
 	connect(tile, &snurra_tile::sync_requested, this, [this](snurra_tile *asking) { sync(asking); });
@@ -706,7 +724,7 @@ void snurra_node::lay_out_timeline() {
 	 * the whole timeline at it. */
 	double per_frame = 0;
 	for (const span_t &span : spans) {
-		const int least = std::max(span.tile->minimumSizeHint().width(), span.tile->drawer_above()->isVisible() ? span.tile->drawer_above()->minimumSizeHint().width() : 0);
+		const int least = span.tile->minimumSizeHint().width();
 		per_frame = std::max(per_frame, double(least) / double(span.to - span.from));
 	}
 	m_timeline_wanted = edges.size() > 1 ? int(std::ceil(per_frame * double(edges.back() - edges.front()))) : 0;
@@ -736,12 +754,25 @@ void snurra_node::lay_out_timeline() {
 		const int lane = 3 * span.tile->row();
 		const int column = column_of(span.from);
 		const int across = std::max(1, column_of(span.to) - column);
-		m_grid->addWidget(span.tile->drawer_above(), lane, column, 1, across);
 		m_grid->addWidget(span.tile, lane + 1, column, 1, across);
 		span.tile->show();
 	}
 	const int lanes = int(rows().size());
 	if (panel) m_grid->addWidget(panel->drawer_below(), 3 * lanes, 0, 1, std::max(1, int(edges.size()) - 1));
+	/*
+	 * One picture to a window (the holder, 2026-11-21: "maybe video still
+	 * goes on top of top bar or below it, only one video window"): the
+	 * picture tile's drawer on top, over the bar, the window's width;
+	 * every other tile's drawer in no layout, and closed (show_picture).
+	 */
+	QVBoxLayout *outer = static_cast<QVBoxLayout *>(layout());
+	snurra_tile *picture = picture_tile();
+	for (const span_t &span : spans)
+		if (span.tile != picture) outer->removeWidget(span.tile->drawer_above());
+	if (picture && outer->indexOf(picture->drawer_above()) != 0) {
+		outer->removeWidget(picture->drawer_above());
+		outer->insertWidget(0, picture->drawer_above());
+	}
 	m_grid->setRowStretch(3 * lanes + 1, 1);
 	if (m_ruler) m_ruler->update();
 }
@@ -899,6 +930,7 @@ void snurra_node::drop_tile(snurra_tile *tile) {
 	m_grid->removeWidget(tile);
 	m_grid->removeWidget(tile->drawer_above());
 	m_grid->removeWidget(tile->drawer_below());
+	layout()->removeWidget(tile->drawer_above());   /* the window's picture */
 	tile->hide();
 	if (tile->drawer_above()) tile->drawer_above()->hide();
 	if (tile->drawer_below()) tile->drawer_below()->hide();
@@ -935,7 +967,92 @@ int64_t snurra_node::overlap(snurra_tile *tile, snurra_tile *next) const {
 	return timeline().overlap(int(ordered().indexOf(tile)));
 }
 
+/* The tile whose picture the window shows: the one chosen, else the
+ * first in the timeline with a picture. */
+snurra_tile *snurra_node::picture_tile() const {
+	if (m_picture && m_tiles.contains(m_picture) && m_picture->has_video()) return m_picture;
+	for (snurra_tile *tile : ordered())
+		if (tile->has_video()) return tile;
+	return nullptr;
+}
+
+/*
+ * The picture follows what is heard: the first in the timeline that plays
+ * and has one -- through a train's crossfade the one going out, the one
+ * coming in mixed over it as far as the crossfade has gone (mix_for),
+ * then, the first ended, the one come in. Every other picture is closed:
+ * one window of video to a player. Open as the window last had it.
+ */
+void snurra_node::show_picture() {
+	snurra_tile *lead = nullptr;
+	for (snurra_tile *tile : ordered())
+		if (tile->has_video() && tile->playing()) {
+			lead = tile;
+			break;
+		}
+	const bool heard = lead != nullptr;
+	if (!lead) lead = picture_tile();
+	bool moved = false;
+	if (lead && lead != m_picture) {
+		/* Open as the window last had it, where the picture it showed was
+		 * one heard; one shown only for want of any playing -- the next
+		 * film found before the first, closed as a tile with no controls
+		 * opens -- says nothing of that, and the new one opens as it would
+		 * on its own (a_window_shows_one_picture_..., one run in six). */
+		m_picture_open = m_picture && m_tiles.contains(m_picture) && m_picture_heard ? m_picture->video_open() : lead->video_open();
+		m_picture = lead;
+		moved = true;
+	}
+	if (lead) m_picture_heard = heard;
+	for (snurra_tile *tile : m_tiles) {
+		if (tile == lead) continue;
+		tile->mix_in = nullptr;
+		if (tile->video_open()) {
+			tile->set_video_open(false);
+			moved = true;
+		}
+	}
+	if (!lead) {
+		m_bar_picture->hide();
+		return;
+	}
+	if (!lead->mix_in) {
+		const QPointer<snurra_tile> shown = lead;
+		lead->mix_in = [this, shown](QImage &other) { return shown ? mix_for(shown, other) : 0.0; };
+	}
+	if (moved) {
+		if (lead->video_open() != m_picture_open) lead->set_video_open(m_picture_open);
+		setUpdatesEnabled(false);
+		lay_out_timeline();
+		setUpdatesEnabled(true);
+		fit_to_drawers();
+	}
+	m_bar_picture->setVisible(true);
+	m_bar_picture->blockSignals(true);
+	m_bar_picture->setChecked(lead->video_open());
+	m_bar_picture->blockSignals(false);
+}
+
+/* Through a crossfade from `lead` to the next of its train, the next's
+ * picture and how far in it is: 0 where it comes in, 1 where the first
+ * ends. None where the next has no picture or is not yet heard. */
+double snurra_node::mix_for(snurra_tile *lead, QImage &other) {
+	const QList<snurra_tile *> tiles = lane(lead->row());
+	const int at = int(tiles.indexOf(lead));
+	if (at < 0 || at + 1 >= tiles.size()) return 0;
+	snurra_tile *next = tiles.at(at + 1);
+	if (!next->has_video() || !next->playing()) return 0;
+	const int64_t across = overlap(lead, next);
+	if (across <= 0) return 0;
+	const double in = double(next->deck()->position_at(snurra_clock_us()) - snurra_us_to_frames(next->offset_us(), next->deck()->rate()))
+	                  / std::max(0.01, double(next->deck()->tempo()));
+	if (in <= 0) return 0;
+	other = next->picture_now();
+	return other.isNull() ? 0 : std::clamp(in / double(across), 0.0, 1.0);
+}
+
 void snurra_node::run_trains() {
+	show_picture();
 	if (m_ruler)
 		for (snurra_tile *tile : m_tiles)
 			if (tile->playing()) {

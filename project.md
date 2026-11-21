@@ -511,6 +511,27 @@ does the same with a tile's playback:
   looked empty -- seen in Xvfb). Tested in
   `a_ruler_marks_the_bars_on_the_lanes_scale`: a 4 s track at 120 BPM,
   its bars half its width apart, the first where it begins.
+- **One picture to a window, mixed through a crossfade** (the holder,
+  2026-11-21: "maybe video still goes on top of top bar or below it,
+  only one video window, that for now mixes the two videos with an effect
+  if they are in transition"). A window shows one tile's picture, on top
+  over its bar, the window's width; every other tile's is closed. The
+  picture follows what is heard: the first in the timeline that plays and
+  has one -- through a train's crossfade the one going out, with the one
+  coming in dissolved over it as far as the crossfade has gone (0 where
+  it comes in, 1 where the first ends), then, the first ended, the one
+  come in. Open or closed as the window last had it, by the bar's
+  "video"; the tiles' own picture buttons are the bar's in a window. A
+  dissolve is the first effect; others can follow it. Tested in
+  `a_window_shows_one_picture_mixed_through_a_crossfade` (two films in a
+  train: the first's picture over the bar, the second dissolved in as
+  far as 1.00, never two drawers open, then the second's; with no mixing
+  it fails) and looked at in Xvfb mid-crossfade. Open as the window last
+  had it only where the picture it showed was one heard: the next film's
+  picture, found before the first's and closed as a tile with no controls
+  opens, once made the first open closed (one run in six). Lanes of a stack
+  playing at once show the first lane's, unmixed: a mix is for a
+  transition.
 - **Started with no file: the music library** (the holder, 2026-11-13:
   started without a file, snurra said it could not play "untitled" and
   played three minutes of silence anyway). It opens a library instead,

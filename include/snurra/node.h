@@ -11,6 +11,7 @@
 #include "snurra/wire.h"
 
 class QGridLayout;
+class QImage;
 class QLabel;
 class QToolButton;
 class snurra_ruler;
@@ -178,6 +179,14 @@ private:
 	QToolButton *m_bar_controls = nullptr;
 	bool m_bar_held = false;
 	bool m_moving_panel = false;   /* the panel being moved between tiles */
+	/* One picture to a window (sec 3b). */
+	QPointer<snurra_tile> m_picture;
+	bool m_picture_open = true;
+	bool m_picture_heard = false;   /* m_picture shown because it played */
+	QToolButton *m_bar_picture = nullptr;
+	snurra_tile *picture_tile() const;
+	void show_picture();
+	double mix_for(snurra_tile *lead, QImage &other);
 	/* The beats and bars along the top (sec 3b). */
 	QWidget *m_ruler = nullptr;
 	void fill_ruler(snurra_ruler &made) const;

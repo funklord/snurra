@@ -66,6 +66,7 @@ private slots:
 	void every_codec_shows_the_frame_of_its_time_data();
 	void every_codec_shows_the_frame_of_its_time();
 	void a_track_without_a_picture_has_no_video();
+	void a_window_shows_one_picture_mixed_through_a_crossfade();
 	void the_video_drawer_opens_upward_and_shows_what_is_heard();
 	void full_screen_asked_before_the_picture_comes_with_it();
 	void a_period_steps_one_frame_on_paused();
@@ -291,6 +292,60 @@ void video_test::a_track_without_a_picture_has_no_video() {
  * 16 ms it is looked at). Maximized, the picture is full screen; Escape
  * brings it back.
  */
+/*
+ * One picture to a window (the holder, 2026-11-21: "only one video
+ * window, that for now mixes the two videos with an effect if they are
+ * in transition"): two films in a train show in one drawer over the
+ * window's bar -- the first's while it plays alone, the second's
+ * dissolved over it through their crossfade, then the second's alone --
+ * and never two drawers at once.
+ */
+void video_test::a_window_shows_one_picture_mixed_through_a_crossfade() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	QVERIFY(make(QStringLiteral("first.mp4"), { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	QVERIFY(make(QStringLiteral("second.mp4"), { QStringLiteral("-c:v"), QStringLiteral("libx264") }, 0));
+	snurra_node node;
+	snurra_tile_state one;
+	one.source = m_dir.filePath(QStringLiteral("first.mp4"));
+	one.playing = true;
+	one.controls = true;
+	one.position_us = 1000000;
+	one.sampled_at_us = snurra_clock_us();
+	snurra_tile_state two = one;
+	two.source = m_dir.filePath(QStringLiteral("second.mp4"));
+	two.position_us = 0;
+	two.playing = false;   /* the train starts it, at its moment */
+	two.controls = false;
+	two.column = 1;
+	snurra_tile *a = node.add_tile(one);
+	snurra_tile *b = node.add_tile(two);
+	node.move(100, 400);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTRY_VERIFY_WITH_TIMEOUT(a->video_open(), 5000);
+	QVERIFY(!b->video_open());
+	QWidget *bar = node.findChild<QWidget *>(QStringLiteral("snurra-bar"));
+	QVERIFY(bar);
+	QTRY_VERIFY_WITH_TIMEOUT(a->drawer_above()->geometry().bottom() < bar->geometry().top(), 2000);
+	QWidget *view = nullptr;
+	for (QWidget *child : a->drawer_above()->findChildren<QWidget *>())
+		if (child->accessibleName() == QLatin1String("Video")) view = child;
+	QVERIFY(view);
+	double most = 0;
+	bool both = false;
+	QElapsedTimer waited;
+	waited.start();
+	while (!b->video_open() && waited.elapsed() < 6000) {
+		QTest::qWait(20);
+		most = std::max(most, view->property("mix").toDouble());
+		both = both || (a->video_open() && b->video_open());
+	}
+	qInfo("the second dissolved in as far as %.2f", most);
+	QVERIFY2(most > 0.2, "the crossfade showed no mix");
+	QVERIFY(!both);
+	QTRY_VERIFY_WITH_TIMEOUT(b->video_open() && !a->video_open(), 4000);
+}
+
 void video_test::the_video_drawer_opens_upward_and_shows_what_is_heard() {
 	if (m_ffmpeg.isEmpty() || m_ffprobe.isEmpty()) QSKIP("no ffmpeg and ffprobe");
 	const QString name = QStringLiteral("drawer.mp4");
@@ -310,7 +365,10 @@ void video_test::the_video_drawer_opens_upward_and_shows_what_is_heard() {
 	QTRY_VERIFY_WITH_TIMEOUT(tile->video_open(), 5000);
 	QWidget *drawer = tile->drawer_above();
 	QTRY_COMPARE_WITH_TIMEOUT(drawer->height(), (drawer->width() - 4) * 48 / 64 + 4, 2000);
-	QTRY_COMPARE_WITH_TIMEOUT(drawer->geometry().bottom() + 1, tile->geometry().top(), 2000);
+	/* On top of the window, over its bar (one picture to a window). */
+	QWidget *bar = node.findChild<QWidget *>(QStringLiteral("snurra-bar"));
+	QVERIFY(bar);
+	QTRY_COMPARE_WITH_TIMEOUT(drawer->geometry().bottom() + 1, bar->geometry().top(), 2000);
 
 	tile->set_video_open(false);
 	QTRY_VERIFY_WITH_TIMEOUT(!drawer->isVisible(), 2000);

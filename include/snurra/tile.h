@@ -2,9 +2,11 @@
 #define SNURRA_TILE_H
 
 #include <QElapsedTimer>
+#include <QImage>
 #include <QPointer>
 #include <QWidget>
 
+#include <functional>
 #include <memory>
 
 #include "snurra/beats.h"
@@ -231,6 +233,14 @@ public:
 	 * (mplayer's -fs), shown so once it is. */
 	void set_video_open(bool open);
 	bool video_open() const;
+	/* Whether it has a picture to show at all. */
+	bool has_video() const { return m_view != nullptr; }
+	/* The picture for what is heard now; null without one. */
+	QImage picture_now();
+	/* Asked at each picture shown: another to mix over it, and how much
+	 * of it, 0 to 1 -- a window's one picture through a crossfade (sec
+	 * 3b). */
+	std::function<double(QImage &other)> mix_in;
 	void set_full_screen(bool full);
 	void toggle_full_screen() { set_full_screen(!full_screen()); }
 	bool full_screen() const { return bool(m_full); }

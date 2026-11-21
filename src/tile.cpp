@@ -844,6 +844,26 @@ public:
 		place_corner();
 	}
 	QToolButton *corner() const { return m_corner; }
+	/* Another picture over this one, `amount` of it, 0 none to 1 all: the
+	 * film coming in through a crossfade, dissolved in (the holder,
+	 * 2026-11-21: "only one video window, that for now mixes the two
+	 * videos with an effect if they are in transition"). */
+	void show_mix(const QImage &other, double amount) {
+		amount = std::clamp(amount, 0.0, 1.0);
+		if (other.isNull() || amount <= 0) {
+			if (m_mix.isNull()) return;
+			m_mix = QImage();
+			m_mix_amount = 0;
+			setProperty("mix", 0.0);
+			update();
+			return;
+		}
+		if (other.cacheKey() == m_mix.cacheKey() && std::abs(amount - m_mix_amount) < 0.004) return;
+		m_mix = other;
+		m_mix_amount = amount;
+		setProperty("mix", amount);
+		update();
+	}
 	void show_frame(const snurra_video_frame &frame) {
 		if (!frame.valid() || frame.pts_us == property("pts").toLongLong()) return;
 		m_image = frame.image;
@@ -898,6 +918,8 @@ public:
 		m_pointer.start();
 	}
 	std::function<void()> on_leave;   /* full screen: Escape or a double-click */
+	QImage m_mix;
+	double m_mix_amount = 0;
 	/* Full screen, a window of its own: every other key, to the player's
 	 * window, as if pressed there -- or space, f and the rest do nothing
 	 * once the picture fills the screen. */
@@ -916,6 +938,12 @@ protected:
 		const QRect at(QPoint((width() - fitted.width()) / 2, (height() - fitted.height()) / 2), fitted);
 		painter.setRenderHint(QPainter::SmoothPixmapTransform);
 		painter.drawImage(at, m_image);
+		if (!m_mix.isNull() && m_mix_amount > 0) {
+			const QSize mixed = m_mix.size().scaled(size(), Qt::KeepAspectRatio);
+			painter.setOpacity(m_mix_amount);
+			painter.drawImage(QRect(QPoint((width() - mixed.width()) / 2, (height() - mixed.height()) / 2), mixed), m_mix);
+			painter.setOpacity(1);
+		}
 		paint_cues(painter, at);
 		if (!m_notice.isEmpty() && m_notice_age.isValid() && m_notice_age.elapsed() < NOTICE_MS) {
 			QFont font = painter.font();
@@ -1575,6 +1603,7 @@ void snurra_tile::build_video_drawer(bool open) {
 	m_video_toggle->setAccessibleName(tr("Show the video"));
 	m_video_toggle->setToolTip(m_video_toggle->accessibleName());
 	m_top->insertWidget(1, m_video_toggle);
+	m_video_toggle->setVisible(m_bar_shown);   /* in a window, the bar's */
 	connect(m_video_toggle, &QToolButton::toggled, this, &snurra_tile::set_video_open);
 	if (m_picture_closed_at_first) open = false;
 
@@ -1857,6 +1886,9 @@ void snurra_tile::show_video_frame() {
 	}
 	if (m_view) {
 		m_view->show_frame(frame);
+		QImage other;
+		const double amount = mix_in ? mix_in(other) : 0.0;
+		m_view->show_mix(other, amount);
 		m_view->show_cues(cues);
 		m_view->show_clock(clock);
 	}
@@ -1865,6 +1897,12 @@ void snurra_tile::show_video_frame() {
 		static_cast<snurra_video_view *>(m_full.data())->show_cues(cues);
 		static_cast<snurra_video_view *>(m_full.data())->show_clock(clock);
 	}
+}
+
+QImage snurra_tile::picture_now() {
+	if (!m_video) return {};
+	const qint64 heard = qint64(snurra_frames_to_us(m_deck->position_at(snurra_clock_us()), m_deck->rate()));
+	return m_video->frame_at(heard + m_sound_delay).image;
 }
 
 void snurra_tile::set_full_screen(bool full) {
@@ -2412,6 +2450,7 @@ void snurra_tile::set_bar_shown(bool shown) {
 	m_title->setVisible(shown);
 	m_pull->setVisible(shown);
 	m_close->setVisible(shown);
+	if (m_video_toggle) m_video_toggle->setVisible(shown);
 	m_waveform->set_name(shown ? QString() : m_title->text());
 	if (shown) {
 		m_waveform->on_drag = nullptr;
