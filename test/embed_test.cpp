@@ -91,6 +91,7 @@ private slots:
 	void a_nested_track_is_brought_to_the_level_its_deck_would_give();
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void a_browse_knob_and_load_buttons_fill_the_decks();
+	void an_encoder_about_64_steps_both_ways();
 	void each_player_takes_the_bindings_named_for_it();
 	void each_deck_has_its_side_of_the_crossfader();
 	void the_decks_sit_as_the_person_arranged_them();
@@ -1504,6 +1505,45 @@ void embed_test::a_browse_knob_and_load_buttons_fill_the_decks() {
 	controller->take(event(snurra_midi_event::note_on, 40, 100));
 	QCOMPARE(dj.loaded(1), QFileInfo(browser->shown().at(1)).fileName());
 	QVERIFY(dj.loaded(0).isEmpty());
+}
+
+/*
+ * An encoder sending about 64 -- 65 up one, 63 down one, as many do --
+ * steps the browser down three and back up one. Read as two's complement
+ * only, 63 was 63 steps down, and the choice ran to the list's end.
+ */
+void embed_test::an_encoder_about_64_steps_both_ways() {
+	QTemporaryDir dir;
+	for (const QString &name : { QStringLiteral("a.wav"), QStringLiteral("b.wav"), QStringLiteral("c.wav"), QStringLiteral("d.wav") }) {
+		QFile file(dir.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4800));
+	}
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers")); });
+	{
+		snurra_bindings bindings;
+		bindings.bind(QStringLiteral("pads/ch1/cc20"), QStringLiteral("browse"), snurra_control_kind::relative);
+		bindings.save();
+	}
+	snurra_dj dj;
+	dj.set_browser_folder(dir.path());
+	dj.show();
+	snurra_library *browser = dj.findChild<snurra_library *>();
+	QTRY_COMPARE_WITH_TIMEOUT(browser->shown().size(), 4, 5000);
+	QVERIFY(dj.take_controllers());
+	snurra_controller *controller = dj.findChild<snurra_controller *>();
+	QVERIFY(controller);
+	qint64 at = snurra_clock_us();
+	for (int value : { 65, 65, 65, 63 }) {
+		snurra_midi_event made;
+		made.port = QStringLiteral("pads");
+		made.number = 20;
+		made.value = value;
+		made.at_us = (at += 2000000);
+		controller->take(made);
+	}
+	QCOMPARE(browser->chosen(), QStringList{ browser->shown().at(1) });
 }
 
 /*

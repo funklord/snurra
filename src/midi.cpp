@@ -158,6 +158,12 @@ snurra_control_kind snurra_control_kind_from(const QString &name) {
 	return snurra_control_kind::absolute;
 }
 
+int snurra_relative_step(int value) {
+	if (value < 32) return value;
+	if (value < 96) return value - 64;
+	return value - 128;
+}
+
 void snurra_bindings::bind(const QString &index, const QString &control, snurra_control_kind kind) {
 	/* One hardware control moves one of snurra's; a control moved by one
 	 * hardware control at a time, as a learn replaces what it had. */

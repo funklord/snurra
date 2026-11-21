@@ -1396,7 +1396,7 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 	const bool off = event.kind == snurra_midi_event::note_off || (event.kind == snurra_midi_event::cc && event.value < 64);
 	double at = event.kind == snurra_midi_event::bend ? event.value / 16383.0 : event.value / 127.0;
 	int step = 0;
-	if (kind == snurra_control_kind::relative) step = event.value >= 64 ? event.value - (event.value >= 96 ? 128 : 64) : event.value;
+	if (kind == snurra_control_kind::relative) step = snurra_relative_step(event.value);
 	const bool relative = kind == snurra_control_kind::relative;
 	at = std::clamp(at, 0.0, 1.0);
 	/* The browser: a knob steps the choice, or puts it at its place down

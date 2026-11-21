@@ -209,4 +209,12 @@ private:
 QString snurra_control_kind_name(snurra_control_kind kind);
 snurra_control_kind snurra_control_kind_from(const QString &name);
 
+/*
+ * A relative encoder's step from its value. Controllers send one of two
+ * ways: about 64 (65 up one, 63 down one) or two's complement (1 up one,
+ * 127 down one). Either way a step is small, so the value says which: up
+ * to 31 is up from 0, 33 to 95 is about 64, 97 and over down from 128.
+ */
+int snurra_relative_step(int value);
+
 #endif

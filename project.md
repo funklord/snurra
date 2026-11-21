@@ -1358,6 +1358,13 @@ alike.
    `ch_N_load` puts the chosen tune on deck N; learned by Alt held on the
    list and on a deck's frame. Tested by an encoder stepping down three
    and back one, then deck B's load (with the steps ignored, it fails).
+   **An encoder's step, 2026-11-21:** controllers send a step about 64
+   (65 up, 63 down) or as two's complement (1 up, 127 down); the step was
+   read as two's complement below 64, so a turn down sent as 63 went 63
+   steps up. Small steps tell the two apart (`snurra_relative_step`: up
+   to 31 up from 0, 33 to 95 about 64, over 96 down from 128); tested by
+   65, 65, 65, 63 on the browser (with the old reading, the choice ran to
+   the list's end).
    **Not yet:** slots other than the decks, their strips and the browser
    (snurra has no effect units) -- the decks' own are arranged and sided
    below -- HID and Android MIDI, and Mixxx's
