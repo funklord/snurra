@@ -1395,7 +1395,13 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->name = name;
 	place->empty->hide();
 	place->unfold->setVisible(!tile->state().player.empty());
+	/* Where another window can be started: on a phone the decks are
+	 * the app, one screen, and there is no process to start. */
+#ifdef Q_OS_ANDROID
+	place->out->setVisible(false);
+#else
 	place->out->setVisible(server != nullptr);
+#endif
 	place->column->addWidget(tile);
 	tile->show();
 	snurra_dj *dj = q;
