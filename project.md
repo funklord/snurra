@@ -55,8 +55,8 @@ and everything above it knows nothing of SFTP or fuzznet.
 - Waiting on the holder: a real screen and speaker trial, a Wayland
   compositor (weston), the AcoustID key, the phone (install, a node of
   its own, the fold cover, Android's FFmpeg), moving a joined window, the
-  cross-process drop's entry point, an About window's place, Mixxx's
-  mappings (with their JavaScript or not), and qtkit's remote (sec 3).
+  cross-process drop's entry point, an About window's place, and
+  qtkit's remote (sec 3).
 
 ## 2. Decided
 
@@ -1367,8 +1367,7 @@ alike.
    the list's end).
    **Not yet:** slots other than the decks, their strips and the browser
    (snurra has no effect units) -- the decks' own are arranged and sided
-   below -- HID and Android MIDI, and Mixxx's
-   mappings (whether their JavaScript too is the holder's). **Learning
+   below -- and HID and Android MIDI. **Learning
    without Alt, 2026-11-21:** a window manager that takes Alt with the
    pointer to move windows -- TDE's and KDE 3's do by default, so the
    holder's desktop would likely never pass the press to snurra -- is met
@@ -1427,9 +1426,36 @@ alike.
    (with the choice ignored, it fails). **Not yet:** sockets on a nested
    player's track.
 
-**Open, the holder's:** controller mappings -- MIDI learn and Mixxx's
-plain bindings, or Mixxx's JavaScript too (QJSEngine is in QtQml, which
-this player does not link). It blocks only step 6.
+**Mixxx's mappings: plain, no JavaScript** {#mixxx-mappings}
+
+Status:  settled 2026-11-21
+Decides: mixxx-mappings
+
+The holder, 2026-11-21: "plain Mixxx mappings, no JavaScript" (QJSEngine
+is in QtQml, which this player does not link). `snurra --import-mapping
+<file.midi.xml>` reads a mapping's `<controls>` into the bindings
+(`snurra_bindings::import_mixxx`) and says, a line each, what it did not
+take: a control bound to a script, one snurra has no control for, an
+inverted one, a note on a fader. Mixxx's controls map to the deck view's
+slots: `[ChannelN]` volume, play, cue_default, pfl, rate,
+LoadSelectedTrack, beatsync and sync_enabled, filterLow/Mid/High to
+ch_N_level ... ch_N_eq_high; the EQ rack's parameter1 to 3 to the same
+EQ; `[Master]` crossfader; and the library's SelectTrackKnob and
+MoveVertical to `browse`, SelectNext/PrevTrack and MoveDown/Up to the new
+`browse_next` and `browse_prev`. Options decide the kind: selectknob,
+diff, rot64, spread64 and the jogs are relative; fourteen-bit-msb on a
+controller under 32 is fine (its partner 32 above, as snurra pairs them);
+a note a button; a bend a bend. A mapping does not know which port the
+controller is on, so the import binds from any port (`*/ch1/cc7`); a
+binding learned for a port wins over it there, and a second import
+replaces the first's while what was learned stays. Several hardware
+controls may move one control, as in Mixxx -- and learning that control
+afterwards replaces them all, as a learn does. Of the 132 MIDI mappings Mixxx
+2.5 installs, 108 give bindings, 1501 in all; the rest are their scripts.
+`rate` is taken in Mixxx's raw direction (0 slowest), with no account of
+Mixxx's own slider-direction setting: a guess, to be put right on a real
+controller. Tested in `a_mixxx_mappings_plain_bindings_move_the_decks`
+(with the any-port lookup removed, it fails).
 
 ## 4. State
 

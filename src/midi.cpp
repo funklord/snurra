@@ -9,6 +9,8 @@
 #include <QSettings>
 #include <QTimer>
 #include <QToolTip>
+#include <QRegularExpression>
+#include <QXmlStreamReader>
 #include <QWidget>
 #include <QSocketNotifier>
 
@@ -179,7 +181,9 @@ void snurra_bindings::unbind(const QString &index) {
 }
 
 QString snurra_bindings::control_for(const QString &index, snurra_control_kind *kind) const {
-	const auto it = m_bound.constFind(index);
+	auto it = m_bound.constFind(index);
+	/* Bound by its port first, then from any (an imported mapping). */
+	if (it == m_bound.constEnd()) it = m_bound.constFind(QStringLiteral("*/") + index.section(QLatin1Char('/'), -2));
 	if (it == m_bound.constEnd()) return {};
 	if (kind) *kind = it->kind;
 	return it->control;
@@ -234,6 +238,172 @@ bool snurra_bindings::read(const QStringList &lines) {
 	}
 	m_bound = got;
 	return true;
+}
+
+/*
+ * Mixxx's controls to snurra's (project.md sec 3f): a deck's [ChannelN]
+ * keys to ch_N_..., its EQ rack's three parameters to its EQ, the
+ * crossfader, and the library's knob and buttons to the browser. Read
+ * from the mappings Mixxx 2.5 installs: these are the plain bindings they
+ * hold most, after the scripts.
+ */
+static QString mixxx_control(const QString &group, const QString &key) {
+	static const QRegularExpression channel(QStringLiteral("^\\[Channel(\\d)\\]$"));
+	static const QRegularExpression equalizer(QStringLiteral("^\\[EqualizerRack1_\\[Channel(\\d)\\]_Effect1\\]$"));
+	QRegularExpressionMatch match = channel.match(group);
+	if (match.hasMatch()) {
+		static const QMap<QString, QString> deck = {
+			{ QStringLiteral("volume"), QStringLiteral("level") },
+			{ QStringLiteral("play"), QStringLiteral("play") },
+			{ QStringLiteral("cue_default"), QStringLiteral("cue") },
+			{ QStringLiteral("pfl"), QStringLiteral("listen") },
+			{ QStringLiteral("rate"), QStringLiteral("tempo") },
+			{ QStringLiteral("LoadSelectedTrack"), QStringLiteral("load") },
+			{ QStringLiteral("beatsync"), QStringLiteral("sync") },
+			{ QStringLiteral("sync_enabled"), QStringLiteral("sync") },
+			{ QStringLiteral("filterLow"), QStringLiteral("eq_low") },
+			{ QStringLiteral("filterMid"), QStringLiteral("eq_mid") },
+			{ QStringLiteral("filterHigh"), QStringLiteral("eq_high") },
+		};
+		const QString what = deck.value(key);
+		return what.isEmpty() ? QString() : QStringLiteral("ch_%1_").arg(match.captured(1)) + what;
+	}
+	match = equalizer.match(group);
+	if (match.hasMatch()) {
+		const QString band = key == QLatin1String("parameter1") ? QStringLiteral("eq_low")
+		                   : key == QLatin1String("parameter2") ? QStringLiteral("eq_mid")
+		                   : key == QLatin1String("parameter3") ? QStringLiteral("eq_high") : QString();
+		return band.isEmpty() ? QString() : QStringLiteral("ch_%1_").arg(match.captured(1)) + band;
+	}
+	if ((group == QLatin1String("[Master]") || group == QLatin1String("[Mixer]")) && key == QLatin1String("crossfader"))
+		return QStringLiteral("crossfader");
+	if (group == QLatin1String("[Playlist]") || group == QLatin1String("[Library]")) {
+		if (key == QLatin1String("SelectTrackKnob") || key == QLatin1String("MoveVertical")) return QStringLiteral("browse");
+		if (key == QLatin1String("SelectNextTrack") || key == QLatin1String("MoveDown")) return QStringLiteral("browse_next");
+		if (key == QLatin1String("SelectPrevTrack") || key == QLatin1String("MoveUp")) return QStringLiteral("browse_prev");
+	}
+	return {};
+}
+
+/* A control pressed rather than moved. */
+static bool pressed_control(const QString &control) {
+	for (const char *end : { "_play", "_cue", "_listen", "_sync", "_load" })
+		if (control.endsWith(QLatin1String(end))) return true;
+	return control == QLatin1String("browse_next") || control == QLatin1String("browse_prev");
+}
+
+int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
+	QXmlStreamReader reader(xml);
+	if (!reader.readNextStartElement()
+	    || (reader.name() != QLatin1String("MixxxControllerPreset") && reader.name() != QLatin1String("MixxxMIDIPreset")))
+		return -1;
+	struct control_t {
+		QString group, key;
+		int status = -1, number = -1;
+		QStringList options;
+	};
+	QList<control_t> found;
+	bool in_controls = false;
+	control_t *at = nullptr;
+	while (!reader.atEnd()) {
+		reader.readNext();
+		if (reader.isStartElement()) {
+			const QStringView name = reader.name();
+			if (name == QLatin1String("controls")) in_controls = true;
+			else if (in_controls && name == QLatin1String("control")) {
+				found.append(control_t{});
+				at = &found.last();
+			} else if (at && name == QLatin1String("options")) {
+				while (reader.readNextStartElement()) {
+					at->options << reader.name().toString().toLower();
+					reader.skipCurrentElement();
+				}
+			} else if (at && (name == QLatin1String("group") || name == QLatin1String("key") || name == QLatin1String("status")
+			                  || name == QLatin1String("midino"))) {
+				const QString text = reader.readElementText().trimmed();
+				bool ok = false;
+				if (name == QLatin1String("group")) at->group = text;
+				else if (name == QLatin1String("key")) at->key = text;
+				else if (name == QLatin1String("status")) at->status = text.toInt(&ok, 0);
+				else at->number = text.toInt(&ok, 0);
+				if (!ok && (name == QLatin1String("status") || name == QLatin1String("midino"))) at->status = -1;
+			}
+		} else if (reader.isEndElement()) {
+			if (reader.name() == QLatin1String("controls")) in_controls = false;
+			else if (reader.name() == QLatin1String("control")) at = nullptr;
+		}
+	}
+	if (reader.hasError()) return -1;
+	/* What an earlier import bound goes; what was learned stays. */
+	for (auto it = m_bound.begin(); it != m_bound.end();) {
+		if (it.key().startsWith(QLatin1String("*/"))) it = m_bound.erase(it);
+		else ++it;
+	}
+	QStringList passed;
+	auto skip = [&passed](const control_t &c, const QString &why) {
+		const QString line = QStringLiteral("%1 %2: %3").arg(c.group, c.key, why);
+		if (!passed.contains(line)) passed << line;
+	};
+	int bound_count = 0;
+	for (const control_t &c : found) {
+		const auto has = [&c](const char *option) { return c.options.contains(QLatin1String(option)); };
+		if (has("script-binding")) {
+			skip(c, QStringLiteral("a script's"));
+			continue;
+		}
+		const QString control = mixxx_control(c.group, c.key);
+		if (control.isEmpty()) {
+			skip(c, QStringLiteral("snurra has no such control"));
+			continue;
+		}
+		if (c.status < 0 || c.number < 0 || c.number > 127) {
+			skip(c, QStringLiteral("no message to bind"));
+			continue;
+		}
+		if (has("fourteen-bit-lsb")) continue;   /* the finer half, taken with its coarse one */
+		if (has("invert") || has("rot64inv")) {
+			skip(c, QStringLiteral("inverted, which a binding here is not"));
+			continue;
+		}
+		const bool relative = has("selectknob") || has("diff") || has("rot64") || has("rot64fast") || has("spread64")
+		                   || has("hercjog") || has("hercjogfast");
+		const bool pressed = pressed_control(control);
+		const int message = c.status & 0xf0, channel = (c.status & 0x0f) + 1;
+		QString index = QStringLiteral("*/ch%1/").arg(channel);
+		snurra_control_kind kind = snurra_control_kind::absolute;
+		if (message == 0x80 || message == 0x90) {
+			if (!pressed) {
+				skip(c, QStringLiteral("a note on a control that moves"));
+				continue;
+			}
+			index += QStringLiteral("note%1").arg(c.number);
+			kind = snurra_control_kind::button;
+		} else if (message == 0xb0) {
+			index += QStringLiteral("cc%1").arg(c.number);
+			if (relative && pressed) {
+				skip(c, QStringLiteral("an encoder on a button"));
+				continue;
+			}
+			/* A 14-bit control is its coarse half and the one 32 above,
+			 * as snurra pairs them. */
+			kind = pressed ? snurra_control_kind::button
+			     : relative ? snurra_control_kind::relative
+			     : has("fourteen-bit-msb") && c.number < 32 ? snurra_control_kind::fine
+			     : snurra_control_kind::absolute;
+		} else if (message == 0xe0 && !pressed) {
+			index += QStringLiteral("bend");
+			kind = snurra_control_kind::bend;
+		} else {
+			skip(c, QStringLiteral("a message snurra does not bind"));
+			continue;
+		}
+		/* Several hardware controls may move one of snurra's, as in
+		 * Mixxx; a note's on and off are one. */
+		if (!m_bound.contains(index)) ++bound_count;
+		m_bound.insert(index, bound{ control, kind });
+	}
+	if (skipped) *skipped = passed;
+	return bound_count;
 }
 
 void snurra_bindings::load() {

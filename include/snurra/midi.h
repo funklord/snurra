@@ -127,7 +127,9 @@ public:
 	/* `index` -> `control`, replacing what that index had. */
 	void bind(const QString &index, const QString &control, snurra_control_kind kind);
 	void unbind(const QString &index);
-	/* The control an event moves, and how; empty where none. */
+	/* The control an event moves, and how; empty where none. A binding
+	 * from any port -- its index's port written as a star, as an imported
+	 * mapping makes -- moves it where none names the port it came from. */
 	QString control_for(const QString &index, snurra_control_kind *kind = nullptr) const;
 	/* A name the person gave a hardware index. */
 	void set_alias(const QString &index, const QString &name);
@@ -143,6 +145,17 @@ public:
 	/* Read back; a line naming an alias resolves through it. False where
 	 * a line is not a binding. */
 	bool read(const QStringList &lines);
+
+	/*
+	 * A Mixxx controller mapping (its .midi.xml): the plain bindings onto
+	 * the deck view's controls, from any port, replacing an earlier
+	 * import's and leaving what was learned. A control bound to a script
+	 * is not taken -- snurra runs no mapping's JavaScript (the holder,
+	 * 2026-11-21) -- nor one snurra has no control for. The count bound,
+	 * or -1 where the file is not a mapping; `skipped` a line for each
+	 * control not taken, saying why.
+	 */
+	int import_mixxx(const QByteArray &xml, QStringList *skipped = nullptr);
 
 	void load();   /* from the settings */
 	void save() const;

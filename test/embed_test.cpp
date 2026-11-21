@@ -92,6 +92,7 @@ private slots:
 	void a_player_in_a_tile_beats_with_the_track_it_sounds();
 	void a_browse_knob_and_load_buttons_fill_the_decks();
 	void an_encoder_about_64_steps_both_ways();
+	void a_mixxx_mappings_plain_bindings_move_the_decks();
 	void each_player_takes_the_bindings_named_for_it();
 	void each_deck_has_its_side_of_the_crossfader();
 	void the_decks_sit_as_the_person_arranged_them();
@@ -1544,6 +1545,95 @@ void embed_test::an_encoder_about_64_steps_both_ways() {
 		controller->take(made);
 	}
 	QCOMPARE(browser->chosen(), QStringList{ browser->shown().at(1) });
+}
+
+/*
+ * A Mixxx mapping imported (project.md sec 3f; the holder, 2026-11-21:
+ * plain mappings, no JavaScript): its plain bindings move the decks from
+ * whatever port sends them; a script's control and one snurra has not
+ * are skipped, saying so; a binding learned for a port wins over the
+ * import, and a second import replaces the first's.
+ */
+void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
+	const QByteArray mapping = R"(<?xml version="1.0" encoding="utf-8"?>
+<MixxxControllerPreset schemaVersion="1" mixxxVersion="2.5.0">
+ <info><name>Test controller</name></info>
+ <controller id="Test">
+  <scriptfiles><file filename="Test-scripts.js" functionprefix="Test"/></scriptfiles>
+  <controls>
+   <control><group>[Channel1]</group><key>volume</key><status>0xB0</status><midino>0x07</midino><options><normal/></options></control>
+   <control><group>[Channel2]</group><key>volume</key><status>0xB1</status><midino>0x07</midino><options><normal/></options></control>
+   <control><group>[Channel2]</group><key>play</key><status>0x91</status><midino>0x3B</midino><options><normal/></options></control>
+   <control><group>[Channel2]</group><key>play</key><status>0x81</status><midino>0x3B</midino><options><normal/></options></control>
+   <control><group>[Master]</group><key>crossfader</key><status>0xB0</status><midino>0x08</midino><options><normal/></options></control>
+   <control><group>[EqualizerRack1_[Channel1]_Effect1]</group><key>parameter1</key><status>0xB0</status><midino>16</midino></control>
+   <control><group>[Channel1]</group><key>jog</key><status>0xB0</status><midino>0x20</midino><options><Script-Binding/></options></control>
+   <control><group>[Channel1]</group><key>hotcue_1_activate</key><status>0x90</status><midino>0x01</midino><options><normal/></options></control>
+  </controls>
+  <outputs>
+   <output><group>[Channel2]</group><key>play_indicator</key><status>0x91</status><midino>0x3B</midino><minimum>0.5</minimum></output>
+  </outputs>
+ </controller>
+</MixxxControllerPreset>
+)";
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers")); });
+	{
+		snurra_bindings bindings;
+		QCOMPARE(bindings.import_mixxx("<html><body/></html>"), -1);
+		/* Learned for one port: deck B's level from its cc 7. */
+		bindings.bind(QStringLiteral("pads/ch2/cc7"), QStringLiteral("ch_2_tempo"), snurra_control_kind::absolute);
+		bindings.bind(QStringLiteral("*/ch16/cc1"), QStringLiteral("crossfader"), snurra_control_kind::absolute);
+		QStringList skipped;
+		QCOMPARE(bindings.import_mixxx(mapping, &skipped), 5);
+		QVERIFY(skipped.contains(QStringLiteral("[Channel1] jog: a script's")));
+		QVERIFY(skipped.contains(QStringLiteral("[Channel1] hotcue_1_activate: snurra has no such control")));
+		QCOMPARE(skipped.size(), 2);
+		/* An earlier import's binding is gone, the learned one stays. */
+		QVERIFY(bindings.control_for(QStringLiteral("any/ch16/cc1")).isEmpty());
+		QCOMPARE(bindings.control_for(QStringLiteral("pads/ch2/cc7")), QStringLiteral("ch_2_tempo"));
+		bindings.save();
+	}
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QVERIFY(dj.load(1, media));
+	QVERIFY(dj.take_controllers());
+	snurra_controller *controller = dj.findChild<snurra_controller *>();
+	QVERIFY(controller);
+	snurra_tile *a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	snurra_tile *b = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b"))->findChild<snurra_tile *>();
+	QVERIFY(a && b);
+	qint64 at = snurra_clock_us();
+	auto send = [&](const QString &port, int channel, snurra_midi_event::kind_t kind, int number, int value) {
+		snurra_midi_event made;
+		made.port = port;
+		made.channel = channel;
+		made.kind = kind;
+		made.number = number;
+		made.value = value;
+		made.at_us = (at += 2000000);
+		controller->take(made);
+	};
+	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 7, 0);
+	QCOMPARE(a->level(), 0);
+	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 8, 127);
+	QCOMPARE(dj.crossfader(), 1.0);
+	send(QStringLiteral("Some Controller:MIDI 1"), 1, snurra_midi_event::cc, 16, 0);
+	QVERIFY(a->state().eq_db[0] <= SNURRA_EQ_KILL);
+	const bool playing = b->playing();
+	send(QStringLiteral("Some Controller:MIDI 1"), 2, snurra_midi_event::note_on, 0x3b, 127);
+	QTRY_COMPARE_WITH_TIMEOUT(b->playing(), !playing, 2000);
+	/* The port learned for moves what it was learned to, not the import's. */
+	const int level = b->level();
+	send(QStringLiteral("pads"), 2, snurra_midi_event::cc, 7, 0);
+	QCOMPARE(b->level(), level);
+	send(QStringLiteral("elsewhere"), 2, snurra_midi_event::cc, 7, 0);
+	QCOMPARE(b->level(), 0);
 }
 
 /*

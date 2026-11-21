@@ -9,6 +9,7 @@
 #endif
 #include <QCommandLineParser>
 #include <QCursor>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QIcon>
@@ -26,6 +27,7 @@
 #include "snurra/clock.h"
 #include "snurra/embed.h"
 #include "snurra/library.h"
+#include "snurra/midi.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
 #include "snurra/theme.h"
@@ -155,13 +157,39 @@ int main(int argc, char *argv[]) {
 	                                       QStringLiteral("A tracklist for the first file, in FFmpeg's metadata format, as chapters."),
 	                                       QStringLiteral("file"));
 	const QCommandLineOption shuffle(QStringLiteral("shuffle"), QStringLiteral("Play the files in a random order."));
+	const QCommandLineOption import_mapping(QStringLiteral("import-mapping"),
+	                                        QStringLiteral("Bind a controller as a Mixxx mapping (.midi.xml) does, its plain bindings only."),
+	                                        QStringLiteral("file"));
 	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
-	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen, player_name });
+	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen, player_name, import_mapping });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
 	 * holder on a line of their own. */
 	if (parser.isSet(version)) {
 		std::printf("snurra %s\nCopyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>\n", SNURRA_VERSION_TEXT);
+		return 0;
+	}
+	/* A Mixxx mapping's plain bindings into the settings, where a running
+	 * deck view reads them within a second; its scripts are not run (the
+	 * holder, 2026-11-21). What was not taken is said, a line each. */
+	if (parser.isSet(import_mapping)) {
+		const QString path = parser.value(import_mapping);
+		QFile file(path);
+		if (!file.open(QIODevice::ReadOnly)) {
+			std::fprintf(stderr, "snurra: cannot read %s\n", qPrintable(path));
+			return 1;
+		}
+		snurra_bindings bindings;
+		bindings.load();
+		QStringList skipped;
+		const int bound = bindings.import_mixxx(file.readAll(), &skipped);
+		if (bound < 0) {
+			std::fprintf(stderr, "snurra: %s is not a Mixxx controller mapping\n", qPrintable(path));
+			return 1;
+		}
+		bindings.save();
+		std::printf("snurra: %d controls bound from %s, from whichever port sends them\n", bound, qPrintable(path));
+		for (const QString &line : skipped) std::printf("  not taken: %s\n", qPrintable(line));
 		return 0;
 	}
 	if (parser.isSet(layout)) qputenv("SNURRA_LAYOUT", parser.value(layout).toLocal8Bit());

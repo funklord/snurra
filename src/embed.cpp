@@ -1408,6 +1408,11 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 		else browser->choose_row(int(std::lround(at * double(std::max(0, int(browser->shown().size()) - 1)))));
 		return;
 	}
+	/* Its buttons, a step each (a mapping's SelectNextTrack). */
+	if (control == QLatin1String("browse_next") || control == QLatin1String("browse_prev")) {
+		if (!off) browser->step_choice(control == QLatin1String("browse_next") ? 1 : -1);
+		return;
+	}
 	if (control.startsWith(QLatin1String("ch_")) && control.endsWith(QLatin1String("_load"))) {
 		if (off) return;
 		const int deck = control.section(QLatin1Char('_'), 1, 1).toInt() - 1;
