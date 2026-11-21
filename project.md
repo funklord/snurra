@@ -1359,10 +1359,15 @@ alike.
    **Not yet:** slots other than the decks, their strips and the browser
    (snurra has no effect units) -- the decks' own are arranged and sided
    below -- HID and Android MIDI, and Mixxx's
-   mappings (whether their JavaScript too is the holder's). A
-   window manager that takes Alt-drag to move windows (many on X11) may
-   take the press before snurra sees it; a second gesture may be wanted
-   there.
+   mappings (whether their JavaScript too is the holder's). **Learning
+   without Alt, 2026-11-21:** a window manager that takes Alt with the
+   pointer to move windows -- TDE's and KDE 3's do by default, so the
+   holder's desktop would likely never pass the press to snurra -- is met
+   by a "learn" button by the crossfader: while it is on, a control
+   pressed learns as Alt held with it does (`snurra_controller::set_learning`).
+   The end-to-end test learns its fader that way; with the mode ignored,
+   it fails. A window's own controls (an emergency player's play) still
+   learn by Alt only.
 
 7. Taps and listeners: a listener's output, the sockets, the plug moved.
    **First part built 2026-11-20** (`snurra_dj::add_listener`, `plug`;

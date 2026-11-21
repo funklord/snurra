@@ -1681,6 +1681,22 @@ bool snurra_dj::take_controllers() {
 		d->controller = nullptr;
 		return false;
 	}
+	/* Learning without Alt, for where the window manager takes it: on,
+	 * the next control pressed listens for the hardware moved. */
+	QToolButton *learn = new QToolButton(this);
+	learn->setText(tr("learn"));
+	learn->setAccessibleName(tr("Learn controller bindings"));
+	learn->setToolTip(tr("On: press a control, then move the hardware control meant for it"));
+	learn->setCheckable(true);
+	learn->setAutoRaise(true);
+	if (QLayout *fader = d->crossfader->parentWidget()->layout())
+		if (QBoxLayout *column = qobject_cast<QBoxLayout *>(fader))
+			for (int i = 0; i < column->count(); ++i)
+				if (QBoxLayout *row = qobject_cast<QBoxLayout *>(column->itemAt(i)->layout()))
+					if (row->indexOf(d->crossfader) >= 0) row->addWidget(learn);
+	connect(learn, &QToolButton::toggled, this, [this](bool on) {
+		if (d->controller) d->controller->set_learning(on);
+	});
 	d->control_widget(d->crossfader, QStringLiteral("crossfader"));
 	d->control_widget(d->browser->list(), QStringLiteral("browse"));
 	for (int i = 0; i < d->decks.size(); ++i) d->name_controls(i);

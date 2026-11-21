@@ -1303,12 +1303,20 @@ void embed_test::a_controller_learned_by_holding_moves_the_deck() {
 	QCOMPARE(level->property("snurra_control").toString(), QStringLiteral("ch_1_level"));
 
 	for (int i = 0; i < 20; ++i) send(1, 40 + (i % 3) * 7);   /* the worn pot, wandering 14 */
-	QTest::mousePress(level, Qt::LeftButton, Qt::AltModifier, level->rect().center());
+	/* Learned without Alt -- the Learn button on, as where the window
+	 * manager takes Alt with the pointer -- the same as with it. */
+	QToolButton *learn = nullptr;
+	for (QToolButton *button : dj.findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Learn controller bindings")) learn = button;
+	QVERIFY(learn && learn->isVisible());
+	learn->setChecked(true);
+	QTest::mousePress(level, Qt::LeftButton, Qt::NoModifier, level->rect().center());
 	for (int i = 0; i < 12; ++i) {
 		send(1, 40 + (i % 3) * 7);
 		send(7, 10 + i * 8);
 	}
-	QTest::mouseRelease(level, Qt::LeftButton, Qt::AltModifier, level->rect().center());
+	QTest::mouseRelease(level, Qt::LeftButton, Qt::NoModifier, level->rect().center());
+	learn->setChecked(false);
 	snurra_bindings kept;
 	kept.load();
 	const QString fader = QStringLiteral("snurra test controller:fader/ch1/cc7");

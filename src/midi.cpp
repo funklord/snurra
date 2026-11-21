@@ -450,7 +450,7 @@ void snurra_controller::name_widget(QWidget *widget, const QString &control) {
 			        const QString name = widget ? widget->property(CONTROL_PROPERTY).toString() : QString();
 			        if (name.isEmpty() || !m_midi) return false;
 			        if (event->type() == QEvent::MouseButtonPress
-			            && (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier)) {
+			            && (m_learn_mode || (static_cast<QMouseEvent *>(event)->modifiers() & Qt::AltModifier))) {
 				        QString control = name;
 				        /* An EQ is one line over three bands: the band under the hand. */
 				        if (control.endsWith(QLatin1String("_eq"))) {

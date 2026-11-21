@@ -178,6 +178,11 @@ public:
 	 * pointer pressed on it learns a binding to it. A name ending "_eq"
 	 * is three, by the third of the widget under the pointer. */
 	void name_widget(QWidget *widget, const QString &control);
+	/* While on, a press on a named control learns as Alt held with it
+	 * does -- for a desktop whose window manager takes Alt with the
+	 * pointer to move windows (TDE's and KDE 3's do by default). */
+	void set_learning(bool on) { m_learn_mode = on; }
+	bool learning_mode() const { return m_learn_mode; }
 	snurra_bindings &bindings() { return m_bindings; }
 	/* An event as MIDI in gives it -- a test's way in. */
 	void take(const snurra_midi_event &event) { received(event); }
@@ -194,6 +199,7 @@ private:
 	snurra_bindings m_bindings;
 	snurra_midi_learn m_learn;
 	QString m_learning;
+	bool m_learn_mode = false;
 	qint64 m_loaded_us = 0;
 	QTimer *m_timer = nullptr;
 	QObject *m_filter = nullptr;
