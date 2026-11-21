@@ -302,18 +302,32 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 		QString group, key;
 		int status = -1, number = -1;
 		QStringList options;
+		int on = 0x7f, off = 0;
+		double minimum = 0.5, maximum = 1;
 	};
-	QList<control_t> found;
-	bool in_controls = false;
+	QList<control_t> found, shown;
+	bool in_controls = false, in_outputs = false;
 	control_t *at = nullptr;
 	while (!reader.atEnd()) {
 		reader.readNext();
 		if (reader.isStartElement()) {
 			const QStringView name = reader.name();
 			if (name == QLatin1String("controls")) in_controls = true;
+			else if (name == QLatin1String("outputs")) in_outputs = true;
 			else if (in_controls && name == QLatin1String("control")) {
 				found.append(control_t{});
 				at = &found.last();
+			} else if (in_outputs && name == QLatin1String("output")) {
+				shown.append(control_t{});
+				at = &shown.last();
+			} else if (at && (name == QLatin1String("on") || name == QLatin1String("off"))) {
+				bool ok = false;
+				const int value = reader.readElementText().trimmed().toInt(&ok, 0);
+				if (ok) (name == QLatin1String("on") ? at->on : at->off) = std::clamp(value, 0, 127);
+			} else if (at && (name == QLatin1String("minimum") || name == QLatin1String("maximum"))) {
+				bool ok = false;
+				const double value = reader.readElementText().trimmed().toDouble(&ok);
+				if (ok) (name == QLatin1String("minimum") ? at->minimum : at->maximum) = value;
 			} else if (at && name == QLatin1String("options")) {
 				while (reader.readNextStartElement()) {
 					at->options << reader.name().toString().toLower();
@@ -331,7 +345,8 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 			}
 		} else if (reader.isEndElement()) {
 			if (reader.name() == QLatin1String("controls")) in_controls = false;
-			else if (reader.name() == QLatin1String("control")) at = nullptr;
+			else if (reader.name() == QLatin1String("outputs")) in_outputs = false;
+			else if (reader.name() == QLatin1String("control") || reader.name() == QLatin1String("output")) at = nullptr;
 		}
 	}
 	if (reader.hasError()) return -1;
@@ -403,6 +418,32 @@ int snurra_bindings::import_mixxx(const QByteArray &xml, QStringList *skipped) {
 		if (!m_bound.contains(index)) ++bound_count;
 		m_bound.insert(index, bound{ control, kind });
 	}
+	/* The lights: a deck's play, its plug and its key lock, the states
+	 * snurra has to show. */
+	m_lights.clear();
+	for (const control_t &c : shown) {
+		const QString control = mixxx_control(c.group, c.key == QLatin1String("play_indicator") ? QStringLiteral("play") : c.key);
+		const int message = c.status & 0xf0;
+		if (!control.endsWith(QLatin1String("_play")) && !control.endsWith(QLatin1String("_listen"))
+		    && !control.endsWith(QLatin1String("_key_lock"))) {
+			skip(c, QStringLiteral("a light snurra has no state for"));
+			continue;
+		}
+		if (c.status < 0 || c.number < 0 || c.number > 127 || (message != 0x90 && message != 0xb0)) {
+			skip(c, QStringLiteral("a light by a message snurra does not send"));
+			continue;
+		}
+		light one;
+		one.control = control;
+		one.channel = (c.status & 0x0f) + 1;
+		one.note = message == 0x90;
+		one.number = c.number;
+		one.on = c.on;
+		one.off = c.off;
+		one.minimum = c.minimum;
+		one.maximum = c.maximum;
+		m_lights << one;
+	}
 	if (skipped) *skipped = passed;
 	return bound_count;
 }
@@ -421,6 +462,24 @@ void snurra_bindings::load() {
 		if (eq > 0) m_names.insert(line.mid(eq + 3).trimmed(), line.left(eq).trimmed());
 	}
 	read(settings.value(QStringLiteral("controllers/bindings")).toStringList());
+	m_lights.clear();
+	for (const QString &line : settings.value(QStringLiteral("controllers/lights")).toStringList()) {
+		const int arrow = int(line.indexOf(QLatin1String(" -> ")));
+		const QStringList words = line.mid(arrow + 4).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		if (arrow <= 0 || words.size() != 5) continue;
+		const QString where = words.at(0);   /* "ch1/note59" */
+		light one;
+		one.control = line.left(arrow).trimmed();
+		one.channel = where.section(QLatin1Char('/'), 0, 0).mid(2).toInt();
+		const QString what = where.section(QLatin1Char('/'), 1, 1);
+		one.note = what.startsWith(QLatin1String("note"));
+		one.number = what.mid(one.note ? 4 : 2).toInt();
+		one.on = words.at(1).toInt();
+		one.off = words.at(2).toInt();
+		one.minimum = words.at(3).toDouble();
+		one.maximum = words.at(4).toDouble();
+		if (one.channel >= 1 && one.channel <= 16) m_lights << one;
+	}
 }
 
 void snurra_bindings::save() const {
@@ -436,6 +495,19 @@ void snurra_bindings::save() const {
 	else settings.setValue(QStringLiteral("controllers/names"), names);
 	if (m_bound.isEmpty()) settings.remove(QStringLiteral("controllers/bindings"));
 	else settings.setValue(QStringLiteral("controllers/bindings"), lines());
+	QStringList lit;
+	for (const light &one : m_lights)
+		lit << QStringLiteral("%1 -> ch%2/%3%4 %5 %6 %7 %8")
+		           .arg(one.control)
+		           .arg(one.channel)
+		           .arg(one.note ? QStringLiteral("note") : QStringLiteral("cc"))
+		           .arg(one.number)
+		           .arg(one.on)
+		           .arg(one.off)
+		           .arg(one.minimum)
+		           .arg(one.maximum);
+	if (lit.isEmpty()) settings.remove(QStringLiteral("controllers/lights"));
+	else settings.setValue(QStringLiteral("controllers/lights"), lit);
 }
 
 /* ---- MIDI in ----------------------------------------------------------- */
@@ -445,7 +517,22 @@ public:
 #if SNURRA_ALSA
 	snd_seq_t *seq = nullptr;
 	int port = -1;
+	int lights_port = -1;
 	QList<QSocketNotifier *> notifiers;
+	/* Controllers heard from that take messages back: their lights. */
+	QList<snd_seq_addr_t> lit;
+
+	/* A sender newly heard: kept where it takes messages. */
+	bool heard_from(const snd_seq_addr_t &from) {
+		for (const snd_seq_addr_t &one : lit)
+			if (one.client == from.client && one.port == from.port) return false;
+		snd_seq_port_info_t *info;
+		snd_seq_port_info_alloca(&info);
+		if (snd_seq_get_any_port_info(seq, from.client, from.port, info) < 0) return false;
+		if (!(snd_seq_port_info_get_capability(info) & SND_SEQ_PORT_CAP_WRITE)) return false;
+		lit << from;
+		return true;
+	}
 
 	/* "client:port" by name, as it says itself. */
 	QString name_of(int client, int port_number) const {
@@ -504,7 +591,7 @@ int snurra_midi_in::port() const {
 bool snurra_midi_in::open() {
 #if SNURRA_ALSA
 	if (d->seq) return true;
-	if (snd_seq_open(&d->seq, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK) < 0) {
+	if (snd_seq_open(&d->seq, "default", SND_SEQ_OPEN_DUPLEX, SND_SEQ_NONBLOCK) < 0) {
 		d->seq = nullptr;
 		return false;
 	}
@@ -516,6 +603,10 @@ bool snurra_midi_in::open() {
 		d->seq = nullptr;
 		return false;
 	}
+	/* Sends only to whom it is told -- no subscriber, so no other program
+	 * reads it unasked. */
+	d->lights_port = snd_seq_create_simple_port(d->seq, "lights", SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_NO_EXPORT,
+	                                            SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
 	/* Every port that sends now, and each that appears (the system's
 	 * announcements). */
 	snd_seq_connect_from(d->seq, d->port, SND_SEQ_CLIENT_SYSTEM, SND_SEQ_PORT_SYSTEM_ANNOUNCE);
@@ -573,6 +664,7 @@ bool snurra_midi_in::open() {
 					/* Clock, active sensing, the rest: never a control. */
 					continue;
 				}
+				if (d->heard_from(in->source)) emit controller_seen();
 				emit received(event);
 			}
 		});
@@ -580,6 +672,27 @@ bool snurra_midi_in::open() {
 	return true;
 #else
 	return false;
+#endif
+}
+
+void snurra_midi_in::send(int channel, bool note, int number, int value) {
+#if SNURRA_ALSA
+	if (!d->seq || d->lights_port < 0) return;
+	for (const snd_seq_addr_t &to : d->lit) {
+		snd_seq_event_t event;
+		snd_seq_ev_clear(&event);
+		snd_seq_ev_set_source(&event, d->lights_port);
+		snd_seq_ev_set_dest(&event, to.client, to.port);
+		snd_seq_ev_set_direct(&event);
+		if (note) snd_seq_ev_set_noteon(&event, channel - 1, number, value);
+		else snd_seq_ev_set_controller(&event, channel - 1, number, value);
+		snd_seq_event_output_direct(d->seq, &event);
+	}
+#else
+	(void)channel;
+	(void)note;
+	(void)number;
+	(void)value;
 #endif
 }
 
@@ -614,7 +727,41 @@ bool snurra_controller::open() {
 	m_bindings.load();
 	m_loaded_us = snurra_clock_us();
 	connect(m_midi, &snurra_midi_in::received, this, [this](const snurra_midi_event &event) { received(event); });
+	/* A controller come: everything it shows, sent again. */
+	connect(m_midi, &snurra_midi_in::controller_seen, this, [this] {
+		m_lit.clear();
+		send_lights();
+	});
 	return true;
+}
+
+void snurra_controller::show_lights(std::function<double(const QString &control)> value_of) {
+	m_value_of = std::move(value_of);
+	if (!m_lights_timer) {
+		m_lights_timer = new QTimer(this);
+		m_lights_timer->setInterval(100);
+		connect(m_lights_timer, &QTimer::timeout, this, [this] { send_lights(); });
+		m_lights_timer->start();
+	}
+}
+
+void snurra_controller::send_lights() {
+	if (!m_midi || !m_value_of) return;
+	const QList<snurra_bindings::light> &lights = m_bindings.lights();
+	for (int i = 0; i < lights.size(); ++i) {
+		const snurra_bindings::light &one = lights.at(i);
+		QString control = one.control;
+		/* Another player's light is that player's to send. */
+		const int colon = int(control.indexOf(QLatin1Char(':')));
+		if ((colon < 0 ? QString() : control.left(colon)) != m_player) continue;
+		if (colon >= 0) control = control.mid(colon + 1);
+		const double value = m_value_of(control);
+		const int sent = value >= one.minimum && value <= one.maximum ? one.on : one.off;
+		const auto was = m_lit.constFind(i);
+		if (was != m_lit.constEnd() && *was == sent) continue;
+		m_lit[i] = sent;
+		m_midi->send(one.channel, one.note, one.number, sent);
+	}
 }
 
 void snurra_controller::name_widget(QWidget *widget, const QString &control) {
@@ -685,8 +832,10 @@ void snurra_controller::received(const snurra_midi_event &event) {
 	/* Another process may have learned one since: read again, at most
 	 * once a second. */
 	if (event.at_us - m_loaded_us > 1000000) {
+		const int lights = int(m_bindings.lights().size());
 		m_bindings.load();
 		m_loaded_us = event.at_us;
+		if (m_bindings.lights().size() != lights) m_lit.clear();
 	}
 	snurra_control_kind kind = snurra_control_kind::absolute;
 	QString control = m_bindings.control_for(event.control(), &kind);

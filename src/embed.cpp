@@ -373,6 +373,7 @@ public:
 		if (controller) controller->name_widget(widget, name);
 	}
 	void apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event);
+	double light_value(const QString &control) const;
 	bool unfold(int deck);
 	bool fold();
 	void end_score();
@@ -1392,6 +1393,24 @@ void snurra_dj_private::name_controls(int deck) {
 	control_widget(decks[deck], slot + QStringLiteral("load"));
 }
 
+/* A deck's state for a light on the controller: playing, a listener's
+ * plug in it, its key lock -- 1 or 0. */
+double snurra_dj_private::light_value(const QString &control) const {
+	if (!control.startsWith(QLatin1String("ch_"))) return 0;
+	const int deck = control.section(QLatin1Char('_'), 1, 1).toInt() - 1;
+	const QString what = control.section(QLatin1Char('_'), 2);
+	snurra_tile *tile = deck >= 0 && deck < decks.size() ? decks[deck]->tile.data() : nullptr;
+	if (what == QLatin1String("listen")) {
+		for (const auto &one : listeners)
+			if (one->deck == deck) return 1;
+		return 0;
+	}
+	if (!tile) return 0;
+	if (what == QLatin1String("play")) return tile->playing() ? 1 : 0;
+	if (what == QLatin1String("key_lock")) return tile->key_lock() ? 1 : 0;
+	return 0;
+}
+
 void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, const snurra_midi_event &event) {
 	/* A press, a position 0 to 1, or a step, by what the control is. */
 	const bool off = event.kind == snurra_midi_event::note_off || (event.kind == snurra_midi_event::cc && event.value < 64);
@@ -1688,6 +1707,7 @@ bool snurra_dj::take_controllers() {
 		d->controller = nullptr;
 		return false;
 	}
+	d->controller->show_lights([this](const QString &control) { return d->light_value(control); });
 	/* Learning without Alt, for where the window manager takes it: on,
 	 * the next control pressed listens for the hardware moved. */
 	QToolButton *learn = new QToolButton(this);

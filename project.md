@@ -1458,6 +1458,26 @@ Mixxx's own slider-direction setting: a guess, to be put right on a real
 controller. Tested in `a_mixxx_mappings_plain_bindings_move_the_decks`
 (with the any-port lookup removed, it fails).
 
+**The controller's lights, 2026-11-21:** a mapping's `<outputs>` light
+the buttons with the states snurra has -- a deck playing (`play` and
+`play_indicator`), a listener's plug in it (`pfl`), its key lock -- kept
+as `controllers/lights`, a line each (`ch_1_play -> ch1/note59 127 0
+0.5 1`: the message, `on`, `off`, and the range of the value lit). The
+sequencer is opened both ways, with a second port, "lights", unexported,
+that sends only to a controller that has been heard from and takes
+messages -- so no other program is sent lights unasked, and a
+controller plugged in gets every light again once it is first heard.
+The deck view's states are looked at ten times a second and a light
+sent only as it changes. Other lights (VU meters, hot cues, effects)
+are not taken, and the import says so. Where a mapping gives no
+`<minimum>`, 0.5 is assumed, so a stopped deck is dark (Mixxx's own
+default not read; 75 of 2257 outputs leave it out). Of the installed
+mappings, 54 give lights, 306 in all. Tested in
+`a_mappings_lights_show_the_deck_playing`: an ALSA client as the
+controller, nothing sent before it is heard, then its play light off,
+on as deck A plays, off as it pauses (with the play state not read, it
+stays off and fails).
+
 ## 4. State
 
 **Audio, built 2026-11-12** (the holder: "start on the audio output and

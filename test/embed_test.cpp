@@ -93,6 +93,7 @@ private slots:
 	void a_browse_knob_and_load_buttons_fill_the_decks();
 	void an_encoder_about_64_steps_both_ways();
 	void a_mixxx_mappings_plain_bindings_move_the_decks();
+	void a_mappings_lights_show_the_deck_playing();
 	void each_player_takes_the_bindings_named_for_it();
 	void each_deck_has_its_side_of_the_crossfader();
 	void the_decks_sit_as_the_person_arranged_them();
@@ -1640,6 +1641,85 @@ void embed_test::a_mixxx_mappings_plain_bindings_move_the_decks() {
 	QCOMPARE(b->level(), level);
 	send(QStringLiteral("elsewhere"), 2, snurra_midi_event::cc, 7, 0);
 	QCOMPARE(b->level(), 0);
+}
+
+/*
+ * A mapping's <outputs> (project.md sec 3f): the controller's play light
+ * follows deck A -- on when it plays, off when it pauses -- sent back to
+ * the controller it came from, once it has been heard from; a light snurra
+ * has no state for is skipped, saying so.
+ */
+void embed_test::a_mappings_lights_show_the_deck_playing() {
+	snd_seq_t *controller_seq = nullptr;
+	if (snd_seq_open(&controller_seq, "default", SND_SEQ_OPEN_DUPLEX, SND_SEQ_NONBLOCK) < 0) QSKIP("no ALSA sequencer");
+	auto close_controller = qScopeGuard([controller_seq] { snd_seq_close(controller_seq); });
+	snd_seq_set_client_name(controller_seq, "snurra test lights");
+	/* A controller's port: it sends and it takes, as hardware does. Not
+	 * exported, so snurra connects to it only as told. */
+	const int pad = snd_seq_create_simple_port(controller_seq, "pad",
+	                                           SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_NO_EXPORT,
+	                                           SND_SEQ_PORT_TYPE_MIDI_GENERIC);
+	QVERIFY(pad >= 0);
+	const QByteArray mapping = R"(<?xml version="1.0" encoding="utf-8"?>
+<MixxxControllerPreset schemaVersion="1" mixxxVersion="2.5.0">
+ <controller id="Test">
+  <controls>
+   <control><group>[Channel1]</group><key>volume</key><status>0xB0</status><midino>0x07</midino></control>
+  </controls>
+  <outputs>
+   <output><group>[Channel1]</group><key>play_indicator</key><status>0x90</status><midino>0x3B</midino><on>0x7F</on><off>0x01</off><minimum>0.5</minimum></output>
+   <output><group>[Channel1]</group><key>vu_meter</key><status>0xB0</status><midino>0x20</midino><minimum>0.1</minimum></output>
+  </outputs>
+ </controller>
+</MixxxControllerPreset>
+)";
+	QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("controllers")); });
+	{
+		snurra_bindings bindings;
+		QStringList skipped;
+		QCOMPARE(bindings.import_mixxx(mapping, &skipped), 1);
+		QCOMPARE(skipped, QStringList{ QStringLiteral("[Channel1] vu_meter: a light snurra has no state for") });
+		QCOMPARE(bindings.lights().size(), 1);
+		bindings.save();
+	}
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QVERIFY(dj.take_controllers());
+	snurra_midi_in *in = dj.findChild<snurra_midi_in *>();
+	QVERIFY(in);
+	QVERIFY(snd_seq_connect_to(controller_seq, pad, in->client(), in->port()) >= 0);
+	snurra_tile *a = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(a);
+	/* The last velocity the pad was sent for note 0x3B, -1 for none. */
+	int light = -1;
+	auto read_lights = [&] {
+		snd_seq_event_t *event = nullptr;
+		while (snd_seq_event_input(controller_seq, &event) >= 0 && event)
+			if (event->type == SND_SEQ_EVENT_NOTEON && event->data.note.channel == 0 && event->data.note.note == 0x3b)
+				light = event->data.note.velocity;
+		return light;
+	};
+	a->request_playing(false);
+	QTest::qWait(300);
+	QCOMPARE(read_lights(), -1);   /* not heard from yet: nothing sent */
+	snd_seq_event_t moved;
+	snd_seq_ev_clear(&moved);
+	snd_seq_ev_set_source(&moved, pad);
+	snd_seq_ev_set_subs(&moved);
+	snd_seq_ev_set_direct(&moved);
+	snd_seq_ev_set_controller(&moved, 0, 7, 100);
+	snd_seq_event_output_direct(controller_seq, &moved);
+	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 1, 2000);   /* heard from: off, as the mapping says off */
+	a->request_playing(true);
+	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 0x7f, 2000);
+	a->request_playing(false);
+	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 1, 2000);
 }
 
 /*

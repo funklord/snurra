@@ -108,8 +108,15 @@ public:
 	/* Its client and port, for a test's sender to connect to. */
 	int client() const;
 	int port() const;
+	/* A message back to every controller that has sent one and takes
+	 * them (its lights): a note on of `value`, or a controller's. */
+	void send(int channel, bool note, int number, int value);
 
 signals:
+	/* A controller that takes messages was heard from the first time:
+	 * what it should show is sent again. */
+	void controller_seen();
+
 	void received(const snurra_midi_event &event);
 
 private:
@@ -157,6 +164,23 @@ public:
 	 */
 	int import_mixxx(const QByteArray &xml, QStringList *skipped = nullptr);
 
+	/*
+	 * A light on the controller showing a control's state -- a deck
+	 * playing, a listener's plug in it, its key lock -- as a mapping's
+	 * <outputs> say: `on` sent while the control's value (0 or 1) is from
+	 * `minimum` to `maximum`, `off` otherwise. Kept as text, a line each:
+	 * "ch_1_play -> ch1/note59 127 0 0.5 1".
+	 */
+	struct light {
+		QString control;
+		int channel = 1;
+		bool note = true;    /* a note on, or a controller */
+		int number = 0;
+		int on = 127, off = 0;
+		double minimum = 0.5, maximum = 1;
+	};
+	const QList<light> &lights() const { return m_lights; }
+
 	void load();   /* from the settings */
 	void save() const;
 
@@ -168,6 +192,7 @@ private:
 	QMap<QString, bound> m_bound;      /* by index */
 	QMap<QString, QString> m_alias;    /* index -> name */
 	QMap<QString, QString> m_names;    /* control -> name */
+	QList<light> m_lights;
 };
 
 /*
@@ -199,6 +224,9 @@ public:
 	snurra_bindings &bindings() { return m_bindings; }
 	/* An event as MIDI in gives it -- a test's way in. */
 	void take(const snurra_midi_event &event) { received(event); }
+	/* What a light's control is now, 0 or 1; the lights are sent as it
+	 * changes, looked at ten times a second. */
+	void show_lights(std::function<double(const QString &control)> value_of);
 
 private:
 	void received(const snurra_midi_event &event);
@@ -215,6 +243,10 @@ private:
 	bool m_learn_mode = false;
 	qint64 m_loaded_us = 0;
 	QTimer *m_timer = nullptr;
+	QTimer *m_lights_timer = nullptr;
+	std::function<double(const QString &control)> m_value_of;
+	QMap<int, int> m_lit;   /* by light: the value last sent */
+	void send_lights();
 	QObject *m_filter = nullptr;
 };
 
