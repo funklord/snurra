@@ -1382,6 +1382,7 @@ void snurra_dj_private::name_controls(int deck) {
 		else if (said == QLatin1String("Cue")) control_widget(widget, slot + QStringLiteral("cue"));
 		else if (said == QLatin1String("Sync")) control_widget(widget, slot + QStringLiteral("sync"));
 		else if (said == QLatin1String("EQ")) control_widget(widget, slot + QStringLiteral("eq"));
+		else if (said == QLatin1String("Key lock")) control_widget(widget, slot + QStringLiteral("key_lock"));
 		else if (said == QLatin1String("Play") || said == QLatin1String("Pause")) control_widget(widget, slot + QStringLiteral("play"));
 	}
 	/* The deck's own socket: a cue button on a controller is a plug with
@@ -1438,9 +1439,10 @@ void snurra_dj_private::apply(const QString &control, snurra_control_kind kind, 
 		plug(chosen, listeners[size_t(chosen)]->deck == deck ? -1 : deck);
 		return;
 	}
-	if (what == QLatin1String("play") || what == QLatin1String("cue") || what == QLatin1String("sync")) {
+	if (what == QLatin1String("play") || what == QLatin1String("cue") || what == QLatin1String("sync") || what == QLatin1String("key_lock")) {
 		if (off) return;   /* on the press, not the release */
 		if (what == QLatin1String("play")) tile->request_playing(!tile->playing());
+		else if (what == QLatin1String("key_lock")) tile->set_key_lock(!tile->key_lock());
 		else if (what == QLatin1String("cue")) tile->cue();
 		else emit tile->sync_requested(tile);
 		return;

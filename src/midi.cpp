@@ -261,6 +261,7 @@ static QString mixxx_control(const QString &group, const QString &key) {
 			{ QStringLiteral("LoadSelectedTrack"), QStringLiteral("load") },
 			{ QStringLiteral("beatsync"), QStringLiteral("sync") },
 			{ QStringLiteral("sync_enabled"), QStringLiteral("sync") },
+			{ QStringLiteral("keylock"), QStringLiteral("key_lock") },
 			{ QStringLiteral("filterLow"), QStringLiteral("eq_low") },
 			{ QStringLiteral("filterMid"), QStringLiteral("eq_mid") },
 			{ QStringLiteral("filterHigh"), QStringLiteral("eq_high") },
@@ -287,7 +288,7 @@ static QString mixxx_control(const QString &group, const QString &key) {
 
 /* A control pressed rather than moved. */
 static bool pressed_control(const QString &control) {
-	for (const char *end : { "_play", "_cue", "_listen", "_sync", "_load" })
+	for (const char *end : { "_play", "_cue", "_listen", "_sync", "_load", "_key_lock" })
 		if (control.endsWith(QLatin1String(end))) return true;
 	return control == QLatin1String("browse_next") || control == QLatin1String("browse_prev");
 }

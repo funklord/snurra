@@ -1438,8 +1438,9 @@ is in QtQml, which this player does not link). `snurra --import-mapping
 take: a control bound to a script, one snurra has no control for, an
 inverted one, a note on a fader. Mixxx's controls map to the deck view's
 slots: `[ChannelN]` volume, play, cue_default, pfl, rate,
-LoadSelectedTrack, beatsync and sync_enabled, filterLow/Mid/High to
-ch_N_level ... ch_N_eq_high; the EQ rack's parameter1 to 3 to the same
+LoadSelectedTrack, beatsync and sync_enabled, keylock, filterLow/Mid/High
+to ch_N_level ... ch_N_eq_high (`ch_N_key_lock` a deck control from
+2026-11-21, its press turning the tile's key lock over); the EQ rack's parameter1 to 3 to the same
 EQ; `[Master]` crossfader; and the library's SelectTrackKnob and
 MoveVertical to `browse`, SelectNext/PrevTrack and MoveDown/Up to the new
 `browse_next` and `browse_prev`. Options decide the kind: selectknob,
