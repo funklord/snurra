@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QToolTip>
 #include <QMenu>
 #include <QMetaMethod>
 #include <QMimeData>
@@ -170,6 +171,21 @@ protected:
 			const double x = x_of(SNURRA_EQ_CROSSOVERS[m_eq.first_of(band) - 1]);
 			painter.drawLine(QPointF(x, 0), QPointF(x, height()));
 		}
+		/* Past three, each split says where it is, where there is room. */
+		if (m_eq.bands() != 3) {
+			QFont small = font();
+			small.setPointSizeF(small.pointSizeF() * 0.8);
+			painter.setFont(small);
+			double free_from = 0;
+			for (int band = 1; band < m_eq.bands(); ++band) {
+				const float hz = SNURRA_EQ_CROSSOVERS[m_eq.first_of(band) - 1];
+				const QString said = hz < 1000 ? QString::number(hz) : QStringLiteral("%1k").arg(hz / 1000);
+				const double x = x_of(hz) + 2, wide = QFontMetricsF(small).horizontalAdvance(said);
+				if (x < free_from || x + wide > width()) continue;
+				painter.drawText(QPointF(x, height() - 2), said);
+				free_from = x + wide + 4;
+			}
+		}
 		if (m_eq.bands() == 3) {
 			const QString names[3] = { tr("lo"), tr("mid"), tr("hi") };
 			for (int band = 0; band < 3; ++band) {
@@ -243,6 +259,24 @@ protected:
 		const int band = band_at(event->position().x());
 		set(band, step(band) + (event->angleDelta().y() > 0 ? 1 : -1));
 		event->accept();
+	}
+	/* Hovered, the band under the pointer: where it lies and how loud. */
+	bool event(QEvent *event) override {
+		if (event->type() != QEvent::ToolTip) return QWidget::event(event);
+		const QHelpEvent *help = static_cast<QHelpEvent *>(event);
+		QToolTip::showText(help->globalPos(), band_said(band_at(help->pos().x())) + QLatin1Char('\n') + toolTip(), this);
+		return true;
+	}
+	QString band_said(int band) const {
+		auto hz = [](float at) { return at < 1000 ? QStringLiteral("%1 Hz").arg(at) : QStringLiteral("%1 kHz").arg(at / 1000); };
+		const int first = m_eq.first_of(band), last = m_eq.last_of(band);
+		const QString where = first == 0 && last == SNURRA_EQ_BANDS - 1 ? tr("all")
+		                    : first == 0                              ? tr("below %1").arg(hz(SNURRA_EQ_CROSSOVERS[last]))
+		                    : last == SNURRA_EQ_BANDS - 1             ? tr("above %1").arg(hz(SNURRA_EQ_CROSSOVERS[first - 1]))
+		                                                              : tr("%1 to %2").arg(hz(SNURRA_EQ_CROSSOVERS[first - 1]), hz(SNURRA_EQ_CROSSOVERS[last]));
+		const float db = m_eq.band_db(band);
+		const QString loud = db <= SNURRA_EQ_KILL ? tr("killed") : db == 0 ? tr("0 dB") : QStringLiteral("%1%2 dB").arg(db > 0 ? QStringLiteral("+") : QString()).arg(double(db), 0, 'f', 1);
+		return tr("%1: %2").arg(where, loud);
 	}
 	void contextMenuEvent(QContextMenuEvent *event) override {
 		QMenu menu(this);

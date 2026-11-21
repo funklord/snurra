@@ -2291,6 +2291,12 @@ controls; each tile very compact but resizeable).
   each tone measured within 0.1 dB of the isolator's computed response
   (`snurra_isolator::response`, what the line will draw). Without the
   allpass between splits, 40 Hz comes out 3 dB down and it fails.
+  What it costs: the isolator's loop alone, timed here, takes 1.0 % of
+  one core for a stereo deck at 48 kHz at three bands and 5.2 % at
+  twelve (108 sections a channel, in double) -- measured with the
+  machine at a load of 16 of 24 cores, so roughly. Heard only while a
+  band is off 0 dB; a phone's core being some times slower, twelve bands
+  on four decks there is worth measuring before it is offered there.
   **The line shows the slopes, 2026-11-21:** it draws what the isolator
   does to each frequency, 20 Hz to 20 kHz in octaves, from the isolator's
   own sections (`response`, a point every two pixels) -- so the slopes
@@ -2322,6 +2328,11 @@ controls; each tile very compact but resizeable).
   as drawn; on from 1.2 kHz to 3.5 kHz at -8 dB it splits at 2 kHz; a
   band pulled straight up stays one (with the split held back, three
   bands stay and it fails).
+  **Where the bands are**, 2026-11-21: past three, each split is
+  labelled small with its frequency (64, 125 ... 1k, 4k) where there is
+  room, and hovered, the line says the band under the pointer -- "125 Hz
+  to 250 Hz: +6.0 dB", "below 125 Hz: killed" -- above its usual help;
+  tested from the tooltip (with the line's own tooltip only, it fails).
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

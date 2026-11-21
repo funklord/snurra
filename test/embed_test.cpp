@@ -7,6 +7,7 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QMenu>
+#include <QToolTip>
 #include <QTimer>
 #include <QApplication>
 #include <QDial>
@@ -2639,6 +2640,14 @@ void embed_test::the_eq_line_draws_its_slopes_and_splits() {
 	QCOMPARE(deck->state().eq.band_db(1), 6.0f);
 	QCOMPARE(deck->state().eq.band_db(0), SNURRA_EQ_KILL);
 	QCOMPARE(deck->state().eq.band_db(2), 0.0f);
+	/* Hovered, it says which band and how loud. */
+	QHelpEvent hovered(QEvent::ToolTip, QPoint(x_of(175), h / 2), line->mapToGlobal(QPoint(x_of(175), h / 2)));
+	QCoreApplication::sendEvent(line, &hovered);
+	QVERIFY2(QToolTip::text().startsWith(QStringLiteral("125 Hz to 250 Hz: +6.0 dB")), qPrintable(QToolTip::text()));
+	QHelpEvent below(QEvent::ToolTip, QPoint(x_of(45), h / 2), line->mapToGlobal(QPoint(x_of(45), h / 2)));
+	QCoreApplication::sendEvent(line, &below);
+	QVERIFY2(QToolTip::text().startsWith(QStringLiteral("below 125 Hz: killed")), qPrintable(QToolTip::text()));
+	QToolTip::hideText();
 	/* Joined at 125 Hz: four bands, the joined one killed as the sub was. */
 	QTest::mouseDClick(line, Qt::LeftButton, Qt::NoModifier, QPoint(x_of(125), h / 2));
 	QCOMPARE(deck->state().eq.bands(), 4);
