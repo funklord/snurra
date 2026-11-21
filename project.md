@@ -2347,6 +2347,32 @@ controls; each tile very compact but resizeable).
   elided and the EQ cut off after its low band, the grid's columns never
   stretched alike; now they are, and `decks_share_a_phones_width`
   checks it at 412 wide (unstretched, A 114 against B 270, it fails).
+  **The knobs move their part, the three stay, flat bands go, 2026-11-21**
+  (the holder: "ones that are close to zero and near together are merged
+  together, but the 3 original bands remain always, and the controller
+  mapped to them raises/lowers all the bands in that 1/3 part of the
+  scale, so it continues working even though there are more bands"): a
+  state holds the drawn shape and, beside it, the three knobs -- low, mid,
+  high, `snurra_eq::part` -- each moving every band in its part by its dB;
+  what is heard is the two added, no higher than +6, killed where either
+  is (`level`). So a kill on a controller and back finds the shape as
+  drawn. Drawing a band sets what it is heard at, the shape taking what
+  the knob leaves; where a part's bands all stand alike the knob takes
+  the height and the shape goes flat, so at three bands the knobs and the
+  line are one, as before. The splits at 250 Hz and 4 kHz are in every
+  layout and are never joined (a double-click there does nothing).
+  Let go of a stroke -- or after a double-click -- neighbours heard within
+  2 dB of 0 and 1 dB of each other, or within a quarter dB of each other
+  at any height, join, the joined band their mean (`merge_near`): drawing
+  a part back flat takes its bands away, as drawing a slope adds them.
+  Rejected: the knob adding its change to every band's value directly --
+  a kill and back would clamp the shape away. Tested in the same test:
+  a mid of three bands killed by its knob and back, the shape as it was,
+  and up 2 dB, each band up 2; a band drawn to 0 beside one at 0 joins on
+  release and not while held; the mid then one band, its knob the height;
+  a double-click at 250 Hz leaves four bands. Broken one at a time -- the
+  knob not added, no merging, the 250 Hz split joinable -- each fails.
+  The handover carries the knobs (`handover_test`).
 - **Measured** (`make test`, real processes over their sockets, offscreen,
   output null or capture): a merge is taken before it is let go and the
   moved tile's position carries on within 2 ms of the extrapolation; a

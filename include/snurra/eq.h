@@ -38,11 +38,18 @@ struct snurra_eq {
 	static constexpr quint16 SEVEN = FIVE | (1u << 1) | (1u << 5);
 	static constexpr quint16 TWELVE = (1u << (SNURRA_EQ_BANDS - 1)) - 1;
 
-	/* Bit i: split at SNURRA_EQ_CROSSOVERS[i]. */
+	/* Bit i: split at SNURRA_EQ_CROSSOVERS[i]. A DJ mixer's three splits
+	 * (THREE) are always among them: the parts the knobs move. */
 	quint16 splits = THREE;
-	/* By the grid's twelve narrowest bands, in dB (-24 to +6, or
-	 * SNURRA_EQ_KILL); a band of several holds its one value in each. */
+	/* The shape, by the grid's twelve narrowest bands, in dB, or
+	 * SNURRA_EQ_KILL; a band of several holds its one value in each. What
+	 * is heard is the shape moved by its part's knob (level). */
 	float db[SNURRA_EQ_BANDS] = {};
+	/* The three knobs -- low, mid, high, a controller's -- in dB (-24 to
+	 * +6, or SNURRA_EQ_KILL): each raises or lowers every band in its
+	 * part, the shape kept, so a kill and back finds it as it was (the
+	 * holder, 2026-11-21). */
+	float part[3] = {};
 
 	int bands() const {
 		int count = 1;
@@ -69,28 +76,102 @@ struct snurra_eq {
 		for (int i = 0; i < fine && i < SNURRA_EQ_BANDS - 1; ++i) band += (splits >> i) & 1;
 		return band;
 	}
+	/* What a narrowest band is heard at: its shape moved by its part's
+	 * knob, no higher than +6 dB; killed where either is. */
+	float level(int fine) const {
+		const float knob = part[part_of(fine)], own = db[fine];
+		if (knob <= SNURRA_EQ_KILL || own <= SNURRA_EQ_KILL) return SNURRA_EQ_KILL;
+		return std::min(own + knob, 6.0f);
+	}
+	float band_level(int band) const { return level(std::clamp(first_of(band), 0, SNURRA_EQ_BANDS - 1)); }
+	/* The shape's own value of a band (band_level is what is heard). */
 	float band_db(int band) const { return db[std::clamp(first_of(band), 0, SNURRA_EQ_BANDS - 1)]; }
 	void set_band(int band, float value) {
 		for (int fine = first_of(band); fine <= last_of(band); ++fine) db[fine] = value;
 	}
+	/* A band drawn to be heard at `value`: its shape what the knob leaves
+	 * to it. Drawn up in a part killed by its knob, the rest of the part
+	 * stays killed and the knob lets go. Where the part's bands then all
+	 * stand alike the knob takes their height -- three bands are the
+	 * three knobs, as a DJ mixer's. */
+	void set_band_level(int band, float value) {
+		const int p = part_of(first_of(band));
+		if (value > SNURRA_EQ_KILL && part[p] <= SNURRA_EQ_KILL) {
+			for (int other = 0; other < bands(); ++other)
+				if (other != band && part_of(first_of(other)) == p) set_band(other, SNURRA_EQ_KILL);
+			part[p] = 0;
+		}
+		set_band(band, value <= SNURRA_EQ_KILL ? SNURRA_EQ_KILL : value - (part[p] <= SNURRA_EQ_KILL ? 0 : part[p]));
+		settle(p);
+	}
+	/* A part whose bands all stand alike: the knob takes it, the shape
+	 * flat. */
+	void settle(int p) {
+		float alike = 0;
+		bool first = true;
+		for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine) {
+			if (part_of(fine) != p) continue;
+			if (!first && db[fine] != alike) return;
+			alike = db[fine];
+			first = false;
+		}
+		if (alike == 0) return;
+		if (alike <= SNURRA_EQ_KILL) part[p] = SNURRA_EQ_KILL;
+		else if (part[p] > SNURRA_EQ_KILL) part[p] = std::clamp(part[p] + alike, -24.0f, 6.0f);
+		for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine)
+			if (part_of(fine) == p) db[fine] = 0;
+	}
+	/* Whether the split at the grid's crossover `at` may be joined: not
+	 * one of the three the knobs' parts are bounded by. */
+	static bool joinable(int at) { return at >= 0 && at < SNURRA_EQ_BANDS - 1 && !((THREE >> at) & 1); }
 	/* Split at the grid's crossover `at`, or join there: the halves keep
-	 * the band's value; joined, the lower half's goes across both. */
+	 * the band's value; joined, the lower half's goes across both. The
+	 * three splits of the parts stay. */
 	void split(int at, bool on) {
 		if (at < 0 || at >= SNURRA_EQ_BANDS - 1) return;
 		if (on) {
 			splits = quint16(splits | (1u << at));
-		} else {
+		} else if (joinable(at) && ((splits >> at) & 1)) {
 			const float lower = db[first_of(band_of(at))];
 			splits = quint16(splits & ~(1u << at));
 			set_band(band_of(at), lower);
+			settle(part_of(at));
 		}
 	}
-	/* Another layout, each new band taking the value its middle had. */
+	/* Neighbours heard near 0 dB and near each other, or alike, joined
+	 * (the holder, 2026-11-21: bands "close to zero and near together are
+	 * merged"): within 2 dB of 0 and 1 dB of each other, or within a
+	 * quarter dB anywhere. The joined band takes the mean. Not across the
+	 * parts' three splits. True where any joined. */
+	bool merge_near() {
+		bool joined = false, again = true;
+		while (again) {
+			again = false;
+			for (int at = 0; at < SNURRA_EQ_BANDS - 1; ++at) {
+				if (!joinable(at) || !((splits >> at) & 1)) continue;
+				const int below = band_of(at);
+				const float a = band_level(below), b = band_level(below + 1);
+				const bool killed = a <= SNURRA_EQ_KILL || b <= SNURRA_EQ_KILL;
+				const bool near = !killed && ((std::abs(a) <= 2 && std::abs(b) <= 2 && std::abs(a - b) <= 1) || std::abs(a - b) <= 0.25f);
+				if (!near && !(a <= SNURRA_EQ_KILL && b <= SNURRA_EQ_KILL)) continue;
+				const float mean = (band_db(below) + band_db(below + 1)) / 2;
+				const float shape = killed ? SNURRA_EQ_KILL : mean;
+				splits = quint16(splits & ~(1u << at));
+				set_band(band_of(at), shape);
+				settle(part_of(at));
+				joined = again = true;
+			}
+		}
+		return joined;
+	}
+	/* Another layout, each new band taking the value its middle had; the
+	 * parts' three splits kept. */
 	void set_layout(quint16 layout) {
 		float was[SNURRA_EQ_BANDS];
 		std::copy(db, db + SNURRA_EQ_BANDS, was);
-		splits = quint16(layout & TWELVE);
+		splits = quint16((layout | THREE) & TWELVE);
 		for (int band = 0; band < bands(); ++band) set_band(band, was[(first_of(band) + last_of(band)) / 2]);
+		for (int p = 0; p < 3; ++p) settle(p);
 	}
 	/* A DJ mixer's three, by where a band starts: low below 250 Hz, mid
 	 * to 4 kHz, high above -- each layout's bands in that part moved
@@ -102,22 +183,16 @@ struct snurra_eq {
 		while (fine < SNURRA_EQ_BANDS - 1 && hz >= SNURRA_EQ_CROSSOVERS[fine]) ++fine;
 		return fine;
 	}
-	void set_part(int part, float value) {
-		for (int band = 0; band < bands(); ++band)
-			if (part_of(first_of(band)) == part) set_band(band, value);
-	}
-	float part_db(int part) const {
-		for (int band = 0; band < bands(); ++band)
-			if (part_of(first_of(band)) == part) return band_db(band);
-		return 0;
-	}
+	/* A part's knob, -24 to +6 dB or SNURRA_EQ_KILL. */
+	void set_part(int which, float value) { part[std::clamp(which, 0, 2)] = value; }
+	float part_db(int which) const { return part[std::clamp(which, 0, 2)]; }
 	bool flat() const {
-		for (float value : db)
-			if (value != 0) return false;
+		for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine)
+			if (level(fine) != 0) return false;
 		return true;
 	}
 	bool operator==(const snurra_eq &other) const {
-		return splits == other.splits && std::equal(db, db + SNURRA_EQ_BANDS, other.db);
+		return splits == other.splits && std::equal(db, db + SNURRA_EQ_BANDS, other.db) && std::equal(part, part + 3, other.part);
 	}
 	bool operator!=(const snurra_eq &other) const { return !(*this == other); }
 };

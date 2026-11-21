@@ -116,10 +116,14 @@ private:
  * so one stroke draws the whole curve. Drawn across a band's middle at
  * two heights -- a slope inside one band -- the band splits there, at the
  * grid's crossover nearest its middle (eq.h), each half the height it
- * was drawn at: the line grows the bands the drawing asks for. A
+ * was drawn at: the line grows the bands the drawing asks for. Let go,
+ * the bands left near 0 dB and near each other join again (eq.h,
+ * merge_near), so drawing a part flat takes its bands away. A
  * double-click puts the band back to 0, or, on a split, joins the two
  * bands there. The wheel steps a band. The context menu splits into 3,
- * 5, 7 or 12 bands.
+ * 5, 7 or 12 bands. The DJ's three splits, at 250 Hz and 4 kHz, always
+ * stay: the parts the low, mid and high knobs -- a controller's -- move
+ * whole, the shape drawn inside them kept (the holder, 2026-11-21).
  */
 class snurra_eq_line : public QWidget {
 public:
@@ -148,7 +152,7 @@ public:
 		update();
 	}
 	/* A band's step, -12 (killed) to 12 (+6 dB). */
-	int step(int band) const { return step_of(m_eq.band_db(band)); }
+	int step(int band) const { return step_of(m_eq.band_level(band)); }
 	static float db_of(int step) { return step <= LOWEST ? SNURRA_EQ_KILL : step < 0 ? 2.0f * float(step) : 0.5f * float(step); }
 	static int step_of(float db) {
 		/* -24 dB, kept by an older snurra, is the deepest step short of the kill. */
@@ -239,19 +243,24 @@ protected:
 		event->accept();
 	}
 	void mouseReleaseEvent(QMouseEvent *event) override {
+		if (m_held) merge();
 		m_held = false;
 		event->accept();
 	}
 	void mouseDoubleClickEvent(QMouseEvent *event) override {
-		/* On a split, the two bands there joined; else the band back. */
+		/* On a split, the two bands there joined -- on one of the parts'
+		 * three, nothing; else the band back. */
 		const int split = split_near(event->position().x());
-		if (split >= 0) {
+		if (split >= 0 && !snurra_eq::joinable(split)) {
+			/* stays */
+		} else if (split >= 0) {
 			m_eq.split(split, false);
 			remake();
 			update();
 			if (changed) changed();
 		} else {
 			set(band_at(event->position().x()), 0);
+			merge();
 		}
 		event->accept();
 	}
@@ -274,7 +283,7 @@ protected:
 		                    : first == 0                              ? tr("below %1").arg(hz(SNURRA_EQ_CROSSOVERS[last]))
 		                    : last == SNURRA_EQ_BANDS - 1             ? tr("above %1").arg(hz(SNURRA_EQ_CROSSOVERS[first - 1]))
 		                                                              : tr("%1 to %2").arg(hz(SNURRA_EQ_CROSSOVERS[first - 1]), hz(SNURRA_EQ_CROSSOVERS[last]));
-		const float db = m_eq.band_db(band);
+		const float db = m_eq.band_level(band);
 		const QString loud = db <= SNURRA_EQ_KILL ? tr("killed") : db == 0 ? tr("0 dB") : QStringLiteral("%1%2 dB").arg(db > 0 ? QStringLiteral("+") : QString()).arg(double(db), 0, 'f', 1);
 		return tr("%1: %2").arg(where, loud);
 	}
@@ -344,8 +353,8 @@ private:
 		m_sides |= 1 << side;
 		if (m_sides != 3 || std::abs(m_side_step[0] - m_side_step[1]) < SPLIT_STEPS) return;
 		m_eq.split(middle, true);
-		m_eq.set_band(band, db_of(m_side_step[0]));
-		m_eq.set_band(band + 1, db_of(m_side_step[1]));
+		m_eq.set_band_level(band, db_of(m_side_step[0]));
+		m_eq.set_band_level(band + 1, db_of(m_side_step[1]));
 		remake();
 		m_last_band = band + side;
 		m_sides = 0;
@@ -362,7 +371,14 @@ private:
 	void set(int band, int to) {
 		to = std::clamp(to, LOWEST, HIGHEST);
 		if (step(band) == to) return;
-		m_eq.set_band(band, db_of(to));
+		m_eq.set_band_level(band, db_of(to));
+		update();
+		if (changed) changed();
+	}
+	/* A stroke done: bands left near 0 dB and near each other joined. */
+	void merge() {
+		if (!m_eq.merge_near()) return;
+		remake();
 		update();
 		if (changed) changed();
 	}
@@ -1975,8 +1991,11 @@ void snurra_tile::set_eq(float low_db, float mid_db, float high_db) {
 
 void snurra_tile::set_eq(const snurra_eq &asked) {
 	snurra_eq eq = asked;
-	eq.splits &= snurra_eq::TWELVE;
-	for (float &db : eq.db) db = std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f);
+	eq.splits = quint16((eq.splits | snurra_eq::THREE) & snurra_eq::TWELVE);
+	/* A knob -24 to +6 dB or the kill; a shape, what drawing over a knob
+	 * leaves, as far again either way. */
+	for (float &db : eq.part) db = std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f);
+	for (float &db : eq.db) db = std::isnan(db) ? 0.0f : db <= SNURRA_EQ_KILL ? SNURRA_EQ_KILL : std::clamp(db, -54.0f, 30.0f);
 	m_state.eq = eq;
 	if (m_eq) m_eq->show_eq(eq);
 	m_deck->set_eq(eq);

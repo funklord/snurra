@@ -399,8 +399,9 @@ void snurra_deck::set_eq(float low_db, float mid_db, float high_db) {
 }
 
 void snurra_deck::set_eq(const snurra_eq &eq) {
-	auto band = [](float db) { return std::isnan(db) ? 0.0f : db < -24.0f ? SNURRA_EQ_KILL : std::min(db, 6.0f); };
-	for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine) m_eq_db[fine].store(band(eq.db[fine]), std::memory_order_relaxed);
+	/* What each band is heard at: its shape moved by its part's knob. */
+	auto band = [](float db) { return std::isnan(db) ? 0.0f : db <= SNURRA_EQ_KILL ? SNURRA_EQ_KILL : std::min(db, 6.0f); };
+	for (int fine = 0; fine < SNURRA_EQ_BANDS; ++fine) m_eq_db[fine].store(band(eq.level(fine)), std::memory_order_relaxed);
 	m_eq_splits.store(eq.splits & snurra_eq::TWELVE, std::memory_order_relaxed);
 }
 
@@ -460,7 +461,7 @@ void snurra_isolator::make(int rate, quint16 layout) {
 void snurra_isolator::gains(const snurra_eq &eq, float gain[SNURRA_EQ_BANDS]) const {
 	int fine = 0;
 	for (int band = 0; band <= count; ++band) {
-		const float db = eq.db[fine];
+		const float db = eq.level(fine);
 		gain[band] = db <= SNURRA_EQ_KILL ? 0.0f : std::pow(10.0f, db / 20.0f);
 		if (band < count) fine = used[band] + 1;
 	}

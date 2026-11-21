@@ -114,6 +114,7 @@ inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state)
 	out << state.source << state.duration_us << state.position_us << state.sampled_at_us << state.playing
 	           << qint32(state.level) << qint32(state.row) << qint32(state.column) << state.controls << state.envelope << state.offset_us << state.tempo << state.key_lock << qint32(state.audio_track) << state.lane_start_us << state.cue_us << state.eq.splits;
 	for (float db : state.eq.db) out << db;
+	for (float db : state.eq.part) out << db;
 	out << qint32(state.key_shift) << state.overlap_us << state.sound << state.chapters << quint32(state.player.size());
 	for (const snurra_tile_state &inner : state.player) out << inner;
 	return out;
@@ -128,7 +129,8 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
 	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq.splits;
 	for (float &db : state.eq.db) in >> db;
-	state.eq.splits &= snurra_eq::TWELVE;
+	for (float &db : state.eq.part) in >> db;
+	state.eq.splits = quint16((state.eq.splits | snurra_eq::THREE) & snurra_eq::TWELVE);
 	in >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
 	quint32 inner = 0;
 	in >> inner;
