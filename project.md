@@ -472,7 +472,12 @@ does the same with a tile's playback:
   file; a snurra window takes it as any drop, and let go over nothing it
   opens as a tile of its own where it was let go. The process goes once
   the library and the window are both closed. Listed on a thread of its
-  own, at most 50000 tunes of 200000 files looked at. **Names, if ever
+  own, at most 50000 tunes of 200000 files looked at. A folder chosen
+  while another is still listed shows only its own: what the stopped
+  scan had already handed over, still queued, is let fall by the scan's
+  number (found 2026-11-21 under a load of 25, a DJ browser of three
+  tunes showing five; `a_folder_chosen_while_another_lists_shows_only_its_own`,
+  5 for 3 without the number). **Names, if ever
   tidied for display** (the holder, 2026-11-13): a YouTube ID in a name
   stays -- "if we ever do this kind of cleanup we do not remove youtube
   IDs" -- and no file is renamed. **Fingerprints** (the holder,

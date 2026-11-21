@@ -26,6 +26,7 @@
 #include <QTreeView>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QToolButton>
 
 #include <cmath>
@@ -106,6 +107,7 @@ private slots:
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
 	void a_deck_started_by_hand_is_where_its_track_comes_in();
+	void a_folder_chosen_while_another_lists_shows_only_its_own();
 	void the_dj_player_loads_two_decks_and_crosses_them();
 	void the_cue_is_set_paused_and_returned_to_playing();
 	void the_eq_line_draws_its_slopes_and_splits();
@@ -2367,6 +2369,35 @@ void embed_test::a_player_unfolds_across_the_decks() {
  * sends A alone, both at equal power, or B alone; sync puts one deck's
  * beat on the other's; a tune let go over nothing opens no player.
  */
+/*
+ * A folder chosen while the one before is still being listed: only the
+ * new one's tunes. The first scan's pieces, handed over before it was
+ * stopped and still queued, showed beside them (seen under load in
+ * the_dj_player_loads_two_decks_and_crosses_them, 5 for 3).
+ */
+void embed_test::a_folder_chosen_while_another_lists_shows_only_its_own() {
+	QTemporaryDir first, second;
+	for (const QString &name : { QStringLiteral("a.wav"), QStringLiteral("b.wav") }) {
+		QFile file(first.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4800));
+	}
+	for (const QString &name : { QStringLiteral("c.wav"), QStringLiteral("d.wav"), QStringLiteral("e.wav") }) {
+		QFile file(second.filePath(name));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav(4800));
+	}
+	snurra_library library;
+	library.set_folder(first.path());
+	/* The first scan done and its list queued, not yet taken. */
+	QThread::msleep(300);
+	library.set_folder(second.path());
+	QTRY_COMPARE_WITH_TIMEOUT(library.shown().size(), 3, 5000);
+	QTest::qWait(300);
+	QCOMPARE(library.shown().size(), 3);
+	for (const QString &path : library.shown()) QVERIFY2(path.startsWith(second.path()), qPrintable(path));
+}
+
 void embed_test::the_dj_player_loads_two_decks_and_crosses_them() {
 	QTemporaryDir dir;
 	QStringList paths;

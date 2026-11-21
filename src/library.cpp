@@ -319,8 +319,9 @@ void snurra_library::scan() {
 	m_stop = false;
 	say();
 	const QString folder = m_folder;
+	const int generation = ++m_generation;
 	QPointer<snurra_library> self(this);
-	m_thread = std::thread([this, folder, self] {
+	m_thread = std::thread([this, folder, self, generation] {
 		QStringList piece;
 		QStringList all;
 		int listed = 0;
@@ -333,11 +334,19 @@ void snurra_library::scan() {
 			all << path;
 			++listed;
 			if (piece.size() >= 500) {
-				QMetaObject::invokeMethod(this, [self, piece] { if (self) self->found(piece, false); });
+				QMetaObject::invokeMethod(this, [self, piece, generation] {
+					if (self && self->m_generation == generation) self->found(piece, false);
+				});
 				piece.clear();
 			}
 		}
-		QMetaObject::invokeMethod(this, [self, piece] { if (self) self->found(piece, true); });
+		/* Joined by stop_scan() before the folder changes, but what it
+		 * queued is still to come: a folder chosen while the first was
+		 * listed showed both (the_dj_player_loads_two_decks_..., under a
+		 * load of 25, 2026-11-21). */
+		QMetaObject::invokeMethod(this, [self, piece, generation] {
+			if (self && self->m_generation == generation) self->found(piece, true);
+		});
 		/* Then each file's own tags, as they are read: the list is there at
 		 * once, the names and artists come after it. */
 		std::vector<std::pair<QString, snurra_tags>> told;
@@ -359,11 +368,16 @@ void snurra_library::scan() {
 			if (tags.title.isEmpty() && tags.artist.isEmpty() && tags.bpm <= 0 && tags.key < 0) continue;
 			told.emplace_back(path, tags);
 			if (told.size() >= 200) {
-				QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
+				QMetaObject::invokeMethod(this, [self, told, generation] {
+					if (self && self->m_generation == generation) self->tagged(told);
+				});
 				told.clear();
 			}
 		}
-		if (!told.empty()) QMetaObject::invokeMethod(this, [self, told] { if (self) self->tagged(told); });
+		if (!told.empty())
+			QMetaObject::invokeMethod(this, [self, told, generation] {
+				if (self && self->m_generation == generation) self->tagged(told);
+			});
 	});
 }
 

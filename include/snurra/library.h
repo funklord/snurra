@@ -124,6 +124,9 @@ private:
 	void stop_identify();
 	std::atomic<bool> m_stop{ false };
 	bool m_scanning = false;
+	/* Which scan is the folder's now: what an earlier one had already
+	 * handed over, still queued when it was stopped, is let fall. */
+	int m_generation = 0;
 	bool m_narrow = false;   /* Folder hidden and Artist narrowed, for the name's sake */
 	QHash<QString, QStandardItem *> m_items;   /* by path: the name's item */
 };
