@@ -223,6 +223,16 @@ public:
 		unfold->setAutoRaise(true);
 		unfold->hide();
 		column->addWidget(unfold, 0, Qt::AlignLeft);
+		/* The way back (sec 3f): what the deck holds into a window of its
+		 * own -- an unfolded player gathered first. */
+		out = new QToolButton(this);
+		out->setObjectName(QStringLiteral("snurra-deck-out"));
+		out->setText(QObject::tr("Into a window"));
+		out->setAccessibleName(out->text());
+		out->setToolTip(QObject::tr("What this deck plays, into a player window of its own -- a player spread over the decks gathered first"));
+		out->setAutoRaise(true);
+		out->hide();
+		column->addWidget(out, 0, Qt::AlignLeft);
 		empty = new QLabel(QObject::tr("Deck %1 -- double-click a tune below, or drop one here").arg(name), this);
 		empty->setAlignment(Qt::AlignCenter);
 		empty->setWordWrap(true);
@@ -238,6 +248,7 @@ public:
 	QToolButton *listen;
 	QToolButton *fold;
 	QToolButton *unfold;
+	QToolButton *out;
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
 	QString name;
@@ -377,6 +388,7 @@ public:
 	double light_value(const QString &control) const;
 	bool unfold(int deck);
 	bool fold();
+	void to_window(int deck, const QPoint &at);
 	void end_score();
 	int64_t score_time(qint64 us) const;
 	qint64 score_us(int64_t time) const;
@@ -518,6 +530,7 @@ public:
 		dj_deck *deck = decks[i];
 		if (score && i < int(score->on_deck.size())) score->on_deck[size_t(i)] = -1;
 		deck->unfold->hide();
+		deck->out->hide();
 		if (!deck->tile) return;
 		snurra_tile *tile = deck->tile;
 		deck->tile = nullptr;
@@ -590,8 +603,9 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 		plug_remote(chosen_listener, m.path, m.index);
 		break;
 	case snurra_wire::RELEASE:
-		/* As a deck's title dragged out to `frame`'s corner. */
-		release(m.index, m.frame.topLeft());
+		/* As a deck's title dragged out to `frame`'s corner, or its
+		 * "Into a window". */
+		to_window(m.index, m.frame.topLeft());
 		break;
 	case snurra_wire::ADOPT: {
 		/* The window started to take a deck asks for it by its token. */
@@ -713,6 +727,18 @@ void snurra_dj_private::fade_in(const QString &token, qint64 start_us, qint64 le
 void snurra_dj_private::end_take(const QString &token) {
 	const taking_t pending = taking.take(token);
 	if (pending.timer) pending.timer->deleteLater();
+}
+
+/*
+ * The way back from the decks to a window (the holder, 2026-11-20: the
+ * views "switched between and/or combined effortlessly"): what deck
+ * `deck` holds into a window of its own; where it is one deck of a player
+ * unfolded, the player gathered back first (fold), so the window gets the
+ * player whole -- its tracks as tiles -- not one of its tracks torn out.
+ */
+void snurra_dj_private::to_window(int deck, const QPoint &at) {
+	if (deck >= 0 && deck < decks.size() && decks[deck]->fold->isVisible() && fold()) deck = 0;
+	release(deck, at);
 }
 
 void snurra_dj_private::release(int deck, const QPoint &at) {
@@ -1214,6 +1240,7 @@ void snurra_dj_private::detach(int deck) {
 	tile->hide();
 	tile->deleteLater();
 	place->unfold->hide();
+	place->out->hide();
 	place->empty->show();
 }
 
@@ -1368,6 +1395,7 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->name = name;
 	place->empty->hide();
 	place->unfold->setVisible(!tile->state().player.empty());
+	place->out->setVisible(server != nullptr);
 	place->column->addWidget(tile);
 	tile->show();
 	snurra_dj *dj = q;
@@ -1789,6 +1817,7 @@ void snurra_dj::set_deck_count(int count) {
 		connect(deck->unfold, &QToolButton::clicked, this, [this, i] { unfold(i); });
 		connect(deck->side, &QToolButton::clicked, this, [this, i] { d->next_side(i); });
 		connect(deck->fold, &QToolButton::clicked, this, [this] { fold(); });
+		connect(deck->out, &QToolButton::clicked, this, [this, i] { d->to_window(i, d->decks[i]->mapToGlobal(QPoint())); });
 		connect(deck->listen, &QToolButton::toggled, this, [this, i](bool on) { d->plug(d->chosen_listener, on ? i : -1); });
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
 			if (!d->server || giver.isEmpty()) return;
