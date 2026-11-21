@@ -44,6 +44,15 @@ and everything above it knows nothing of SFTP or fuzznet.
   listeners as plugs on decks and on a window's tiles, several, chosen;
   a player tile analyses its tracks never analysed. The first day's new
   tests passed under ASan and UBSan.
+- **The window reshaped, 2026-11-21 (evening), from the holder's notes**
+  (sec 3b, 3c, 3f): one bar to a window, tiles named on and dragged by
+  their waveforms, a track's menu (Remove, its own window, Open in the
+  decks), one control panel under every lane, a tile dragged above or
+  below into a lane of its own with a preview, beats and bars along the
+  top, one picture on top dissolving through a crossfade, and the way
+  back from the decks ("Into a window"). The EQ's knobs move their third
+  with the drawn shape kept, the three splits stay, flat neighbours join
+  (sec 4, More bands).
 - Earlier the same day: live streams shown as live, an icon, -shuffle,
   -audiofile, --chapters-file, Wayland idle via the portal.
 - The suite takes some 4 to 5 minutes on a quiet machine
@@ -1080,7 +1089,8 @@ start overlapping").
   of its own with it, as its title dragged out does -- where the deck is
   one of a player unfolded, the player gathered first (fold), so the
   window gets it whole, its tracks tiles again, not one torn out. A
-  RELEASE over the wire does the same. Tested in the same test, the round
+  RELEASE over the wire does the same. Not on a phone, where the decks
+  are the app and no window can be started. Tested in the same test, the round
   trip: the decks' player back in a window as two tiles, the decks empty
   (released without gathering, one track comes out and it fails).
 
@@ -1834,6 +1844,15 @@ reports off (Qt's own at exit): all passed, no report. The runtime was
 checked live in both binaries (linked, and answering `ASAN_OPTIONS=help=1`);
 no deliberate fault was planted this time. The window's sockets came after
 this run.
+
+**Sanitizers over 2026-11-21's new code** (the EQ's knobs and joining,
+the library's scan number, the way to and from the decks, the window's
+bar, panel, new lanes, ruler and one picture): the fourteen tests that
+cover it run one by one under AddressSanitizer with UBSan, built out of
+tree from a worktree at f43591b with the same qmake flags, the players
+the handover tests start included, leaks off: all passed, no report.
+The runtime was checked live in both binaries as before; no deliberate
+fault planted.
 
 **Sanitizers again, 2026-11-12, after the session's new threads** (the
 stretch in the callback, the picture's, beats' and bytes' readers, the

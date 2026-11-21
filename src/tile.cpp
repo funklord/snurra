@@ -1371,8 +1371,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_eq = new snurra_eq_line(m_controls);
 	m_eq->setObjectName(QStringLiteral("snurra-eq"));
 	m_eq->setAccessibleName(tr("EQ"));
-	m_eq->setToolTip(tr("EQ: pull a band up or down, or draw the line across; a double-click puts a band back, or on a split joins the two; "
-	                    "the menu splits it into 3, 5, 7 or 12 bands"));
+	m_eq->setToolTip(tr("EQ: pull a band up or down, or draw the line across; a slope drawn inside a band splits it, "
+	                    "and bands drawn back near 0 join again; a double-click puts a band back, or on a split joins the two; "
+	                    "the menu splits it into 3, 5, 7 or 12 bands. Low, mid and high -- a controller's knobs -- move their third whole"));
 	m_eq->installEventFilter(this);
 	bands->addWidget(eq_name);
 	bands->addWidget(m_eq, 1);
