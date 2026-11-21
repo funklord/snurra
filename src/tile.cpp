@@ -477,7 +477,8 @@ public:
 	}
 	std::function<void(const QList<QPointF> &)> on_envelope;
 
-	/* Said small at the top left: where its lane begins, when late. */
+	/* Said small at the top left -- the right, where its name is said:
+	 * where its lane begins, when late. */
 	void set_note(const QString &note) {
 		if (note == m_note) return;
 		m_note = note;
@@ -557,7 +558,8 @@ protected:
 		if (!m_note.isEmpty()) {
 			QPainter painter(this);
 			painter.setPen(palette().color(QPalette::Text));
-			painter.drawText(rect().adjusted(3, 1, -3, -1), Qt::AlignLeft | Qt::AlignTop, m_note);
+			/* The name, where it is said, has the left corner. */
+			painter.drawText(rect().adjusted(3, 1, -3, -1), (m_name.isEmpty() ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignTop, m_note);
 		}
 		(void)event;
 	}

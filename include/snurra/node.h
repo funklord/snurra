@@ -177,6 +177,15 @@ private:
 	QToolButton *m_bar_controls = nullptr;
 	bool m_bar_held = false;
 	bool m_moving_panel = false;   /* the panel being moved between tiles */
+	/* A tile dragged into a lane of its own (sec 3b): where, and its
+	 * preview. */
+	int new_lane_at(const QPoint &local, snurra_tile *moving, snurra_tile **over) const;
+	void show_ghost(snurra_tile *moving, int row);
+	void move_to_new_lane(snurra_tile *tile, int row);
+	QLabel *m_ghost = nullptr;
+	QWidget *m_ghost_line = nullptr;
+	int m_ghost_row = -1;
+	snurra_tile *m_ghost_tile = nullptr;
 	QPoint m_bar_press;
 	QPoint m_bar_window_from;
 	void show_bar();

@@ -70,6 +70,7 @@ private slots:
 	void an_engine_gone_first_leaves_the_tile_safe_to_close();
 	void an_envelope_is_drawn_on_the_waveform();
 	void a_handover_carries_the_envelope();
+	void a_tile_dragged_below_another_is_a_lane_of_its_own();
 	void a_window_has_one_bar_for_its_tiles();
 	void a_drawer_adds_room_and_leaves_every_waveform_as_it_was();
 	void the_look_is_drawers_or_square_as_asked();
@@ -285,6 +286,49 @@ static snurra_tile_state placed(const QString &name, int row, int column) {
  * and its close takes every tile. A click on a waveform seeks when let
  * go -- a press alone does not, being maybe the start of a drag.
  */
+/*
+ * A tile dragged by its waveform to the bottom of another of its window
+ * (the holder, 2026-11-21: "placed above or below in separate tracks,
+ * the preview should show what is going to happen before the drop"):
+ * while held, a faint copy of it shows where the new lane would be, and
+ * nothing has moved yet; let go, it is a lane of its own below, coming in
+ * when it came in before.
+ */
+void embed_test::a_tile_dragged_below_another_is_a_lane_of_its_own() {
+	snurra_node node;
+	snurra_tile *a = node.add_tile(placed(QStringLiteral("a"), 0, 0));
+	snurra_tile *b = node.add_tile(placed(QStringLiteral("b"), 0, 1));
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QTest::qWait(100);
+	QCOMPARE(b->row(), 0);
+	QVERIFY(b->column() > a->column());
+	const qint64 came_in = b->state().lane_start_us;
+	QWidget *wave = waveform_of(b);
+	auto move_to = [&](QWidget *over, QPoint at) {
+		const QPoint global = over->mapToGlobal(at);
+		QMouseEvent moved(QEvent::MouseMove, wave->mapFromGlobal(global), global, Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(wave, &moved);
+	};
+	QTest::mousePress(wave, Qt::LeftButton, Qt::NoModifier, QPoint(wave->width() / 2, wave->height() / 2));
+	move_to(wave, QPoint(wave->width() / 2 + 20, wave->height() / 2));
+	move_to(a, QPoint(a->width() / 2, a->height() - 3));
+	move_to(a, QPoint(a->width() / 2, a->height() - 2));
+	QWidget *ghost = node.findChild<QWidget *>(QStringLiteral("snurra-ghost"));
+	QVERIFY2(ghost && ghost->isVisible(), "no preview while held");
+	QVERIFY(ghost->geometry().center().y() > a->geometry().bottom() - a->height() / 2);
+	QCOMPARE(b->row(), 0);   /* held: nothing moved yet */
+	const QPoint let_go = a->mapToGlobal(QPoint(a->width() / 2, a->height() - 2));
+	QTest::mouseRelease(wave, Qt::LeftButton, Qt::NoModifier, wave->mapFromGlobal(let_go));
+	QVERIFY(!ghost->isVisible());
+	QCOMPARE(a->row(), 0);
+	QCOMPARE(b->row(), 1);
+	QCOMPARE(b->column(), 0);
+	/* It comes in where it did: after a, as the train had it. */
+	QVERIFY2(b->state().lane_start_us > came_in, qPrintable(QString::number(b->state().lane_start_us)));
+	QVERIFY(b->state().lane_start_us >= 2000000);
+}
+
 void embed_test::a_window_has_one_bar_for_its_tiles() {
 	QTemporaryDir dir;
 	QStringList paths;

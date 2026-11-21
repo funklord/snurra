@@ -477,6 +477,23 @@ does the same with a tile's playback:
   touched, a press not seeking and its release seeking, the handle and
   close) and in Xvfb, a tile of a group pulled out by its waveform
   (`a_tile_dragged_onto_another_window_joins_it`).
+- **Above or below, a lane of its own, shown before the drop** (the
+  holder, 2026-11-21: "we allow them to be placed above or below in
+  separate tracks, the preview should show what is going to happen
+  before the drop"). A tile dragged by its waveform over the top or
+  bottom third of a tile of its window lands in a new lane above or
+  below that tile's, the lanes from there moving down; under the last
+  lane, a new last one; over another's middle the two trade places as
+  before. While held, a faint copy of it shows where it would sound --
+  across where it is now, at the same moment -- on a line between the
+  lanes it would come between; let go, it is there, its lane beginning
+  when it came in, and the train it left closing up as when a tile goes.
+  A tile alone in its lane gains nothing by a lane beside it. Tested in
+  `a_tile_dragged_below_another_is_a_lane_of_its_own` (the copy shown
+  and nothing moved while held; let go, a lane of its own, coming in
+  where the train had it -- never moved, it fails), and looked at in
+  Xvfb. The lane's late begin ("+2:55") is said at the waveform's right
+  where its name has the left.
 - **Started with no file: the music library** (the holder, 2026-11-13:
   started without a file, snurra said it could not play "untitled" and
   played three minutes of silence anyway). It opens a library instead,

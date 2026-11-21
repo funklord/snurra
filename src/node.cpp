@@ -9,6 +9,7 @@
 #include <QUrl>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QContextMenuEvent>
 #include <QGridLayout>
@@ -755,6 +756,8 @@ void snurra_node::reshape() {
 		}
 		add(findChild<QSizeGrip *>());
 		add(m_drop_hint);
+		add(m_ghost);
+		add(m_ghost_line);
 		setMask(shape);
 	});
 }
@@ -1634,9 +1637,12 @@ void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
 	if (m_tiles.size() > 1) {
 		if (frameGeometry().contains(global)) {
 			mark(QRect(), QRect());
-			snurra_tile *over = tile_at(mapFromGlobal(global), false);
-			hint_drop(over && over != tile, snurra_wire::RIGHT, over);
+			snurra_tile *over = nullptr;
+			const int row = new_lane_at(mapFromGlobal(global), tile, &over);
+			show_ghost(tile, row);
+			hint_drop(row < 0 && over && over != tile, snurra_wire::RIGHT, over);
 		} else {
+			show_ghost(nullptr, -1);
 			hint_drop(false);
 			mark(QRect(global, tile->size()), QRect());
 		}
@@ -1869,6 +1875,99 @@ void snurra_node::replace_tile(snurra_tile *tile, const QString &file) {
  * the lane: the places' begins are traded back, so a late lane still
  * starts where it did with whatever now heads it.
  */
+/*
+ * Where a tile dragged by its waveform lands in its own window (the
+ * holder, 2026-11-21: "we allow them to be placed above or below in
+ * separate tracks, the preview should show what is going to happen
+ * before the drop"): over the top or bottom third of a tile, a new lane
+ * above or below that tile's -- the row it would be, the rows from there
+ * down moving one down; under the last lane, a new last one. Over the
+ * middle of another tile, -1 and that tile in `over`: the two trade
+ * places. A tile alone in its lane gains nothing by a lane beside it.
+ */
+int snurra_node::new_lane_at(const QPoint &local, snurra_tile *moving, snurra_tile **over) const {
+	*over = tile_at(local, false);
+	const bool alone = lane(moving->row()).size() == 1;
+	int row = -1;
+	if (*over) {
+		const QRect at = (*over)->geometry();
+		const double share = double(local.y() - at.top()) / std::max(1, at.height());
+		if (share < 1.0 / 3) row = (*over)->row();
+		else if (share > 2.0 / 3) row = (*over)->row() + 1;
+	} else {
+		int bottom = -1, last = -1;
+		for (snurra_tile *tile : m_tiles) {
+			bottom = std::max(bottom, tile->geometry().bottom());
+			last = std::max(last, tile->row());
+		}
+		if (local.y() > bottom) row = last + 1;
+	}
+	if (row >= 0 && alone && (row == moving->row() || row == moving->row() + 1)) row = -1;
+	return row;
+}
+
+/* The preview of a new lane: the tile, faint, where it would sound -- at
+ * the same moment, so across where it is now -- on the line between the
+ * lanes it would come between, and that line drawn. */
+void snurra_node::show_ghost(snurra_tile *moving, int row) {
+	if (!moving || row < 0) {
+		if (m_ghost) m_ghost->hide();
+		if (m_ghost_line) m_ghost_line->hide();
+		return;
+	}
+	if (!m_ghost) {
+		m_ghost = new QLabel(this);
+		m_ghost->setObjectName(QStringLiteral("snurra-ghost"));
+		m_ghost->setAttribute(Qt::WA_TransparentForMouseEvents);
+		m_ghost_line = new QWidget(this);
+		m_ghost_line->setObjectName(QStringLiteral("snurra-ghost-line"));
+		m_ghost_line->setAttribute(Qt::WA_TransparentForMouseEvents);
+		m_ghost_line->setAttribute(Qt::WA_StyledBackground);
+		m_ghost_line->setStyleSheet(QStringLiteral("background: palette(highlight);"));
+	}
+	int y = -1;
+	for (snurra_tile *tile : m_tiles)
+		if (tile->row() == row) y = y < 0 ? tile->geometry().top() : std::min(y, tile->geometry().top());
+	if (y < 0)
+		for (snurra_tile *tile : m_tiles) y = std::max(y, tile->geometry().bottom() + 1);
+	if (m_ghost_row != row || m_ghost_tile != moving) {
+		QPixmap faint(moving->size() * moving->devicePixelRatioF());
+		faint.setDevicePixelRatio(moving->devicePixelRatioF());
+		faint.fill(Qt::transparent);
+		QPainter painter(&faint);
+		painter.setOpacity(0.55);
+		painter.drawPixmap(0, 0, moving->grab());
+		painter.end();
+		m_ghost->setPixmap(faint);
+		m_ghost_row = row;
+		m_ghost_tile = moving;
+	}
+	const int thick = std::max(3, fontMetrics().height() / 5);
+	m_ghost_line->setGeometry(0, y - thick / 2, width(), thick);
+	m_ghost->setGeometry(QRect(QPoint(moving->x(), y - moving->height() / 2), moving->size()));
+	m_ghost_line->raise();
+	m_ghost->raise();
+	m_ghost_line->show();
+	m_ghost->show();
+	reshape();
+}
+
+/* A tile into a lane of its own at `row`, coming in where it comes in
+ * now; the lanes from there down one further down, and the train it left
+ * closing up as when a tile goes (drop_tile). */
+void snurra_node::move_to_new_lane(snurra_tile *tile, int row) {
+	const qint64 begin = snurra_frames_to_us(lane_start(tile), m_engine->rate());
+	const QList<snurra_tile *> left = lane(tile->row());
+	if (left.size() > 1 && left.first() == tile) left.at(1)->set_lane_start_us(tile->lane_start_us());
+	for (snurra_tile *other : m_tiles)
+		if (other != tile && other->row() >= row) other->set_place(other->row() + 1, other->column());
+	tile->set_place(row, 0);
+	tile->set_lane_start_us(begin);
+	m_ghost_row = -1;
+	place_tiles();
+	timing_changed();
+}
+
 void snurra_node::swap_tiles(snurra_tile *a, snurra_tile *b) {
 	const int a_row = a->row();
 	const int a_column = a->column();
@@ -2012,10 +2111,15 @@ void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 	}
 
 	/* In a group, a tile dropped outside the window is pulled out there;
-	 * on another of its tiles, the two trade places. */
+	 * by the top or bottom of a tile, it is a lane of its own there; on
+	 * the middle of another, the two trade places. */
+	show_ghost(nullptr, -1);
 	if (m_tiles.size() > 1) {
+		snurra_tile *over = nullptr;
+		const int row = frameGeometry().contains(global) ? new_lane_at(mapFromGlobal(global), tile, &over) : -1;
 		if (!frameGeometry().contains(global)) release(int(m_tiles.indexOf(tile)), global);
-		else if (snurra_tile *over = tile_at(mapFromGlobal(global), false); over && over != tile) swap_tiles(tile, over);
+		else if (row >= 0) move_to_new_lane(tile, row);
+		else if (over && over != tile) swap_tiles(tile, over);
 		return;
 	}
 
