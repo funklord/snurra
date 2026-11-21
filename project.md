@@ -1074,7 +1074,20 @@ start overlapping").
   in. So a mix performed live is a prepared mix in the player view,
   editable and played again -- the one model, not a recording beside it.
 - Switching views moves nothing: both show the one timeline, and both may
-  be open at once.
+  be open at once. **A first step, 2026-11-21:** a player unfolded on the
+  decks shows above them as its timeline -- a row a channel, so a row a
+  deck; each track a bar from where it comes in to where it ends, named,
+  filled where a deck sounds it; a line where the player is -- so what
+  comes next, on which deck and when, is there while the decks play it.
+  Gone when the player is folded or a tune loaded by hand ends it.
+  Pressed, the player goes there, as a seek on a deck does -- to hear a
+  crossing again or go on to the next. Otherwise read-only: an edit is
+  still made on the decks (written back) or in a window. Tested in
+  `the_decks_show_the_player_they_play` (three tracks on two channels,
+  the playhead moving, pressed near the end the playhead there, gone when
+  folded; never shown, or the press not seeking, it fails) and looked at
+  in Xvfb. Still to come: a window and the decks
+  open on the one player at once, live both ways.
 - **The way there from a window** (the holder, 2026-11-21: "I don't know
   how to switch to deck mode"): until then only `--dj`, or a tile
   dragged over a deck view already open. A window's menu (right-click)

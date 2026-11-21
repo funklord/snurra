@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QList>
 #include <QMenu>
+#include <QPainter>
 #include <QMimeData>
 #include <QPointer>
 #include <QSet>
@@ -275,6 +276,78 @@ protected:
 
 }
 
+/*
+ * The player the decks play, seen as its timeline while it is unfolded
+ * (sec 3f: "both show the one timeline"): a row a channel -- a deck --
+ * each track a bar from where it comes in to where it ends, named, the
+ * ones the decks sound now filled, and a line where the player is. So
+ * the prepared mix's shape -- what comes next, on which deck, when -- is
+ * there while the decks play it. Asked what to draw at each paint.
+ */
+class snurra_dj_set_view : public QWidget {
+public:
+	struct track {
+		int channel = 0;
+		int64_t start = 0, end = 0;
+		QString name;
+		bool sounding = false;
+	};
+	std::function<void(std::vector<track> &, int64_t &now)> fill;
+	/* Pressed: the player to there, a share of its length -- to hear a
+	 * crossing again, or go on to the next. */
+	std::function<void(double share)> on_seek;
+
+	explicit snurra_dj_set_view(QWidget *parent) : QWidget(parent) {
+		setObjectName(QStringLiteral("snurra-set-view"));
+		setAccessibleName(QObject::tr("The player on the decks"));
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		m_tick.setInterval(100);
+		QObject::connect(&m_tick, &QTimer::timeout, this, [this] { update(); });
+	}
+	void set_channels(int channels) {
+		const int line = fontMetrics().height() + 2;
+		setFixedHeight(std::max(1, channels) * line + 2);
+	}
+
+protected:
+	void mousePressEvent(QMouseEvent *event) override {
+		if (event->button() != Qt::LeftButton || !on_seek || width() <= 2) return;
+		on_seek(std::clamp((event->position().x() - 1) / (width() - 2), 0.0, 1.0));
+	}
+	void showEvent(QShowEvent *) override { m_tick.start(); }
+	void hideEvent(QHideEvent *) override { m_tick.stop(); }
+	void paintEvent(QPaintEvent *) override {
+		std::vector<track> tracks;
+		int64_t now = -1;
+		if (fill) fill(tracks, now);
+		QPainter painter(this);
+		painter.fillRect(rect(), palette().color(QPalette::Base));
+		int64_t length = 1;
+		for (const track &one : tracks) length = std::max(length, one.end);
+		const int line = fontMetrics().height() + 2;
+		auto x_of = [&](int64_t at) { return double(at) / double(length) * (width() - 2) + 1; };
+		QColor ahead = palette().color(QPalette::Highlight);
+		ahead.setAlphaF(0.3f);
+		for (const track &one : tracks) {
+			const QRectF bar(x_of(one.start), 1 + one.channel * line, std::max(2.0, x_of(one.end) - x_of(one.start)), line - 2);
+			painter.fillRect(bar, one.sounding ? palette().color(QPalette::Highlight) : ahead);
+			painter.setPen(palette().color(one.sounding ? QPalette::HighlightedText : QPalette::Text));
+			painter.drawText(bar.adjusted(3, 0, -2, 0), Qt::AlignLeft | Qt::AlignVCenter,
+			                 fontMetrics().elidedText(one.name, Qt::ElideRight, int(bar.width()) - 5));
+		}
+		setProperty("tracks", int(tracks.size()));
+		if (now >= 0) {
+			const double x = x_of(now);
+			painter.setPen(QPen(palette().color(QPalette::Text), 2));
+			painter.drawLine(QPointF(x, 0), QPointF(x, height()));
+			setProperty("now_x", x);
+		}
+	}
+
+private:
+	QTimer m_tick;
+};
+
 class snurra_dj_private {
 public:
 	snurra_dj *q = nullptr;
@@ -345,6 +418,7 @@ public:
 		QTimer *timer = nullptr;
 	};
 	std::unique_ptr<score_t> score;
+	snurra_dj_set_view *set_view = nullptr;
 
 	/* ---- listeners (sec 3f, step 7) ---- */
 	/* A listener: headphones of their own -- an engine on another output
@@ -394,6 +468,7 @@ public:
 	qint64 score_us(int64_t time) const;
 	int64_t frame_of(int track, int64_t time) const;
 	void place(int64_t time, qint64 at_us);
+	void seek_score(int64_t time);
 	void load_track(int track, int64_t frame);
 	void keep_moves(int deck);
 	bool start_now(int deck);
@@ -871,6 +946,10 @@ bool snurra_dj_private::unfold(int deck) {
 	}
 	score = std::move(made);
 	score->playing = outer.playing;
+	int channels = 0;
+	for (int channel : score->channel) channels = std::max(channels, channel + 1);
+	set_view->set_channels(channels);
+	set_view->show();
 	place(time, at);
 	score->timer = new QTimer(q);
 	score->timer->setInterval(20);
@@ -927,6 +1006,7 @@ bool snurra_dj_private::fold() {
 
 void snurra_dj_private::end_score() {
 	for (dj_deck *deck : decks) deck->fold->hide();
+	if (set_view) set_view->hide();
 	if (!score) return;
 	if (score->timer) score->timer->deleteLater();
 	for (int i = 0; i < decks.size(); ++i)
@@ -950,6 +1030,17 @@ int64_t snurra_dj_private::frame_of(int track, int64_t time) const {
 
 /* Every channel's deck at the player's `time`, heard from `at_us`: the
  * track sounding there, else the next to come, cued. */
+/* The player, unfolded, to its time `time`: every deck as place() puts
+ * it, playing on from there or held there. */
+void snurra_dj_private::seek_score(int64_t time) {
+	if (!score) return;
+	const qint64 now = snurra_clock_us();
+	if (!score->playing)
+		for (dj_deck *other : decks)
+			if (other->tile) other->tile->hold_at(other->tile->frame_now());
+	place(std::max<int64_t>(0, time), score->playing ? now + engine->latency_us() + 50000 : now);
+}
+
 void snurra_dj_private::place(int64_t time, qint64 at_us) {
 	score->time0 = time;
 	score->t0_us = at_us;
@@ -1031,13 +1122,8 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		QObject::connect(tile, &snurra_tile::seek_requested, q, [this, track](snurra_tile *, qint64 position_us) {
 			if (!score) return;
 			const snurra_timeline_track &one = score->timeline.tracks[size_t(track)];
-			const int64_t time = score->start[size_t(track)]
-			                     + std::llround(double(snurra_us_to_frames(position_us, engine->rate()) - one.offset) / one.tempo);
-			const qint64 now = snurra_clock_us();
-			if (!score->playing)
-				for (dj_deck *other : decks)
-					if (other->tile) other->tile->hold_at(other->tile->frame_now());
-			place(std::max<int64_t>(0, time), score->playing ? now + engine->latency_us() + 50000 : now);
+			seek_score(score->start[size_t(track)]
+			           + std::llround(double(snurra_us_to_frames(position_us, engine->rate()) - one.offset) / one.tempo));
 		});
 		QObject::connect(tile, &snurra_tile::level_held, q, [this, deck](snurra_tile *, bool held) { hold(deck, held); });
 	} else {
@@ -1303,6 +1389,29 @@ QString snurra_dj::socket_path() const {
 snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snurra_dj_private>()) {
 	d->q = this;
 	QVBoxLayout *column = new QVBoxLayout(this);
+	d->set_view = new snurra_dj_set_view(this);
+	d->set_view->fill = [this](std::vector<snurra_dj_set_view::track> &tracks, int64_t &now) {
+		if (!d->score) return;
+		for (size_t i = 0; i < d->score->states.size(); ++i) {
+			snurra_dj_set_view::track one;
+			one.channel = i < d->score->channel.size() ? d->score->channel[i] : 0;
+			one.start = d->score->start[i];
+			one.end = d->score->end[i];
+			one.name = snurra_title_of(d->score->states[i].source);
+			for (size_t deck = 0; deck < d->score->on_deck.size() && int(deck) < d->decks.size(); ++deck)
+				one.sounding = one.sounding || (d->score->on_deck[deck] == int(i) && d->decks[int(deck)]->tile && d->decks[int(deck)]->tile->playing());
+			tracks.push_back(one);
+		}
+		now = d->score_time(snurra_clock_us());
+	};
+	d->set_view->on_seek = [this](double share) {
+		if (!d->score) return;
+		int64_t length = 0;
+		for (int64_t end : d->score->end) length = std::max(length, end);
+		d->seek_score(int64_t(std::llround(share * double(length))));
+	};
+	d->set_view->hide();
+	column->addWidget(d->set_view);
 	d->grid = new QGridLayout;
 	column->addLayout(d->grid);
 	set_deck_count(2);

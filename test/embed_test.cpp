@@ -108,6 +108,7 @@ private slots:
 	void the_decks_sit_as_the_person_arranged_them();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_plugs_into_a_windows_tile();
+	void the_decks_show_the_player_they_play();
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
 	void a_deck_started_by_hand_is_where_its_track_comes_in();
@@ -2079,7 +2080,12 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks")); });
 	auto where = [](snurra_dj &dj, int deck) {
 		QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-%1").arg(QChar(QLatin1Char(char('a' + deck)))));
-		QGridLayout *grid = qobject_cast<QGridLayout *>(place->parentWidget()->layout()->itemAt(0)->layout());
+		/* The deck grid, wherever it sits in the view's column (the
+		 * player's timeline strip came above it, 2026-11-21). */
+		QGridLayout *grid = nullptr;
+		QLayout *view = place->parentWidget()->layout();
+		for (int i = 0; view && i < view->count() && !grid; ++i) grid = qobject_cast<QGridLayout *>(view->itemAt(i)->layout());
+		if (!grid) return QPoint(-1, -1);
 		int row = -1, column = -1, rows = 0, columns = 0;
 		grid->getItemPosition(grid->indexOf(place), &row, &column, &rows, &columns);
 		return QPoint(column, row);
@@ -2440,6 +2446,68 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
  * and comes in at 4 s. A hand on B's fader takes B from the automation --
  * no fade on it while held -- and gives it back when let go.
  */
+/*
+ * Both views at once, a first step (sec 3f: "both show the one
+ * timeline"): a player unfolded on the decks shows above them as its
+ * timeline -- three tracks on two channels, the one sounding filled, the
+ * playhead moving -- and folded back, the strip goes.
+ */
+void embed_test::the_decks_show_the_player_they_play() {
+	QTemporaryDir runtime;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.listen());
+	QWidget *view = dj.findChild<QWidget *>(QStringLiteral("snurra-set-view"));
+	QVERIFY(view && !view->isVisible());
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("shown");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	for (int i = 0; i < 3; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(220 + 110 * i);
+		tone.duration_us = 3000000;
+		tone.column = i;
+		tone.overlap_us = i > 0 ? 1000000 : -1;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("3 tracks"), 3000);
+	QVERIFY(!view->isVisible());
+	QVERIFY(dj.unfold(0));
+	QTRY_VERIFY_WITH_TIMEOUT(view->isVisible(), 2000);
+	view->repaint();
+	QCOMPARE(view->property("tracks").toInt(), 3);
+	QVERIFY(view->height() >= 2 * view->fontMetrics().height());   /* two channels */
+	const double first = view->property("now_x").toDouble();
+	QTest::qWait(600);
+	view->repaint();
+	QVERIFY2(view->property("now_x").toDouble() > first, "the playhead stood still");
+	/* Pressed near its end, the player goes there: the playhead drawn
+	 * where it was pressed. */
+	const int near_end = view->width() * 9 / 10;
+	QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, QPoint(near_end, 4));
+	view->repaint();
+	QVERIFY2(std::abs(view->property("now_x").toDouble() - near_end) < view->width() / 20.0,
+	         qPrintable(QStringLiteral("playhead at %1, pressed at %2").arg(view->property("now_x").toDouble()).arg(near_end)));
+	QVERIFY(dj.fold());
+	QVERIFY(!view->isVisible());
+}
+
 void embed_test::a_player_unfolds_across_the_decks() {
 	QTemporaryDir runtime;
 	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
