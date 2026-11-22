@@ -1104,7 +1104,12 @@ start overlapping").
   takes it at once, and a moved crossing has the decks go on from where
   they are on the new times). Adding or removing a track in the window
   is not handed back: the decks' next answer puts the tracks back --
-  the decks hold the player, a track goes on or off there. Its play,
+  the decks hold the player, a track goes on or off there. So nothing is
+  rearranged in a following window: no track menu, no "decks" on its
+  bar, no tile dragged out, swapped or into a lane of its own, no file
+  or tile dropped in (an OFFER goes unanswered and the giver plays on).
+  A track taken from it into a window of its own would have been heard
+  twice -- there and on the decks. Its play,
   pause and seek are the decks' (PLAY and SEEK with no tile index). Folded,
   ended, or the decks gone half a second, the window goes. Polled rather
   than pushed: the decks keep no list of who watches, and a window that

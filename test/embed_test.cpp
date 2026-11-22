@@ -2572,6 +2572,22 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	};
 	const QString first = QStringLiteral("tone:220"), last = QStringLiteral("tone:440");
 	QTRY_VERIFY_WITH_TIMEOUT(window_tile(first) && window_tile(first)->playing(), 2000);
+	/* Its tracks are the decks': no menu to remove one or take it into a
+	 * window of its own (which would sound it twice), no "decks". */
+	QWidget *to_decks = node.findChild<QWidget *>(QStringLiteral("snurra-bar-decks"));
+	QVERIFY(to_decks && !to_decks->isVisible());
+	bool menu_shown = false;
+	QTimer::singleShot(200, [&menu_shown] {
+		if (QWidget *menu = QApplication::activePopupWidget()) {
+			menu_shown = true;
+			menu->close();
+		}
+	});
+	const QPoint over = window_tile(first)->geometry().center();
+	QContextMenuEvent asked(QContextMenuEvent::Mouse, over, node.mapToGlobal(over));
+	QCoreApplication::sendEvent(&node, &asked);
+	QTest::qWait(300);
+	QVERIFY2(!menu_shown, "a following window offered its tracks' menu");
 	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) QCOMPARE(tile->deck()->mix(), 0.0f);
 
 	/* The deck's EQ, turned there, on the window's tile. */

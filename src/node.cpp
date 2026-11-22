@@ -1522,6 +1522,9 @@ void snurra_node::offer(QLocalSocket *socket, const QString &token, snurra_wire:
 }
 
 void snurra_node::merge_into(const QString &peer, snurra_wire::side_t side, int index, int deck, const QPoint &at) {
+	/* A window following the decks' player holds no tracks of its own to
+	 * give: the decks hold them (follow). */
+	if (follows_decks()) return;
 	if (m_tiles.isEmpty() || index >= m_tiles.size()) return;
 	QLocalSocket *socket = new QLocalSocket(this);
 	watch(socket);
@@ -1584,6 +1587,9 @@ void snurra_node::abort_give(const QString &token) {
 }
 
 void snurra_node::release(int index, const QPoint &at) {
+	/* A window following the decks' player holds no tracks of its own to
+	 * give: the decks hold them (follow). */
+	if (follows_decks()) return;
 	if (index < 0 || index >= m_tiles.size() || m_tiles.size() < 2) return;
 	/*
 	 * A new process takes the tile: it starts, connects back and asks for
@@ -1613,6 +1619,9 @@ void snurra_node::release(int index, const QPoint &at) {
  * unfolds what it took across its decks.
  */
 void snurra_node::open_decks() {
+	/* A window following the decks' player holds no tracks of its own to
+	 * give: the decks hold them (follow). */
+	if (follows_decks()) return;
 	if (m_tiles.isEmpty()) {
 		QProcess::startDetached(QCoreApplication::applicationFilePath(), { QStringLiteral("--dj") });
 		return;
@@ -1641,6 +1650,7 @@ void snurra_node::open_decks() {
  */
 void snurra_node::follow(const QString &decks) {
 	m_follow = decks;
+	if (QWidget *to_decks = findChild<QWidget *>(QStringLiteral("snurra-bar-decks"))) to_decks->hide();
 	if (!m_follow_timer) {
 		m_follow_timer = new QTimer(this);
 		m_follow_timer->setInterval(100);
@@ -1785,6 +1795,8 @@ void snurra_node::followed(const snurra_wire::message &m) {
 }
 
 void snurra_node::contextMenuEvent(QContextMenuEvent *event) {
+	/* Remove, a window of its own, the decks: each the decks' to do. */
+	if (follows_decks()) return;
 	QMenu menu(this);
 	/* The track under the hand: what its own title row's close and drag
 	 * did, before the window's one bar took the row (sec 3b). */
@@ -1960,7 +1972,9 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		socket->disconnectFromServer();
 		break;
 	case snurra_wire::OFFER:
-		take(socket, m);
+		/* Not into a window following the decks: unanswered, the giver
+		 * plays on (ABORT). */
+		if (!follows_decks()) take(socket, m);
 		break;
 	case snurra_wire::READY:
 		complete_give(socket, m);
@@ -2055,6 +2069,9 @@ void snurra_node::mark(const QRect &landing, const QRect &shape) {
 }
 
 void snurra_node::handle_moved(snurra_tile *tile, const QPoint &global) {
+	/* Following the decks, nothing is rearranged here: a track is placed,
+	 * pulled out or added on the decks, which hold the player. */
+	if (follows_decks()) return;
 	if (tiles_join_by_drop()) {
 		drag_out(tile);
 		return;
@@ -2177,6 +2194,10 @@ snurra_tile *snurra_node::tile_at(const QPoint &local, bool strips) const {
 }
 
 void snurra_node::dragEnterEvent(QDragEnterEvent *event) {
+	if (follows_decks()) {
+		event->ignore();
+		return;
+	}
 	if (own_tile(event->mimeData(), m_path) >= 0) {
 		event->acceptProposedAction();
 		hint_drop(false);
@@ -2569,7 +2590,7 @@ void snurra_node::handle_released(snurra_tile *tile, const QPoint &global) {
 	m_drag_from = QPoint();
 	mark(QRect(), QRect());
 	hint_drop(false);
-	if (from.isNull()) return;
+	if (from.isNull() || follows_decks()) return;
 
 	/* Let go over a deck view (project.md sec 3f): onto the deck there --
 	 * this tile, or with Shift the whole player, the sum of its tiles. */
