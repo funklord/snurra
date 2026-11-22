@@ -831,6 +831,9 @@ void snurra_dj_private::check_ready(const QString &token) {
 	ready.type = snurra_wire::READY;
 	ready.token = token;
 	ready.time = snurra_clock_us() + engine->latency_us() + period_us + COMMIT_MARGIN_US;
+	/* Where to find these decks: a window that gave its player whole
+	 * goes on showing it from here (follow). */
+	ready.path = path;
 	send(it->socket, ready);
 }
 

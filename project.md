@@ -1126,18 +1126,26 @@ start overlapping").
   has "Open in the decks": a new process opens the deck view, connects
   back and asks for the player by a token (ADOPT, as a tile pulled out
   is asked for), every tile onto its deck A, gapless; it unfolds what it
-  took across the decks once the crossfade is over, and the window, empty,
-  goes. Tested from a real right-click in Xvfb
+  took across the decks once the crossfade is over. The window stays,
+  following the player it gave (the holder, 2026-11-22: "leave the
+  window open as a follower"), so the switch loses no view: READY names
+  the decks' socket, and after COMMIT the window follows it as "In a
+  window too" does. Empty until the decks have unfolded, it waits up to
+  five seconds of answers with no tracks before taking one as folded,
+  and the last fade heard out no longer closes it while it follows.
+  Tested from a real right-click in Xvfb
   (`a_window_opens_its_player_in_the_decks`: the decks hold the two
-  tracks, each on its own; without the unfold it fails). **And back**:
+  tracks, each on its own, and the window shows them as its two tiles;
+  without the unfold, or the window not following, it fails). **And back**:
   each deck holding something has "Into a window", which opens a window
   of its own with it, as its title dragged out does -- where the deck is
   one of a player unfolded, the player gathered first (fold), so the
   window gets it whole, its tracks tiles again, not one torn out. A
   RELEASE over the wire does the same. Not on a phone, where the decks
   are the app and no window can be started. Tested in the same test, the round
-  trip: the decks' player back in a window as two tiles, the decks empty
-  (released without gathering, one track comes out and it fails).
+  trip: the decks' player back in a window as two tiles, the decks empty,
+  the window that followed them gone (released without gathering, one
+  track comes out and it fails).
 
 **Nested: a deck plays a player.** The holder, the same day: "a deck's
 input can be a whole train or another deck view's mix -- because they

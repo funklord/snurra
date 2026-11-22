@@ -242,7 +242,12 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	if (m_drawers_look && see_through()) setAttribute(Qt::WA_TranslucentBackground);
 	qInfo("snurra: the %s look", m_drawers_look ? "drawers" : "square");
 	m_engine = new snurra_engine(this);
-	connect(m_engine, &snurra_engine::idle, this, &snurra_node::leave_if_empty);
+	/* The last fade heard out: an empty window goes -- not one following
+	 * the decks, empty only until the player it gave them has spread
+	 * across them (open_decks). */
+	connect(m_engine, &snurra_engine::idle, this, [this] {
+		if (!follows_decks()) leave_if_empty();
+	});
 	setWindowFlag(Qt::FramelessWindowHint);
 	setWindowTitle(QStringLiteral("snurra"));
 	QVBoxLayout *outer = new QVBoxLayout(this);
@@ -1570,6 +1575,14 @@ void snurra_node::complete_give(QLocalSocket *socket, const snurra_wire::message
 	commit.fade = CROSSFADE_US;
 	send(socket, commit);
 	if (socket) socket->flush();
+	/* The whole player given to the decks (open_decks): this window stays,
+	 * following it there (the holder, 2026-11-22: "leave the window open
+	 * as a follower"), so the switch to the decks loses no view. */
+	if (ready.token == m_decks_token && !ready.path.isEmpty()) {
+		m_decks_token.clear();
+		follow(ready.path);
+		return;
+	}
 	leave_if_empty();
 }
 
@@ -1634,6 +1647,7 @@ void snurra_node::open_decks() {
 	connect(placeholder.expiry, &QTimer::timeout, this, [this, token] { abort_give(token); });
 	placeholder.expiry->start(ADOPT_WAIT_MS);
 	m_giving.insert(token, placeholder);
+	m_decks_token = token;
 	QProcess::startDetached(QCoreApplication::applicationFilePath(),
 	                        { QStringLiteral("--dj"), QStringLiteral("--adopt"), m_path, QStringLiteral("--token"), token });
 }
@@ -1659,6 +1673,7 @@ void snurra_node::follow(const QString &decks) {
 			 * what this showed. */
 			if (++m_follow_misses > 5) {
 				m_follow_timer->stop();
+				m_follow.clear();
 				close_all();
 				return;
 			}
@@ -1678,9 +1693,15 @@ void snurra_node::follow(const QString &decks) {
 
 void snurra_node::followed(const snurra_wire::message &m) {
 	m_follow_misses = 0;
+	if (m.states.isEmpty() && m_followed.isEmpty() && ++m_follow_empty <= 50) {
+		/* Not yet unfolded: the player just given by open_decks() spreads
+		 * across the decks once its crossfade is over. Five seconds. */
+		return;
+	}
 	if (m.states.isEmpty()) {
 		/* Folded, or ended by a tune loaded by hand: nothing to show. */
 		m_follow_timer->stop();
+		m_follow.clear();
 		close_all();
 		return;
 	}

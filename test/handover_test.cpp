@@ -1629,7 +1629,10 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 		return true;
 	};
 	QTRY_VERIFY_WITH_TIMEOUT(unfolded(), 10000);
-	QVERIFY2(ended(window, 10000), "the window, empty, stayed");
+	/* The window stays, following the player it gave (the holder,
+	 * 2026-11-22): its two tracks shown again. */
+	QVERIFY2(window->state() == QProcess::Running, "the window, having given its player, ended");
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(window), status_request(), 500).states.size(), 2, 5000);
 
 	/* In a window too (sec 3f, what the decks' "In a window too" starts):
 	 * a window following the decks' player holds its two tracks. */
@@ -1649,12 +1652,14 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 	waited.restart();
 	while (back.isEmpty() && waited.elapsed() < 10000) {
 		for (const QString &path : sockets())
-			if (path != decks && !path.endsWith(QLatin1String(snurra_wire::DECKS_SUFFIX)) && ask(path, status_request(), 500).states.size() == 2)
+			if (path != decks && path != socket_of(window) && path != socket_of(follower)
+			    && !path.endsWith(QLatin1String(snurra_wire::DECKS_SUFFIX)) && ask(path, status_request(), 500).states.size() == 2)
 				back = path;
 		QTest::qWait(100);
 	}
 	QVERIFY2(!back.isEmpty(), "the decks' player did not come back into a window whole");
 	QTRY_COMPARE_WITH_TIMEOUT(ask(decks, status_request()).states.size(), 0, 5000);
+	QVERIFY2(ended(window, 10000), "the window following the decks stayed after they folded");
 }
 
 void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
