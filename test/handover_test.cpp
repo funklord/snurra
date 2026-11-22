@@ -53,6 +53,7 @@ private slots:
 	void a_playlist_is_a_train_of_what_it_names();
 	void shuffle_plays_the_files_in_another_order();
 	void mplayers_everyday_options_are_taken();
+	void standard_input_plays_as_mplayers_dash();
 	void audiofile_gives_the_first_file_its_sound();
 	void a_chapters_file_gives_the_first_file_its_tracklist();
 	void a_tile_plays_a_player_and_the_wire_carries_it();
@@ -1423,6 +1424,36 @@ void handover_test::mplayers_everyday_options_are_taken() {
 	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
 	QVERIFY2(ended(b, 8000), "-endpos 1: still playing");
 	QVERIFY2(played.elapsed() >= 800, qPrintable(QStringLiteral("ended after %1 ms").arg(played.elapsed())));
+}
+
+/*
+ * mplayer's "-" (`curl ... | mplayer -`): what arrives on standard input
+ * plays, all of it and nothing else -- a two-second WAV piped in is two
+ * seconds heard at its level, though its size is known only when the
+ * pipe closes.
+ */
+void handover_test::standard_input_plays_as_mplayers_dash() {
+	const QString file = m_dir->filePath(QStringLiteral("piped.wav"));
+	QVERIFY(write_constant_wav(file, 2, 16384, 0));
+	QFile wav(file);
+	QVERIFY(wav.open(QIODevice::ReadOnly));
+	const QByteArray bytes = wav.readAll();
+	QProcess *a = start({ QStringLiteral("-") }, QStringLiteral("capture:") + capture_dir());
+	QVERIFY(a->waitForStarted());
+	a->write(bytes.left(bytes.size() / 2));
+	QVERIFY(wait_for_socket(socket_of(a)));
+	QTest::qWait(300);   /* the rest arriving while it plays */
+	a->write(bytes.mid(bytes.size() / 2));
+	a->closeWriteChannel();
+	const QString heard_file = QDir(capture_dir()).filePath(QStringLiteral("%1.capture").arg(a->processId()));
+	QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(heard_file).size() > 4 * 48000 * 6, 10000);
+	const capture_t heard = read_capture(heard_file);
+	int at_level = 0;
+	for (int i = 0; i < heard.us.size(); ++i)
+		if (std::abs(double(heard.left.at(i)) - 0.5) < 1e-3) ++at_level;
+	QVERIFY2(std::abs(at_level - 2 * 48000) <= 2, qPrintable(QStringLiteral("%1 frames at its level, of %2").arg(at_level).arg(2 * 48000)));
+	a->terminate();
+	QVERIFY(ended(a, 5000));
 }
 
 /*

@@ -103,7 +103,8 @@ QString snurra_estate_title(const QString &name);
 
 /* Has snurra_open_source open "fuzznet:ROOT" names as snurra_estate_bytes,
  * and snurra_title_of call them by their catalogued names. */
-void snurra_estate_install();
+/* `other`: asked for every name that is not the estate's. */
+void snurra_estate_install(snurra_bytes_resolver other = nullptr);
 
 /* The catalogue as rows of `library` (its set_entries, source "estate"):
  * listed off the UI thread now and each minute after, a file's name as

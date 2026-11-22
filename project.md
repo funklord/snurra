@@ -2118,6 +2118,22 @@ controls; each tile very compact but resizeable).
   (`mplayers_everyday_options_are_taken`: muted, placed at +50+60, and
   `-ss 1 -endpos 1` ending by itself after at least 0.8 s; with the mute
   or the end taken out it fails).
+- **mplayer's "-", 2026-11-22**: `curl ... | snurra -` plays what
+  arrives on standard input, as mplayer's does -- bytes still arriving,
+  the library's own case (sec 1): a thread of the player reads the input
+  into memory and keeps it, so a seek back finds it; the size is known
+  when the pipe closes; one reader however many sources open "-" (the
+  waveform's second read too). "-" always means the input, never a file
+  of that name. In the player only (a resolver chained after the
+  estate's, `snurra_estate_install(other)`), not the library: a host's
+  standard input is not a media source. What it costs: the whole input
+  is kept in memory, as a seek back needs; and only this process has
+  this input, so such a tile handed to another window plays silence
+  there. Analysis is never kept for it (the store takes files only), so
+  one stream's beat is never given to the next. Tested in
+  `standard_input_plays_as_mplayers_dash`: a 2 s WAV piped in two halves
+  0.3 s apart is 96000 frames heard at its level; a stall read as the
+  end, it is none.
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;

@@ -18,7 +18,13 @@
 #include <QSocketNotifier>
 #include <QTimer>
 
+#include <condition_variable>
+#include <cerrno>
 #include <csignal>
+#include <cstring>
+#include <mutex>
+#include <thread>
+#include <vector>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -74,6 +80,75 @@ void quit_on_signals(QCoreApplication &app) {
  * hours:minutes:seconds, the last part with a fraction if it likes. -1 for
  * what is none of these.
  */
+/*
+ * mplayer's "-": what arrives on standard input, as `curl ... | mplayer -`
+ * plays it -- bytes still arriving (project.md sec 1, the library's
+ * centre), read by a thread of their own into memory and kept, so a seek
+ * back finds them; the size known once the input ends. One reader of
+ * the input, however many sources open "-" (the waveform's second read
+ * included). Only this process has this input: a tile of it handed to
+ * another process plays silence there.
+ */
+class stdin_bytes : public snurra_bytes {
+public:
+	stdin_bytes() : m_shared(std::make_shared<shared>()) {
+		std::thread([held = m_shared] {
+			std::vector<uint8_t> chunk(1 << 16);
+			for (;;) {
+				const ssize_t got = ::read(STDIN_FILENO, chunk.data(), chunk.size());
+				if (got < 0 && errno == EINTR) continue;
+				std::lock_guard<std::mutex> lock(held->lock);
+				if (got <= 0) {
+					held->ended = true;
+					held->arrived.notify_all();
+					return;
+				}
+				held->bytes.insert(held->bytes.end(), chunk.begin(), chunk.begin() + got);
+				held->arrived.notify_all();
+			}
+		}).detach();
+	}
+	int64_t size() const override {
+		std::lock_guard<std::mutex> lock(m_shared->lock);
+		return m_shared->ended ? int64_t(m_shared->bytes.size()) : -1;
+	}
+	int64_t read(int64_t offset, uint8_t *out, int64_t n) override {
+		std::lock_guard<std::mutex> lock(m_shared->lock);
+		const int64_t here = int64_t(m_shared->bytes.size());
+		if (offset >= here) return m_shared->ended ? -1 : 0;
+		const int64_t taken = std::min(n, here - offset);
+		std::memcpy(out, m_shared->bytes.data() + offset, size_t(taken));
+		return taken;
+	}
+	bool has(int64_t offset, int64_t n) const override {
+		std::lock_guard<std::mutex> lock(m_shared->lock);
+		return offset + n <= int64_t(m_shared->bytes.size());
+	}
+	void wait(int ms) override {
+		std::unique_lock<std::mutex> lock(m_shared->lock);
+		if (m_shared->ended) return;
+		m_shared->arrived.wait_for(lock, std::chrono::milliseconds(ms));
+	}
+
+private:
+	struct shared {
+		mutable std::mutex lock;
+		std::condition_variable arrived;
+		std::vector<uint8_t> bytes;
+		bool ended = false;
+	};
+	std::shared_ptr<shared> m_shared;
+};
+
+static std::shared_ptr<snurra_bytes> stdin_resolver(const QString &name) {
+	if (name != QLatin1String("-")) return nullptr;
+	static std::mutex made_lock;
+	static std::shared_ptr<snurra_bytes> made;
+	std::lock_guard<std::mutex> lock(made_lock);
+	if (!made) made = std::make_shared<stdin_bytes>();
+	return made;
+}
+
 /*
  * mplayer's -geometry: "+x+y" or "x:y" a place, "WxH+x+y" a size and a
  * place, "WxH" a size alone (then where the pointer is: an invalid
@@ -133,7 +208,7 @@ int main(int argc, char *argv[]) {
 	quit_on_signals(app);
 	/* "fuzznet:ROOT" opened from the user's node, in this process and in
 	 * every tile process it starts, each running this same main. */
-	snurra_estate_install();
+	snurra_estate_install(stdin_resolver);
 
 	QCommandLineParser parser;
 	/* mplayer's options are one dash and a word (-ss, -fs), and are what
@@ -353,7 +428,8 @@ int main(int argc, char *argv[]) {
 	int column = 0;
 	for (const QString &file : files) {
 		snurra_tile_state state;
-		state.source = QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
+		/* "-" is the standard input, as mplayer's, never a file of that name. */
+		state.source = file != QLatin1String("-") && QFileInfo::exists(file) ? QFileInfo(file).absoluteFilePath() : file;
 		/* Three minutes for what has no length of its own: silence, for
 		 * a name nothing can play, still behaves as a tile. Past where a
 		 * start is asked for, which this length would otherwise clamp. */

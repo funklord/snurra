@@ -158,10 +158,10 @@ QString snurra_estate_title(const QString &name) {
 	return title;
 }
 
-void snurra_estate_install() {
-	snurra_set_bytes_resolver([](const QString &name) -> std::shared_ptr<snurra_bytes> {
+void snurra_estate_install(snurra_bytes_resolver other) {
+	snurra_set_bytes_resolver([other](const QString &name) -> std::shared_ptr<snurra_bytes> {
 		uint8_t root[FZN_RPC_BLOB_HASH_LEN];
-		if (!snurra_estate_root(name, root)) return nullptr;
+		if (!snurra_estate_root(name, root)) return other ? other(name) : nullptr;
 		return std::make_shared<snurra_estate_bytes>(root);
 	});
 	snurra_set_title_resolver(snurra_estate_title);
