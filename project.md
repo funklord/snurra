@@ -2101,6 +2101,23 @@ controls; each tile very compact but resizeable).
   mplayer would shuffle afresh -- not yet asked for
   (`shuffle_plays_the_files_in_another_order`, eight names twice; with
   the shuffle out it fails).
+- **mplayer's everyday options, 2026-11-22**: snurra refused any option
+  it did not know, so `snurra -really-quiet x` said "Unknown option" and
+  played nothing -- a habit or a script typing mplayer's options failed
+  outright. Now `-nosound` (and `-mute`) start every tile
+  muted, its level kept for M; `-novideo` keeps the picture closed;
+  `-endpos` ends the player that long after `-ss`, as mplayer's does
+  (the first file's, as `-ss` is); `-ontop` keeps the window above;
+  `-geometry` takes `+x+y`, `x:y` or `WxH+x+y` (a minus from the right or
+  bottom of the primary screen). `-quiet`, `-really-quiet`, `-nolirc`,
+  `-noconsolecontrols`, `-nojoystick`, `-nomouseinput` and `-fixed-vo`
+  are taken and do nothing: snurra has no console chatter, remote or
+  joystick of mplayer's to quiet. Options with a value whose meaning
+  here would be a guess -- `-vo`, `-ao`, `-af`, `-vf`, `-cache` -- are
+  still refused, which says so rather than playing something else
+  (`mplayers_everyday_options_are_taken`: muted, placed at +50+60, and
+  `-ss 1 -endpos 1` ending by itself after at least 0.8 s; with the mute
+  or the end taken out it fails).
 - **mplayer's . , 2026-11-13**: paused, the picture's next frame -- the
   group moved to where it begins (from the frames decoded ahead, or one
   frame's length on where none is yet), a playing tile paused first;

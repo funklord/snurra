@@ -13,8 +13,10 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QSocketNotifier>
+#include <QTimer>
 
 #include <csignal>
 #include <fcntl.h>
@@ -72,6 +74,30 @@ void quit_on_signals(QCoreApplication &app) {
  * hours:minutes:seconds, the last part with a fraction if it likes. -1 for
  * what is none of these.
  */
+/*
+ * mplayer's -geometry: "+x+y" or "x:y" a place, "WxH+x+y" a size and a
+ * place, "WxH" a size alone (then where the pointer is: an invalid
+ * place). A minus counts from the right or bottom edge, as X11's
+ * geometry does, against the primary screen. A size of 1x1 means none
+ * given. An invalid rectangle for what it cannot read.
+ */
+static QRect parse_geometry(const QString &text) {
+	static const QRegularExpression colon(QStringLiteral("^(\\d+):(\\d+)$"));
+	static const QRegularExpression x11(QStringLiteral("^(?:(\\d+)x(\\d+))?(?:([+-]\\d+)([+-]\\d+))?$"));
+	if (const QRegularExpressionMatch m = colon.match(text); m.hasMatch())
+		return QRect(m.captured(1).toInt(), m.captured(2).toInt(), 1, 1);
+	const QRegularExpressionMatch m = x11.match(text);
+	if (!m.hasMatch() || text.isEmpty()) return QRect();
+	const int w = m.captured(1).isEmpty() ? 1 : m.captured(1).toInt();
+	const int h = m.captured(2).isEmpty() ? 1 : m.captured(2).toInt();
+	if (m.captured(3).isEmpty()) return QRect();   /* a size alone: no place to put it */
+	const QRect screen = QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->geometry() : QRect(0, 0, 1920, 1080);
+	int x = m.captured(3).toInt(), y = m.captured(4).toInt();
+	if (m.captured(3).startsWith(QLatin1Char('-'))) x = screen.right() + 1 + x - w;
+	if (m.captured(4).startsWith(QLatin1Char('-'))) y = screen.bottom() + 1 + y - h;
+	return QRect(x, y, w, h);
+}
+
 qint64 parse_time_us(const QString &text) {
 	const QStringList parts = text.trimmed().split(QLatin1Char(':'));
 	if (parts.size() > 3) return -1;
@@ -163,6 +189,26 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption follow(QStringLiteral("follow"),
 	                                QStringLiteral("Show the player a deck view plays, following it (its \"In a window too\")."),
 	                                QStringLiteral("socket"));
+	/* mplayer's everyday options (the holder's own use, sec 1): what they
+	 * mean here, and the ones about mplayer's own console, remote and
+	 * chatter taken and let be -- snurra has none of those to quiet --
+	 * so a habit or a script typing them is not refused. */
+	const QCommandLineOption no_sound(QStringList{ QStringLiteral("nosound"), QStringLiteral("mute") },
+	                                  QStringLiteral("Start muted (mplayer's -nosound)."));
+	const QCommandLineOption no_video(QStringLiteral("novideo"), QStringLiteral("Keep the picture closed (mplayer's -novideo)."));
+	const QCommandLineOption end_at(QStringLiteral("endpos"),
+	                                QStringLiteral("Stop this long after the start (after -ss), and end, as mplayer does."),
+	                                QStringLiteral("time"));
+	const QCommandLineOption on_top(QStringLiteral("ontop"), QStringLiteral("Keep the window above others."));
+	const QCommandLineOption geometry(QStringLiteral("geometry"),
+	                                  QStringLiteral("Where the window opens: +x+y, x:y, or WxH+x+y, as mplayer's -geometry."),
+	                                  QStringLiteral("place"));
+	QCommandLineOption quiet(QStringList{ QStringLiteral("quiet"), QStringLiteral("really-quiet"), QStringLiteral("nolirc"),
+	                                      QStringLiteral("noconsolecontrols"), QStringLiteral("nojoystick"),
+	                                      QStringLiteral("nomouseinput"), QStringLiteral("fixed-vo") },
+	                         QStringLiteral("mplayer's: taken, nothing to do here."));
+	quiet.setFlags(QCommandLineOption::HiddenFromHelp);
+	parser.addOptions({ no_sound, no_video, end_at, on_top, geometry, quiet });
 	parser.addOptions({ follow, adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
 	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen, player_name, import_mapping });
 	parser.process(app);
@@ -293,6 +339,16 @@ int main(int argc, char *argv[]) {
 		std::fprintf(stderr, "snurra: -ss takes seconds, m:ss or h:mm:ss, not \"%s\"\n", qPrintable(parser.value(start_at)));
 		return 2;
 	}
+	qint64 end_us = -1;
+	if (parser.isSet(end_at) && (end_us = parse_time_us(parser.value(end_at))) <= 0) {
+		std::fprintf(stderr, "snurra: -endpos takes seconds, m:ss or h:mm:ss, not \"%s\"\n", qPrintable(parser.value(end_at)));
+		return 2;
+	}
+	QRect placed;
+	if (parser.isSet(geometry) && !(placed = parse_geometry(parser.value(geometry))).isValid()) {
+		std::fprintf(stderr, "snurra: -geometry takes +x+y, x:y or WxH+x+y, not \"%s\"\n", qPrintable(parser.value(geometry)));
+		return 2;
+	}
 	bool first = !snurra_wire::any_peer_alive(node.socket_path());
 	int column = 0;
 	for (const QString &file : files) {
@@ -330,7 +386,25 @@ int main(int argc, char *argv[]) {
 		if (state.column == 0) {
 			if (parser.isSet(subtitles)) tile->set_subtitle_files(parser.value(subtitles).split(QLatin1Char(','), Qt::SkipEmptyParts));
 			if (parser.isSet(full_screen)) tile->set_full_screen(true);
+			/* mplayer's -endpos: played that long from where it started,
+			 * the player ends, as mplayer does -- the first file's, as
+			 * -ss is. */
+			if (end_us > 0) {
+				const qint64 stop_at = start_us + end_us;
+				QTimer *watch = new QTimer(&node);
+				watch->setInterval(20);
+				QObject::connect(watch, &QTimer::timeout, &node, [tile, stop_at, watch] {
+					const snurra_tile_state now = tile->state();
+					if (now.position_now(snurra_clock_us()) < stop_at) return;
+					watch->stop();
+					tile->set_playing(false);
+					QCoreApplication::quit();
+				});
+				watch->start();
+			}
 		}
+		if (parser.isSet(no_sound)) tile->toggle_mute();
+		if (parser.isSet(no_video)) tile->set_picture_closed_at_first(true);
 	}
 	if (parser.isSet(loop)) {
 		bool number = false;
@@ -375,6 +449,14 @@ int main(int argc, char *argv[]) {
 		library->resize(640, 420);
 		library->move(QCursor::pos() - QPoint(320, 210));
 		library->show();
+		return app.exec();
+	}
+	if (parser.isSet(on_top)) node.setWindowFlag(Qt::WindowStaysOnTopHint);
+	if (placed.isValid()) {
+		node.adjustSize();
+		if (placed.width() > 1 && placed.height() > 1) node.resize(placed.size().expandedTo(node.minimumSizeHint()));
+		node.move(placed.topLeft());
+		node.show();
 		return app.exec();
 	}
 	show_at_pointer(&node);

@@ -52,6 +52,7 @@ private slots:
 	void mplayers_options_say_where_and_how_it_plays();
 	void a_playlist_is_a_train_of_what_it_names();
 	void shuffle_plays_the_files_in_another_order();
+	void mplayers_everyday_options_are_taken();
 	void audiofile_gives_the_first_file_its_sound();
 	void a_chapters_file_gives_the_first_file_its_tracklist();
 	void a_tile_plays_a_player_and_the_wire_carries_it();
@@ -1391,6 +1392,37 @@ void handover_test::shuffle_plays_the_files_in_another_order() {
 		QVERIFY(ended(a, 5000));
 	}
 	QVERIFY2(reordered > 0, "-shuffle played the files in the order given, twice");
+}
+
+/*
+ * mplayer's everyday options (sec 1: replacing mplayer in the holder's
+ * use): its console's and remote's taken and let be, -nosound muting,
+ * -geometry placing the window; -endpos ending the player that long
+ * after -ss, as mplayer does. Refused, a habit or a script typing them
+ * got "Unknown option" and nothing played.
+ */
+void handover_test::mplayers_everyday_options_are_taken() {
+	QProcess *a = start({ QStringLiteral("-really-quiet"), QStringLiteral("-quiet"), QStringLiteral("-nolirc"),
+	                      QStringLiteral("-noconsolecontrols"), QStringLiteral("-nosound"), QStringLiteral("-novideo"),
+	                      QStringLiteral("-ontop"), QStringLiteral("-geometry"), QStringLiteral("+50+60"), QStringLiteral("a.flac") });
+	QVERIFY(a->waitForStarted() && wait_for_socket(socket_of(a)));
+	QList<snurra_tile_state> states;
+	QTRY_COMPARE_WITH_TIMEOUT((states = ask(socket_of(a), status_request()).states).size(), 1, 5000);
+	QCOMPARE(states.first().level, 0);
+	snurra_wire::message where;
+	where.type = snurra_wire::WHERE;
+	QRect frame;
+	QTRY_VERIFY_WITH_TIMEOUT((frame = ask(socket_of(a), where).frame).isValid(), 5000);
+	QCOMPARE(frame.topLeft(), QPoint(50, 60));
+	a->terminate();
+	QVERIFY(ended(a, 5000));
+
+	QElapsedTimer played;
+	played.start();
+	QProcess *b = start({ QStringLiteral("-ss"), QStringLiteral("1"), QStringLiteral("-endpos"), QStringLiteral("1"), QStringLiteral("a.flac") });
+	QVERIFY(b->waitForStarted() && wait_for_socket(socket_of(b)));
+	QVERIFY2(ended(b, 8000), "-endpos 1: still playing");
+	QVERIFY2(played.elapsed() >= 800, qPrintable(QStringLiteral("ended after %1 ms").arg(played.elapsed())));
 }
 
 /*
