@@ -374,10 +374,11 @@ void snurra_library::scan() {
 				told.clear();
 			}
 		}
-		if (!told.empty())
+		if (!told.empty()) {
 			QMetaObject::invokeMethod(this, [self, told, generation] {
 				if (self && self->m_generation == generation) self->tagged(told);
 			});
+		}
 	});
 }
 
