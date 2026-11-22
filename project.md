@@ -1909,6 +1909,22 @@ the handover tests start included, leaks off: all passed, no report.
 The runtime was checked live in both binaries as before; no deliberate
 fault planted.
 
+**Sanitizers over 2026-11-22's new code** (a window following the decks
+and the way back, the window staying after "Open in the decks",
+mplayer's options, standard input's reader thread): the four tests that
+cover it run one by one under AddressSanitizer with UBSan, built out of
+tree as before, the players they start included, leaks off: all passed,
+no report. Under ThreadSanitizer (a TSan player given by `SNURRA_BIN`)
+the stdin and options tests passed and reported races -- every frame in
+QtGui's and QtCore's pooled threads, none in snurra's code or the stdin
+thread (a `std::thread`), and as many from
+`started_with_nothing_it_plays_nothing` (2026-11-13), which plays
+nothing: Qt itself, not built for TSan, not this code. The 2026-11-12
+TSan run's "no report" predates whatever of Qt's pool those are.
+cppcheck over the files changed since 2026-11-18: nothing real (the
+`!self` above again; a `QPointer` checked in a later lambda).
+
+
 **Sanitizers again, 2026-11-12, after the session's new threads** (the
 stretch in the callback, the picture's, beats' and bytes' readers, the
 facade): ThreadSanitizer found a use after free in the player at exit
@@ -2124,7 +2140,9 @@ controls; each tile very compact but resizeable).
   are taken and do nothing: snurra has no console chatter, remote or
   joystick of mplayer's to quiet. Options with a value whose meaning
   here would be a guess -- `-vo`, `-ao`, `-af`, `-vf`, `-cache` -- are
-  still refused, which says so rather than playing something else
+  still refused, which says so rather than playing something else.
+  `-aid`, `-alang` (a film's audio track) and `-identify` are refused
+  too: not wanted (the holder, 2026-11-22, of `-aid` and `-alang`)
   (`mplayers_everyday_options_are_taken`: muted, placed at +50+60, and
   `-ss 1 -endpos 1` ending by itself after at least 0.8 s; with the mute
   or the end taken out it fails).
