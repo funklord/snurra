@@ -160,7 +160,10 @@ int main(int argc, char *argv[]) {
 	const QCommandLineOption import_mapping(QStringLiteral("import-mapping"),
 	                                        QStringLiteral("Bind a controller as a Mixxx mapping (.midi.xml) does, its plain bindings only."),
 	                                        QStringLiteral("file"));
-	parser.addOptions({ adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
+	const QCommandLineOption follow(QStringLiteral("follow"),
+	                                QStringLiteral("Show the player a deck view plays, following it (its \"In a window too\")."),
+	                                QStringLiteral("socket"));
+	parser.addOptions({ follow, adopt, token, index, at, paused, output, layout, version, start_at, full_screen, subtitles, volume, speed,
 	                    playlist, loop, shuffle, audio_file, chapters_file, dj, decks, listen, player_name, import_mapping });
 	parser.process(app);
 	/* The first line keeps its shape for whatever reads it; the copyright
@@ -257,6 +260,12 @@ int main(int argc, char *argv[]) {
 	if (!node.listen()) return 1;
 	/* A named player takes controllers, its bindings its own (sec 3f). */
 	if (parser.isSet(player_name)) node.take_controllers(parser.value(player_name));
+
+	if (parser.isSet(follow)) {
+		node.follow(parser.value(follow));
+		node.show();
+		return app.exec();
+	}
 
 	if (parser.isSet(adopt)) {
 		const QStringList xy = parser.value(at).split(QLatin1Char(','));

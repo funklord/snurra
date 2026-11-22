@@ -419,6 +419,17 @@ public:
 	};
 	std::unique_ptr<score_t> score;
 	snurra_dj_set_view *set_view = nullptr;
+	/* The player also in a window, following it (sec 3f): beside the
+	 * strip, where a window can be started. */
+	QToolButton *set_window = nullptr;
+	void show_set(bool shown) {
+		set_view->setVisible(shown);
+#ifdef Q_OS_ANDROID
+		set_window->setVisible(false);
+#else
+		set_window->setVisible(shown && server != nullptr);
+#endif
+	}
 
 	/* ---- listeners (sec 3f, step 7) ---- */
 	/* A listener: headphones of their own -- an engine on another output
@@ -469,6 +480,8 @@ public:
 	int64_t frame_of(int track, int64_t time) const;
 	void place(int64_t time, qint64 at_us);
 	void seek_score(int64_t time);
+	void play_score(bool playing);
+	void take_change(const QList<snurra_tile_state> &states);
 	void load_track(int track, int64_t frame);
 	void keep_moves(int deck);
 	bool start_now(int deck);
@@ -690,6 +703,48 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 		if (it->expiry) it->expiry->deleteLater();
 		giving.erase(it);
 		offer(socket, m.token, deck);
+		break;
+	}
+	case snurra_wire::PLAY:
+		/* From a window following the player: its play and pause. */
+		if (m.index < 0) play_score(m.time != 0);
+		break;
+	case snurra_wire::SEEK:
+		/* And its seek, to a time on the player's timeline. */
+		if (m.index < 0 && score) seek_score(snurra_us_to_frames(std::max<qint64>(0, m.time), engine->rate()));
+		break;
+	case snurra_wire::CHANGE:
+		take_change(m.states);
+		break;
+	case snurra_wire::FOLLOW: {
+		/* The player unfolded here, for a window showing it (sec 3f):
+		 * its tracks as they stand -- what a hand has changed on a deck
+		 * now in the track it holds, as keep_moves would write it -- and
+		 * where it is. None unfolded, no tracks. */
+		snurra_wire::message is;
+		is.type = snurra_wire::FOLLOWING;
+		if (score) {
+			std::vector<snurra_tile_state> now = score->states;
+			for (int deck = 0; deck < decks.size() && deck < int(score->on_deck.size()); ++deck) {
+				const int track = score->on_deck[size_t(deck)];
+				if (track < 0 || !decks[deck]->tile) continue;
+				const snurra_tile_state held = decks[deck]->tile->state();
+				snurra_tile_state &kept = now[size_t(track)];
+				kept.eq = held.eq;
+				kept.tempo = held.tempo;
+				kept.key_lock = held.key_lock;
+				kept.key_shift = held.key_shift;
+			}
+			for (snurra_tile_state &one : now) {
+				one.playing = false;
+				is.states << one;
+			}
+			const qint64 at = snurra_clock_us();
+			is.time = snurra_frames_to_us(score_time(at), engine->rate());
+			is.started = at;
+			is.index = score->playing ? 1 : 0;
+		}
+		send(socket, is);
 		break;
 	}
 	case snurra_wire::STATUS: {
@@ -949,7 +1004,7 @@ bool snurra_dj_private::unfold(int deck) {
 	int channels = 0;
 	for (int channel : score->channel) channels = std::max(channels, channel + 1);
 	set_view->set_channels(channels);
-	set_view->show();
+	show_set(true);
 	place(time, at);
 	score->timer = new QTimer(q);
 	score->timer->setInterval(20);
@@ -1006,7 +1061,7 @@ bool snurra_dj_private::fold() {
 
 void snurra_dj_private::end_score() {
 	for (dj_deck *deck : decks) deck->fold->hide();
-	if (set_view) set_view->hide();
+	if (set_view) show_set(false);
 	if (!score) return;
 	if (score->timer) score->timer->deleteLater();
 	for (int i = 0; i < decks.size(); ++i)
@@ -1106,18 +1161,7 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		QObject::connect(tile, &snurra_tile::play_requested, q, [this, deck](snurra_tile *, bool playing) {
 			/* Shift with a cued deck's play: that deck in now, by hand. */
 			if (playing && (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier) && start_now(deck)) return;
-			if (!score || playing == score->playing) return;
-			const qint64 now = snurra_clock_us();
-			const int64_t time = score_time(now);
-			score->playing = playing;
-			if (!playing) {
-				for (dj_deck *one : decks)
-					if (one->tile) one->tile->hold_at(one->tile->frame_now());
-				score->time0 = time;
-				score->t0_us = now;
-				return;
-			}
-			place(time, now + engine->latency_us() + 50000);
+			play_score(playing);
 		});
 		QObject::connect(tile, &snurra_tile::seek_requested, q, [this, track](snurra_tile *, qint64 position_us) {
 			if (!score) return;
@@ -1129,6 +1173,85 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 	} else {
 		tile->hold_at(frame);
 	}
+}
+
+/* The unfolded player played or paused, as a deck's play button or a
+ * window following it asks. */
+void snurra_dj_private::play_score(bool playing) {
+	if (!score || playing == score->playing) return;
+	const qint64 now = snurra_clock_us();
+	const int64_t time = score_time(now);
+	score->playing = playing;
+	if (!playing) {
+		for (dj_deck *one : decks)
+			if (one->tile) one->tile->hold_at(one->tile->frame_now());
+		score->time0 = time;
+		score->t0_us = now;
+		return;
+	}
+	place(time, now + engine->latency_us() + 50000);
+}
+
+/*
+ * What a window following the player changed there (CHANGE, sec 3f): each
+ * track as the window has it, then as it was told it; a field differing
+ * between the two is the window's change, taken into the player -- and
+ * into the deck holding that track now, so it is heard -- while a field
+ * the window left alone keeps what the decks have, a hand on a deck
+ * meanwhile included. A crossing or a lane moved, the decks go on from
+ * where the player is, on the new times.
+ */
+void snurra_dj_private::take_change(const QList<snurra_tile_state> &states) {
+	if (!score || states.size() != 2 * qsizetype(score->states.size())) return;
+	const qsizetype tracks = states.size() / 2;
+	for (qsizetype i = 0; i < tracks; ++i)
+		if (states.at(i).source != score->states[size_t(i)].source) return;   /* other tracks: not this player */
+	bool timing = false;
+	for (qsizetype i = 0; i < tracks; ++i) {
+		const snurra_tile_state &now = states.at(i), &was = states.at(tracks + i);
+		snurra_tile_state &kept = score->states[size_t(i)];
+		snurra_tile *live = nullptr;
+		for (int deck = 0; deck < decks.size() && deck < int(score->on_deck.size()); ++deck)
+			if (score->on_deck[size_t(deck)] == int(i)) live = decks[deck]->tile;
+		if (!(now.eq == was.eq)) {
+			kept.eq = now.eq;
+			if (live) live->set_eq(now.eq);
+		}
+		if (now.envelope != was.envelope) {
+			kept.envelope = now.envelope;
+			if (live) live->set_envelope(now.envelope);
+		}
+		if (now.level != was.level) kept.level = now.level;
+		if (now.key_lock != was.key_lock) {
+			kept.key_lock = now.key_lock;
+			if (live) live->set_key_lock(now.key_lock);
+		}
+		if (now.key_shift != was.key_shift) {
+			kept.key_shift = now.key_shift;
+			if (live) live->set_key_shift(now.key_shift);
+		}
+		if (now.tempo != was.tempo) {
+			kept.tempo = now.tempo;
+			if (live) live->set_tempo(now.tempo);
+			timing = true;
+		}
+		if (now.lane_start_us != was.lane_start_us) {
+			kept.lane_start_us = now.lane_start_us;
+			timing = true;
+		}
+		if (now.overlap_us != was.overlap_us) {
+			kept.overlap_us = now.overlap_us;
+			timing = true;
+		}
+		if (now.offset_us != was.offset_us) {
+			kept.offset_us = now.offset_us;
+			timing = true;
+		}
+	}
+	if (!timing) return;
+	const int64_t time = score_time(snurra_clock_us());
+	retime();
+	seek_score(time);
 }
 
 /* The score's times again from its states, after one has moved; the
@@ -1410,8 +1533,20 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 		for (int64_t end : d->score->end) length = std::max(length, end);
 		d->seek_score(int64_t(std::llround(share * double(length))));
 	};
-	d->set_view->hide();
-	column->addWidget(d->set_view);
+	d->set_window = new QToolButton(this);
+	d->set_window->setObjectName(QStringLiteral("snurra-set-window"));
+	d->set_window->setText(tr("In a window too"));
+	d->set_window->setAccessibleName(d->set_window->text());
+	d->set_window->setToolTip(tr("The player these decks play, in a window as well, following them -- what changes on either shows on both"));
+	d->set_window->setAutoRaise(true);
+	connect(d->set_window, &QToolButton::clicked, this, [this] {
+		QProcess::startDetached(QCoreApplication::applicationFilePath(), { QStringLiteral("--follow"), d->path });
+	});
+	QHBoxLayout *set_row = new QHBoxLayout;
+	set_row->addWidget(d->set_view, 1);
+	set_row->addWidget(d->set_window, 0, Qt::AlignTop);
+	d->show_set(false);
+	column->addLayout(set_row);
 	d->grid = new QGridLayout;
 	column->addLayout(d->grid);
 	set_deck_count(2);

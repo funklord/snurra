@@ -48,6 +48,12 @@ QList<message> decode(QByteArray &buffer) {
 	return found;
 }
 
+bool follow_changed(const snurra_tile_state &now, const snurra_tile_state &was) {
+	return !(now.eq == was.eq) || now.envelope != was.envelope || now.level != was.level || now.tempo != was.tempo
+	       || now.key_lock != was.key_lock || now.key_shift != was.key_shift || now.lane_start_us != was.lane_start_us
+	       || now.overlap_us != was.overlap_us || now.offset_us != was.offset_us;
+}
+
 QString runtime_directory() {
 	const QByteArray override_dir = qgetenv("SNURRA_RUNTIME_DIR");
 	QString dir = override_dir.isEmpty()

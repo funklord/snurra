@@ -1222,6 +1222,13 @@ QList<snurra_tile *> snurra_node::ordered() const {
 }
 
 void snurra_node::play_group(snurra_tile *from, bool playing) {
+	if (follows_decks()) {
+		snurra_wire::message asked;
+		asked.type = snurra_wire::PLAY;
+		asked.time = playing ? 1 : 0;
+		send(m_follow_socket, asked);
+		return;
+	}
 	if (!playing) {
 		m_stopped = true;
 		for (snurra_tile *tile : m_tiles)
@@ -1282,6 +1289,14 @@ snurra_tile *snurra_node::lane_at(int row, int64_t time, int64_t &frame, int64_t
 void snurra_node::seek_group(snurra_tile *from, qint64 position_us) {
 	const int64_t time = lane_start(from) + std::llround(double(snurra_us_to_frames(position_us - from->offset_us(), m_engine->rate()))
 	                                                    / from->deck()->tempo());
+	if (follows_decks()) {
+		snurra_wire::message asked;
+		asked.type = snurra_wire::SEEK;
+		asked.time = snurra_frames_to_us(std::max<int64_t>(0, time), m_engine->rate());
+		send(m_follow_socket, asked);
+		m_follow_held = -1;
+		return;
+	}
 	for (snurra_tile *tile : m_tiles) {
 		if (tile->playing()) {
 			start_group_at(time, true);
@@ -1614,6 +1629,161 @@ void snurra_node::open_decks() {
 	                        { QStringLiteral("--dj"), QStringLiteral("--adopt"), m_path, QStringLiteral("--token"), token });
 }
 
+/*
+ * Both views open at once (sec 3f, the holder, 2026-11-20: switched
+ * between and/or combined): this window showing the player the decks at
+ * `decks` play. Asked ten times a second (FOLLOW); what changed there --
+ * a track's EQ, tempo or key turned on a deck, a ride, a crossing moved,
+ * the tracks themselves -- shown here; the tiles silent, the decks being
+ * what is heard, and in step with them, so the waveforms, the ruler and
+ * the picture move as the decks play. Its play, pause and seek are the
+ * decks' (PLAY, SEEK with no index).
+ */
+void snurra_node::follow(const QString &decks) {
+	m_follow = decks;
+	if (!m_follow_timer) {
+		m_follow_timer = new QTimer(this);
+		m_follow_timer->setInterval(100);
+		connect(m_follow_timer, &QTimer::timeout, this, [this] {
+			/* Half a second unanswered: the decks are gone, and so is
+			 * what this showed. */
+			if (++m_follow_misses > 5) {
+				m_follow_timer->stop();
+				close_all();
+				return;
+			}
+			if (!m_follow_socket) {
+				m_follow_socket = new QLocalSocket(this);
+				watch(m_follow_socket);
+				connect(m_follow_socket, &QLocalSocket::errorOccurred, m_follow_socket, &QObject::deleteLater);
+				m_follow_socket->connectToServer(m_follow);
+			}
+			snurra_wire::message asked;
+			asked.type = snurra_wire::FOLLOW;
+			send(m_follow_socket, asked);
+		});
+	}
+	m_follow_timer->start();
+}
+
+void snurra_node::followed(const snurra_wire::message &m) {
+	m_follow_misses = 0;
+	if (m.states.isEmpty()) {
+		/* Folded, or ended by a tune loaded by hand: nothing to show. */
+		m_follow_timer->stop();
+		close_all();
+		return;
+	}
+	bool same = m.states.size() == m_followed.size();
+	for (qsizetype i = 0; same && i < m.states.size(); ++i)
+		same = m.states.at(i).source == m_followed.at(i).source && m.states.at(i).audio_track == m_followed.at(i).audio_track;
+	const QList<snurra_tile *> order = ordered();
+	/* What the hand changed here since the last answer, to the decks: a
+	 * track's EQ, ride, level, tempo or key, a crossing or a lane moved
+	 * along. Each track as it is here, then as it was -- so the decks
+	 * take only what changed here, and a deck turned there meanwhile
+	 * keeps its own. Those fields are not taken back from the answer
+	 * below, which the decks gave before they had them. */
+	QList<bool> mine(order.size(), false);
+	if (same && order.size() == m.states.size() && m_follow_base.size() == order.size()) {
+		snurra_wire::message change;
+		change.type = snurra_wire::CHANGE;
+		bool any = false;
+		for (qsizetype i = 0; i < order.size(); ++i) {
+			const snurra_tile_state now = order.at(i)->state();
+			mine[i] = snurra_wire::follow_changed(now, m_follow_base.at(i));
+			any = any || mine[i];
+			change.states << now;
+		}
+		if (any) {
+			change.states << m_follow_base;
+			send(m_follow_socket, change);
+		}
+	}
+	if (!same || order.size() != m.states.size()) {
+		/* Other tracks: the tiles made again, paused, the time below
+		 * starting them. */
+		for (snurra_tile *tile : QList<snurra_tile *>(m_tiles)) remove_tile(tile);
+		for (snurra_tile_state state : m.states) {
+			state.playing = false;
+			add_tile(state);
+		}
+		m_follow_held = -1;
+		place_tiles();
+		timing_changed();
+	} else {
+		/* The same tracks: what was changed there, field by field. */
+		bool timing = false, placed = false;
+		for (qsizetype i = 0; i < order.size(); ++i) {
+			if (mine.at(i)) continue;
+			snurra_tile *tile = order.at(i);
+			const snurra_tile_state &now = m.states.at(i), &was = m_followed.at(i);
+			if (!(now.eq == was.eq)) tile->set_eq(now.eq);
+			if (now.envelope != was.envelope) tile->set_envelope(now.envelope);
+			if (now.level != was.level) tile->set_level(now.level);
+			if (now.key_lock != was.key_lock) tile->set_key_lock(now.key_lock);
+			if (now.key_shift != was.key_shift) tile->set_key_shift(now.key_shift);
+			if (now.tempo != was.tempo) {
+				tile->set_tempo(now.tempo);
+				timing = true;
+			}
+			if (now.lane_start_us != was.lane_start_us) {
+				tile->set_lane_start_us(now.lane_start_us);
+				timing = true;
+			}
+			if (now.overlap_us != was.overlap_us) {
+				tile->set_overlap_us(now.overlap_us);
+				timing = true;
+			}
+			if (now.offset_us != was.offset_us) {
+				tile->set_offset_us(now.offset_us);
+				timing = true;
+			}
+			if (now.row != was.row || now.column != was.column) {
+				tile->set_place(now.row, now.column);
+				placed = timing = true;
+			}
+		}
+		if (placed) place_tiles();
+		if (timing) {
+			timing_changed();
+			m_follow_held = -1;
+		}
+	}
+	m_followed = m.states;
+	m_follow_base.clear();
+	for (snurra_tile *tile : ordered()) m_follow_base << tile->state();
+	/* Silent: the decks are what is heard. */
+	for (snurra_tile *tile : m_tiles) tile->deck()->set_mix(0);
+
+	/* Where the decks are; started again only when this has drifted from
+	 * them by more than a fifth of a second -- a waveform redrawn ten
+	 * times a second for nothing is not in step, it is busy. */
+	const int rate = m_engine->rate();
+	const bool playing = m.index != 0;
+	const qint64 now = snurra_clock_us();
+	const int64_t time = snurra_us_to_frames(std::max<qint64>(0, m.time + (playing ? now - m.started : 0)), rate);
+	snurra_tile *sounding = nullptr;
+	for (snurra_tile *tile : m_tiles)
+		if (tile->playing()) sounding = tile;
+	if (playing) {
+		m_follow_held = -1;
+		if (!sounding || std::abs(group_time(sounding) - time) > rate / 5) start_group_at(time, true);
+		return;
+	}
+	if (sounding) {
+		m_stopped = true;
+		for (snurra_tile *tile : m_tiles)
+			if (tile->playing()) tile->set_playing(false);
+	}
+	if (m_follow_held >= 0 && std::abs(m_follow_held - time) <= rate / 50) return;
+	m_follow_held = time;
+	for (int row : rows()) {
+		int64_t frame = 0;
+		if (snurra_tile *tile = lane_at(row, time, frame)) tile->hold_at(frame);
+	}
+}
+
 void snurra_node::contextMenuEvent(QContextMenuEvent *event) {
 	QMenu menu(this);
 	/* The track under the hand: what its own title row's close and drag
@@ -1834,6 +2004,9 @@ void snurra_node::handle(QLocalSocket *socket, const snurra_wire::message &m) {
 		break;
 	case snurra_wire::SEEK:
 		if (m.index >= 0 && m.index < m_tiles.size()) seek_group(m_tiles.at(m.index), m.time);
+		break;
+	case snurra_wire::FOLLOWING:
+		if (follows_decks() && socket == m_follow_socket) followed(m);
 		break;
 	case snurra_wire::STATUS: {
 		snurra_wire::message status;

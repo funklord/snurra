@@ -78,6 +78,12 @@ enum type_t : quint8 {
 	PLAY,          /* control: as the tile at index's button would -- play (time 1) or pause (0) */
 	SEEK,          /* control: as the tile at index's waveform would -- to time, in microseconds */
 	LISTEN,        /* to a deck view: plug its first listener into the tile at index of the process at path (-1: out) */
+	FOLLOW,        /* to a deck view -> FOLLOWING: the player it plays, for a window showing it (project.md sec 3f) */
+	FOLLOWING,     /* states: its tracks, in timeline order, none if no player is unfolded; time: where it is,
+	                * in microseconds, at started on the shared clock; index: 1 playing, 0 paused */
+	CHANGE,        /* to a deck view, from a window following its player: states, twice as many as its tracks --
+	                * each as the window has it now, then each as the window was told it; what differs between
+	                * the two is what the window changed, and only that is taken */
 };
 
 /* Where the giver's tiles go relative to the taker's: a train continues to
@@ -109,6 +115,11 @@ QList<message> decode(QByteArray &buffer);
 
 /* The directory peers' sockets live in; $SNURRA_RUNTIME_DIR overrides. */
 QString runtime_directory();
+
+/* Whether a track differs in what a window following a deck view hands
+ * back (CHANGE): its EQ, envelope, level, tempo, key, lane begin,
+ * crossing and offset -- not where it plays, which is the decks'. */
+bool follow_changed(const snurra_tile_state &now, const snurra_tile_state &was);
 
 /* Every peer's socket path but `own`. */
 QStringList peer_sockets(const QString &own);

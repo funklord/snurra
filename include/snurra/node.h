@@ -74,6 +74,14 @@ public:
 	 * them, gapless; this window then goes. Empty, the decks just open. */
 	void open_decks();
 
+	/* A view of the player the deck view at `decks` plays (project.md sec
+	 * 3f: both views open at once): its tracks as this window's tiles,
+	 * silent -- the decks sound it -- and standing where the decks are,
+	 * following what changes there. When the decks hold it no longer,
+	 * the window goes. */
+	void follow(const QString &decks);
+	bool follows_decks() const { return !m_follow.isEmpty(); }
+
 	int tile_count() const { return int(m_tiles.size()); }
 
 	/* Files dropped from a file manager: a tile each, to the right a
@@ -179,6 +187,15 @@ private:
 	QToolButton *m_bar_controls = nullptr;
 	bool m_bar_held = false;
 	bool m_moving_panel = false;   /* the panel being moved between tiles */
+	/* Following a deck view's player (follow). */
+	QString m_follow;
+	QPointer<QLocalSocket> m_follow_socket;
+	QTimer *m_follow_timer = nullptr;
+	QList<snurra_tile_state> m_followed;   /* as last told, to see what changed */
+	QList<snurra_tile_state> m_follow_base;   /* each tile as it stood after that, to see what the hand changed here */
+	int64_t m_follow_held = -1;            /* paused, the time the lanes were held at */
+	int m_follow_misses = 0;               /* asks gone unanswered in a row */
+	void followed(const snurra_wire::message &m);
 	/* One picture to a window (sec 3b). */
 	QPointer<snurra_tile> m_picture;
 	bool m_picture_open = true;

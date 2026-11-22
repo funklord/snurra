@@ -1086,8 +1086,35 @@ start overlapping").
   `the_decks_show_the_player_they_play` (three tracks on two channels,
   the playhead moving, pressed near the end the playhead there, gone when
   folded; never shown, or the press not seeking, it fails) and looked at
-  in Xvfb. Still to come: a window and the decks
-  open on the one player at once, live both ways.
+  in Xvfb. **Both open at once, 2026-11-22:** beside the strip, "In a
+  window too" starts a window (`--follow <the decks' socket>`) showing
+  the player the decks play: its tracks as tiles, laid out as in a
+  window, silent -- the decks are what is heard -- and in step with them
+  (started again only when more than a fifth of a second apart, so the
+  waveforms, the ruler and the picture move with the decks). It asks the
+  decks ten times a second (FOLLOW, FOLLOWING: the player's tracks as
+  they stand, a deck's EQ, tempo and key as the hand has them, where it
+  is, whether it plays) and shows what changed there field by field; the
+  tracks themselves changed, it makes its tiles again. **And back**:
+  what the hand changes in the window -- a track's EQ, ride, level,
+  tempo or key, a crossing or a lane moved along -- goes to the decks
+  with the next answer (CHANGE: each track as the window has it, then as
+  it was told it, so the decks take only the fields that differ, and a
+  deck turned there meanwhile keeps its own; the deck holding the track
+  takes it at once, and a moved crossing has the decks go on from where
+  they are on the new times). Adding or removing a track in the window
+  is not handed back: the decks' next answer puts the tracks back --
+  the decks hold the player, a track goes on or off there. Its play,
+  pause and seek are the decks' (PLAY and SEEK with no tile index). Folded,
+  ended, or the decks gone half a second, the window goes. Polled rather
+  than pushed: the decks keep no list of who watches, and a window that
+  died leaves nothing behind there. Tested in
+  `a_window_follows_the_player_on_the_decks` (three tracks as three
+  silent tiles playing the first; a deck's EQ on its tile, the window's
+  on the deck with the deck's own kept; a crossing moved in the window
+  in the decks' player; the window's seek into the last track playing it
+  on the decks and in the window; folded, the window gone -- the decks
+  ignoring the seek, the tiles heard, or CHANGE dropped, it fails).
 - **The way there from a window** (the holder, 2026-11-21: "I don't know
   how to switch to deck mode"): until then only `--dj`, or a tile
   dragged over a deck view already open. A window's menu (right-click)

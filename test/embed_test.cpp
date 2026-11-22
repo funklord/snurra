@@ -109,6 +109,7 @@ private slots:
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
+	void a_window_follows_the_player_on_the_decks();
 	void a_player_unfolds_across_the_decks();
 	void a_fader_ridden_is_written_into_the_track();
 	void a_deck_started_by_hand_is_where_its_track_comes_in();
@@ -2506,6 +2507,124 @@ void embed_test::the_decks_show_the_player_they_play() {
 	         qPrintable(QStringLiteral("playhead at %1, pressed at %2").arg(view->property("now_x").toDouble()).arg(near_end)));
 	QVERIFY(dj.fold());
 	QVERIFY(!view->isVisible());
+}
+
+/*
+ * Both views open at once (sec 3f): a window following the player the
+ * decks play holds its tracks as tiles, silent and in step with the
+ * decks; an EQ turned on a deck shows on that track's tile, and one
+ * turned in the window on the deck; a crossing moved in the window is the
+ * decks'; a seek in the window moves the decks; folded, the window goes.
+ */
+void embed_test::a_window_follows_the_player_on_the_decks() {
+	QTemporaryDir runtime;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.listen());
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("followed");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	/* Long enough that the last track comes only by the seek. */
+	for (int i = 0; i < 3; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(220 + 110 * i);
+		tone.duration_us = 10000000;
+		tone.column = i;
+		tone.overlap_us = i > 0 ? 1000000 : -1;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("3 tracks"), 3000);
+	QVERIFY(dj.unfold(0));
+	QWidget *also = dj.findChild<QWidget *>(QStringLiteral("snurra-set-window"));
+	QTRY_VERIFY_WITH_TIMEOUT(also && also->isVisible(), 2000);
+
+	snurra_node node;
+	node.set_stays_open(true);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	node.follow(dj.socket_path());
+	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 3, 3000);
+	auto window_tile = [&](const QString &source) -> snurra_tile * {
+		for (snurra_tile *tile : node.findChildren<snurra_tile *>())
+			if (tile->isVisible() && tile->state().source == source) return tile;
+		return nullptr;
+	};
+	auto deck_tile = [&](const QString &source) -> snurra_tile * {
+		for (snurra_tile *tile : dj.findChildren<snurra_tile *>())
+			if (tile->isVisible() && tile->state().source == source) return tile;
+		return nullptr;
+	};
+	const QString first = QStringLiteral("tone:220"), last = QStringLiteral("tone:440");
+	QTRY_VERIFY_WITH_TIMEOUT(window_tile(first) && window_tile(first)->playing(), 2000);
+	for (snurra_tile *tile : node.findChildren<snurra_tile *>()) QCOMPARE(tile->deck()->mix(), 0.0f);
+
+	/* The deck's EQ, turned there, on the window's tile. */
+	QTRY_VERIFY_WITH_TIMEOUT(deck_tile(first), 2000);
+	snurra_eq eq = deck_tile(first)->state().eq;
+	eq.set_part(0, -12);
+	deck_tile(first)->set_eq(eq);
+	QTRY_COMPARE_WITH_TIMEOUT(window_tile(first)->state().eq.part_db(0), -12.0f, 2000);
+
+	/* And back (live both ways): the treble turned in the window is on
+	 * the deck, the bass the deck's hand turned kept there. */
+	snurra_eq mine = window_tile(first)->state().eq;
+	mine.set_part(2, 4);
+	window_tile(first)->set_eq(mine);
+	QTRY_COMPARE_WITH_TIMEOUT(deck_tile(first)->state().eq.part_db(2), 4.0f, 2000);
+	QCOMPARE(deck_tile(first)->state().eq.part_db(0), -12.0f);
+	/* A crossing moved in the window is the decks' player's. */
+	auto told = [&]() -> QList<snurra_tile_state> {
+		QLocalSocket asking;
+		asking.connectToServer(dj.socket_path());
+		if (!asking.waitForConnected(1000)) return {};
+		snurra_wire::message follow;
+		follow.type = snurra_wire::FOLLOW;
+		asking.write(snurra_wire::encode(follow));
+		asking.flush();
+		QByteArray buffer;
+		QElapsedTimer waited;
+		waited.start();
+		while (waited.elapsed() < 1000) {
+			QCoreApplication::processEvents();
+			asking.waitForReadyRead(20);
+			buffer += asking.readAll();
+			const QList<snurra_wire::message> got = snurra_wire::decode(buffer);
+			if (!got.isEmpty()) return got.first().states;
+		}
+		return {};
+	};
+	window_tile(QStringLiteral("tone:330"))->set_overlap_us(3000000);
+	QTRY_VERIFY_WITH_TIMEOUT(told().size() == 3 && told().at(1).overlap_us == 3000000, 3000);
+	QCOMPARE(window_tile(QStringLiteral("tone:330"))->state().overlap_us, qint64(3000000));
+
+	/* The window's seek, into the last track: the decks play it, and the
+	 * window with them. */
+	snurra_tile *third = window_tile(last);
+	QVERIFY(third);
+	emit third->seek_requested(third, 1000000);
+	QTRY_VERIFY_WITH_TIMEOUT(deck_tile(last) && deck_tile(last)->playing(), 3000);
+	QTRY_VERIFY_WITH_TIMEOUT(window_tile(last) && window_tile(last)->playing(), 3000);
+	QVERIFY(!window_tile(first)->playing());
+
+	QVERIFY(dj.fold());
+	QTRY_VERIFY_WITH_TIMEOUT(!node.isVisible(), 2000);
+	QCOMPARE(node.tile_count(), 0);
 }
 
 void embed_test::a_player_unfolds_across_the_decks() {
