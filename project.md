@@ -1132,7 +1132,9 @@ start overlapping").
   the decks' socket, and after COMMIT the window follows it as "In a
   window too" does. Empty until the decks have unfolded, it waits up to
   five seconds of answers with no tracks before taking one as folded,
-  and the last fade heard out no longer closes it while it follows.
+  and the last fade heard out no longer closes it while it follows --
+  so a following window emptied (closed by the hand, or the decks
+  folded) stops following first, or it would hide and ask on unseen.
   Tested from a real right-click in Xvfb
   (`a_window_opens_its_player_in_the_decks`: the decks hold the two
   tracks, each on its own, and the window shows them as its two tiles;

@@ -1493,6 +1493,12 @@ bool snurra_node::sync_key(snurra_tile *tile) {
 }
 
 void snurra_node::leave_if_empty() {
+	/* Emptied by the hand, or by the decks folding: nothing more to
+	 * follow, so the engine's idle may end it. */
+	if (m_tiles.isEmpty() && follows_decks()) {
+		m_follow_timer->stop();
+		m_follow.clear();
+	}
 	/* Not while a given tile's fade is still to be heard. */
 	if (!m_tiles.isEmpty() || !m_giving.isEmpty() || !m_adopt_token.isEmpty() || m_engine->busy()) return;
 	hide();

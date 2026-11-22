@@ -2638,6 +2638,18 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	QTRY_VERIFY_WITH_TIMEOUT(window_tile(last) && window_tile(last)->playing(), 3000);
 	QVERIFY(!window_tile(first)->playing());
 
+	/* A second window following, closed by the hand: it stops asking,
+	 * so it can end -- not hidden and polling on. */
+	snurra_node closed;
+	closed.set_stays_open(true);
+	closed.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&closed));
+	closed.follow(dj.socket_path());
+	QTRY_COMPARE_WITH_TIMEOUT(closed.tile_count(), 3, 3000);
+	QTest::keyClick(&closed, Qt::Key_Escape);
+	QCOMPARE(closed.tile_count(), 0);
+	QVERIFY2(!closed.follows_decks(), "a following window closed by the hand followed on");
+
 	QVERIFY(dj.fold());
 	QTRY_VERIFY_WITH_TIMEOUT(!node.isVisible(), 2000);
 	QCOMPARE(node.tile_count(), 0);
