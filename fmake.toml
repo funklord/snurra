@@ -4,6 +4,15 @@
 # "qtkit/theme.h" from its include/, which fmake does not guess. snurra
 # vendors qtkit on purpose (project.md sec 3), so reaching into it is the
 # decision already made.
+#
+# defines: the version, from VERSION, the one place it lives, as snurra.pro
+# and the Makefile pass it; without it --version and About say "unknown".
+# Project-wide rather than [target.snurra], because fmake names the program
+# after the directory, and a clone under another name would miss the
+# section. needs: an fmake without $file() would put its text into the
+# build instead of refusing.
 
 [project]
+needs = "1.0"
 include-dirs = ["qtkit/include"]
+defines = ['SNURRA_VERSION_TEXT="$file(VERSION)"']
