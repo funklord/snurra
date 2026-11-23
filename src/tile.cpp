@@ -648,7 +648,14 @@ protected:
 			return;
 		}
 		const QColor played = palette().color(QPalette::Highlight);
-		const QColor ahead = palette().color(QPalette::Mid);
+		/* What is to come: two fifths of the way from the ground to the
+		 * text, so it stands off the ground in any palette. Mid did only
+		 * in snurra's own dark one; a host's -- hydra's, qtkit's -- makes
+		 * Mid darker than its window, and the waveform all but vanished. */
+		const QColor ground = palette().color(QPalette::Window);
+		const QColor text = palette().color(QPalette::WindowText);
+		const QColor ahead((3 * ground.red() + 2 * text.red()) / 5, (3 * ground.green() + 2 * text.green()) / 5,
+		                   (3 * ground.blue() + 2 * text.blue()) / 5);
 		if (!m_peaks.empty()) {
 			/* A line a pixel, the loudest of the columns under it, scaled
 			 * to the loudest read so far -- a shape to see, as Mixxx's

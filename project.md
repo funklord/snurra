@@ -708,7 +708,14 @@ does the same with a tile's playback:
   most), and the desktop's hue is not taken: dark means snurra's own dark
   scheme, in Fusion, its accents chosen against its own ground. Unknown
   leaves Qt's default -- a wrong dark is unreadable, a wrong light only
-  plain. The player only; a host embedding the library keeps its own.
+  plain. The player only; a host embedding the library keeps its own --
+  so the tile draws from roles every palette gives the same sense: what
+  of the waveform is still to come is two fifths of the way from the
+  window to its text, not `Mid`, which snurra's dark made lighter than
+  the ground and a host's (hydra's, qtkit's) makes darker, where it all
+  but vanished (2026-11-23,
+  `the_waveform_to_come_shows_on_a_hosts_dark_palette`; in `Mid` it
+  fails).
   Not done: the freedesktop portal (Qt DBus is not linked; TDE has none),
   and Plasma 5/6's own kdeglobals keys, not readable on this machine.
 - **The snap gesture between processes:** on X11 a tile can find the

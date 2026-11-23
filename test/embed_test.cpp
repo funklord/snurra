@@ -84,6 +84,7 @@ private slots:
 	void files_dropped_on_a_window_join_it();
 	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
+	void the_waveform_to_come_shows_on_a_hosts_dark_palette();
 	void a_lane_dragged_later_starts_later_on_the_beat();
 	void tiles_are_as_wide_as_their_time_on_the_timeline();
 	void a_width_the_person_set_is_kept();
@@ -3673,6 +3674,47 @@ void embed_test::a_trains_crossfade_is_drawn_on_its_tiles() {
 				++differ;
 			}
 	QVERIFY2(differ > with.width() / 10, "A's fade out is not drawn");
+}
+
+/*
+ * A host's dark palette (hydra's, qtkit's, which BeerSSH and fuzzypickles
+ * take): Mid darker than the window, as a style shades frames. The part
+ * of the waveform still to come stands off the ground all the same --
+ * drawn in Mid, it was 0.04 of luma from it, all but unseen.
+ */
+void embed_test::the_waveform_to_come_shows_on_a_hosts_dark_palette() {
+	snurra_node node;
+	QPalette dark;
+	const QColor window(0x2b, 0x2b, 0x2e);
+	dark.setColor(QPalette::Window, window);
+	dark.setColor(QPalette::WindowText, QColor(0xe6, 0xe6, 0xe6));
+	dark.setColor(QPalette::Text, QColor(0xe6, 0xe6, 0xe6));
+	dark.setColor(QPalette::Base, QColor(0x1f, 0x1f, 0x22));
+	dark.setColor(QPalette::Highlight, QColor(0x3d, 0x7e, 0xb8));
+	dark.setColor(QPalette::Mid, window.darker(130));
+	/* As a host gives it: the whole application's. */
+	const QPalette was = QApplication::palette();
+	QApplication::setPalette(dark);
+	auto restore = qScopeGuard([was] { QApplication::setPalette(was); });
+	snurra_tile_state tone = placed(QStringLiteral("tone:220"), 0, 0);
+	tone.playing = false;
+	snurra_tile *tile = node.add_tile(tone);
+	node.resize(600, 200);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	QWidget *waveform = waveform_of(tile);
+	QVERIFY(waveform);
+	auto luma = [](const QColor &c) { return 0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF(); };
+	auto seen = [&] {
+		const QImage drawn = waveform->grab().toImage();
+		int count = 0;
+		for (int y = 0; y < drawn.height(); ++y)
+			for (int x = 0; x < drawn.width(); ++x)
+				if (luma(drawn.pixelColor(x, y)) - luma(window) > 0.12) ++count;
+		/* More than the playhead's one column. */
+		return count > 4 * drawn.height();
+	};
+	QTRY_VERIFY_WITH_TIMEOUT(seen(), 3000);
 }
 
 /*
