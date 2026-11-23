@@ -109,6 +109,7 @@ private slots:
 	void each_deck_has_its_side_of_the_crossfader();
 	void the_decks_sit_as_the_person_arranged_them();
 	void a_listener_hears_the_deck_its_plug_is_in();
+	void a_listener_hears_one_track_of_a_decks_player();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -2069,6 +2070,109 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 }
 
 /*
+ * A socket on a nested player's track (project.md sec 3f: "a nested
+ * player inside a deck" is a tap): a player of two tones -- 440 Hz for
+ * 3 s, then 880 Hz coming in 0.5 s before its end -- handed onto deck A,
+ * whose fader is down. Plugged into the first track from the listen
+ * button's menu, the headphones hear 440 Hz; moved to the second before
+ * it comes in, nothing; once it is in, 880 Hz, at full level.
+ */
+void embed_test::a_listener_hears_one_track_of_a_decks_player() {
+	QTemporaryDir runtime, captures;
+	qputenv("SNURRA_RUNTIME_DIR", runtime.path().toLocal8Bit());
+	auto no_runtime = qScopeGuard([] { qunsetenv("SNURRA_RUNTIME_DIR"); });
+	snurra_dj dj;
+	dj.resize(900, 600);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	QVERIFY(dj.listen());
+	snurra_wire::message offer;
+	offer.type = snurra_wire::OFFER;
+	offer.token = QStringLiteral("nested");
+	offer.deck = 0;
+	const qint64 now = snurra_clock_us();
+	for (int i = 0; i < 2; ++i) {
+		snurra_tile_state tone;
+		tone.source = QStringLiteral("tone:%1").arg(440 * (i + 1));
+		tone.duration_us = 3000000;
+		tone.column = i;
+		tone.overlap_us = i > 0 ? 500000 : -1;
+		tone.playing = i == 0;
+		tone.sampled_at_us = now;
+		offer.states << tone;
+	}
+	{
+		QLocalSocket giver;
+		giver.connectToServer(dj.socket_path());
+		QVERIFY(giver.waitForConnected(2000));
+		giver.write(snurra_wire::encode(offer));
+		giver.flush();
+		QTest::qWait(100);
+	}
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("2 tracks"), 3000);
+	QElapsedTimer since;
+	since.start();
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	QCOMPARE(tile->player_tracks(), 2);
+	tile->set_level(0);
+	QVERIFY(dj.add_listener(QStringLiteral("capture:") + captures.path()) == 0);
+	QToolButton *listen = nullptr;
+	for (QToolButton *button : dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly))
+		if (button->accessibleName() == QLatin1String("Listen here")) listen = button;
+	QVERIFY(listen && listen->menu());
+	emit listen->menu()->aboutToShow();
+	const QList<QAction *> sockets = listen->menu()->actions();
+	QCOMPARE(sockets.size(), 3);   /* the whole deck, then each track */
+	QCOMPARE(sockets.at(2)->text(), QStringLiteral("tone:880"));
+
+	const QString capture = QDir(captures.path()).filePath(QStringLiteral("%1.capture").arg(QCoreApplication::applicationPid()));
+	auto heard = [&capture](double &hz, double &rms) {
+		QFile file(capture);
+		if (!file.open(QIODevice::ReadOnly)) return false;
+		const QByteArray all = file.readAll();
+		std::vector<float> left;
+		for (qsizetype at = 0; at + 12 <= all.size();) {
+			int32_t frames = 0;
+			std::memcpy(&frames, all.constData() + at + 8, 4);
+			const qsizetype size = 12 + qsizetype(frames) * 8;
+			if (at + size > all.size()) break;
+			const float *samples = reinterpret_cast<const float *>(all.constData() + at + 12);
+			for (int i = 0; i < frames; ++i) left.push_back(samples[2 * i]);
+			at += size;
+		}
+		const size_t span = 9600;
+		if (left.size() < span) return false;
+		int crossings = 0;
+		double sum = 0;
+		for (size_t i = left.size() - span; i < left.size(); ++i) {
+			sum += double(left[i]) * left[i];
+			if (i > left.size() - span && (left[i - 1] < 0) != (left[i] < 0)) ++crossings;
+		}
+		rms = std::sqrt(sum / double(span));
+		hz = crossings / 2.0 / (double(span) / 48000);
+		return true;
+	};
+	double hz = 0, rms = 0;
+	sockets.at(1)->trigger();
+	QCOMPARE(dj.plugged(0), 0);
+	QCOMPARE(dj.plugged_track(0), 0);
+	QTest::qWait(600);
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(rms > 0.1 && qAbs(hz - 440) < 30, qPrintable(QStringLiteral("the first track: %1 Hz at %2").arg(hz).arg(rms)));
+	QVERIFY(since.elapsed() < 2000);
+	dj.plug_track(0, 0, 1);
+	QCOMPARE(dj.plugged_track(0), 1);
+	QTest::qWait(400);
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(since.elapsed() < 2400, "too slow to hear the second track before it comes in");
+	QVERIFY2(rms < 0.01, qPrintable(QStringLiteral("the second track before it comes in: %1 Hz at %2").arg(hz).arg(rms)));
+	QTest::qWait(int(std::max<qint64>(0, 3300 - since.elapsed())));
+	QVERIFY(heard(hz, rms));
+	QVERIFY2(rms > 0.1 && qAbs(hz - 880) < 40, qPrintable(QStringLiteral("the second track, in: %1 Hz at %2").arg(hz).arg(rms)));
+}
+
+/*
  * Pre-listen as a plug (project.md sec 3f, step 7): deck A plays 440 Hz
  * with its fader down and the crossfader all the way to B, which plays
  * 1320 Hz. A listener on an output of its own -- a capture the test reads
@@ -3797,7 +3901,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 5);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire */
+	QCOMPARE(SNURRA_EMBED_VERSION, 6);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire; 6: a nested track's socket */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

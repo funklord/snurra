@@ -247,6 +247,7 @@ public:
 	QVBoxLayout *column;
 	QToolButton *side;
 	QToolButton *listen;
+	QMenu *listen_menu = nullptr;   /* a player's tracks, while it holds one */
 	QToolButton *fold;
 	QToolButton *unfold;
 	QToolButton *out;
@@ -439,6 +440,9 @@ public:
 		std::unique_ptr<snurra_engine> engine;
 		snurra_deck *mirror = nullptr;
 		int deck = -1;
+		/* Or one track of the player that deck plays (sec 3f, "a nested
+		 * player inside a deck"): -1 the deck itself. */
+		int track = -1;
 		QPointer<snurra_tile> tapped;
 		bool playing = false;
 		float tempo = 1;
@@ -454,7 +458,10 @@ public:
 	std::vector<std::unique_ptr<listener_t>> listeners;
 	int chosen_listener = 0;     /* the one a "listen here" moves */
 	QTimer *follow = nullptr;
-	void plug(int listener, int deck);
+	void plug(int listener, int deck, int track = -1);
+	/* Where the tapped track is, in its own frames, when its deck is
+	 * heard at `us`; false when the plug is in no track. */
+	bool track_frame(const listener_t &one, qint64 us, double &frame, double &tempo) const;
 	void plug_remote(int listener, const QString &path, int index);
 	void follow_remote(listener_t &one, const snurra_tile_state &state);
 	void mirror(listener_t &one);
@@ -619,6 +626,7 @@ public:
 		if (score && i < int(score->on_deck.size())) score->on_deck[size_t(i)] = -1;
 		deck->unfold->hide();
 		deck->out->hide();
+		deck->listen->setMenu(nullptr);
 		if (!deck->tile) return;
 		snurra_tile *tile = deck->tile;
 		deck->tile = nullptr;
@@ -1453,6 +1461,7 @@ void snurra_dj_private::detach(int deck) {
 	tile->deleteLater();
 	place->unfold->hide();
 	place->out->hide();
+	place->listen->setMenu(nullptr);
 	place->empty->show();
 }
 
@@ -1642,6 +1651,8 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->name = name;
 	place->empty->hide();
 	place->unfold->setVisible(!tile->state().player.empty());
+	place->listen->setMenu(tile->state().player.empty() ? nullptr : place->listen_menu);
+	place->listen->setPopupMode(tile->state().player.empty() ? QToolButton::DelayedPopup : QToolButton::MenuButtonPopup);
 	/* Where another window can be started: on a phone the decks are
 	 * the app, one screen, and there is no process to start. */
 #ifdef Q_OS_ANDROID
@@ -1812,12 +1823,30 @@ void snurra_dj_private::mirror(listener_t &one) {
 	snurra_tile *tile = one.deck >= 0 && one.deck < decks.size() ? decks[one.deck]->tile.data() : nullptr;
 	one.tapped = tile;
 	if (!tile) return;
-	snurra_deck::start_t start = snurra_tile::start_for(tile->state(), one.engine->rate());
+	/* A track gone with the player that held it: the deck itself. */
+	if (one.track >= tile->player_tracks()) one.track = -1;
+	snurra_deck::start_t start = snurra_tile::start_for(one.track >= 0 ? tile->player_track(one.track) : tile->state(), one.engine->rate());
 	start.level = 1;
 	start.playing = false;
 	one.mirror = one.engine->add(start);
 	one.playing = false;
+	if (one.track >= 0) {
+		/* As the player hears it: its own level match, before the
+		 * player's envelope and the deck's fader. */
+		const snurra_tile_state &state = tile->player_track(one.track);
+		snurra_beat_grid grid;
+		one.trim = QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("loudness/match"), true).toBool()
+		                   && snurra_cached_beats(state.sound_source(), state.audio_track, one.engine->rate(), grid)
+		           ? snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE)
+		           : 1.0f;
+	}
 	anchor(one);
+}
+
+bool snurra_dj_private::track_frame(const listener_t &one, qint64 us, double &frame, double &tempo) const {
+	snurra_tile *tile = one.tapped;
+	if (!tile || one.track < 0) return false;
+	return tile->player_track_at(one.track, tile->deck()->position_at(us), frame, tempo);
 }
 
 void snurra_dj_private::unmirror(listener_t &one) {
@@ -1842,6 +1871,7 @@ void snurra_dj_private::plug_remote(int listener, const QString &path, int index
 	listener_t &one = *listeners[size_t(listener)];
 	unmirror(one);
 	one.deck = -1;
+	one.track = -1;
 	show_plugs();
 	if (index < 0 || path.isEmpty()) return;
 	one.remote = path;
@@ -1904,6 +1934,36 @@ void snurra_dj_private::anchor(listener_t &one) {
 	if (!tile || !one.mirror) return;
 	snurra_deck *deck = tile->deck();
 	one.tempo = deck->tempo();
+	if (one.track >= 0) {
+		/* A track of the deck's player: its own file, where the player
+		 * will sound it -- silent until it comes in -- at its tempo there
+		 * times the deck's, its own key and EQ. */
+		const snurra_tile_state &state = tile->player_track(one.track);
+		one.mirror->set_key_lock(state.key_lock);
+		one.mirror->set_key_shift(state.key_shift);
+		one.mirror->set_eq(state.eq);
+		one.mirror->set_trim(one.trim);
+		one.playing = tile->playing();
+		const qint64 at = snurra_clock_us() + std::max(one.engine->latency_us(), engine->latency_us()) + 50000;
+		double frame = 0, tempo = 1;
+		if (!track_frame(one, at, frame, tempo)) return;
+		one.mirror->set_tempo(float(tempo * deck->tempo()));
+		const double begin = 0;   /* a track's own first frame */
+		if (!one.playing) {
+			one.mirror->set_playing(false);
+			one.mirror->seek(std::max<int64_t>(0, std::llround(frame)));
+			return;
+		}
+		if (frame >= begin) {
+			one.mirror->start_at(std::llround(frame), at);
+		} else {
+			/* Not in yet: its first frame where the deck reaches it. */
+			const double real_frames = (begin - frame) / tempo / std::max(0.01, double(deck->tempo()));
+			one.mirror->start_at(std::llround(begin), at + snurra_frames_to_us(std::llround(real_frames), one.engine->rate()));
+		}
+		one.mirror->set_playing(true);
+		return;
+	}
 	one.mirror->set_tempo(deck->tempo());
 	one.mirror->set_key_lock(tile->state().key_lock);
 	one.mirror->set_key_shift(tile->state().key_shift);
@@ -1941,6 +2001,15 @@ void snurra_dj_private::follow_taps() {
 			mirror(*one);
 			continue;
 		}
+		double frame = 0, tempo = 1;
+		const bool in_track = one->track >= 0 && track_frame(*one, now, frame, tempo);
+		if (in_track) {
+			/* Its track's own key and EQ, set at the anchor; drifted only
+			 * once it is in. */
+			const bool drifted = one->playing && frame >= 0 && std::abs(double(one->mirror->position_at(now)) - frame) > one->engine->rate() / 100;
+			if (tile->playing() != one->playing || tile->deck()->tempo() != one->tempo || drifted) anchor(*one);
+			continue;
+		}
 		const int64_t apart = one->mirror->position_at(now) - tile->deck()->position_at(now);
 		const bool drifted = one->playing && std::abs(apart) > one->engine->rate() / 100;
 		if (tile->playing() != one->playing || tile->deck()->tempo() != one->tempo || drifted) anchor(*one);
@@ -1953,11 +2022,12 @@ void snurra_dj_private::follow_taps() {
 	}
 }
 
-void snurra_dj_private::plug(int listener, int deck) {
+void snurra_dj_private::plug(int listener, int deck, int track) {
 	if (listener < 0 || listener >= int(listeners.size())) return;
 	listener_t &one = *listeners[size_t(listener)];
 	unmirror(one);
 	one.deck = deck >= 0 && deck < decks.size() ? deck : -1;
+	one.track = one.deck >= 0 ? track : -1;
 	if (one.deck >= 0) mirror(one);
 	show_plugs();
 }
@@ -2009,6 +2079,14 @@ void snurra_dj::choose_listener(int listener) {
 
 int snurra_dj::plugged(int listener) const {
 	return listener >= 0 && listener < int(d->listeners.size()) ? d->listeners[size_t(listener)]->deck : -1;
+}
+
+void snurra_dj::plug_track(int listener, int deck, int track) {
+	d->plug(listener, deck, track);
+}
+
+int snurra_dj::plugged_track(int listener) const {
+	return listener >= 0 && listener < int(d->listeners.size()) ? d->listeners[size_t(listener)]->track : -1;
 }
 
 bool snurra_dj::take_controllers() {
@@ -2072,6 +2150,27 @@ void snurra_dj::set_deck_count(int count) {
 		connect(deck->fold, &QToolButton::clicked, this, [this] { fold(); });
 		connect(deck->out, &QToolButton::clicked, this, [this, i] { d->to_window(i, d->decks[i]->mapToGlobal(QPoint())); });
 		connect(deck->listen, &QToolButton::toggled, this, [this, i](bool on) { d->plug(d->chosen_listener, on ? i : -1); });
+		/* A deck playing a player: each of its tracks a socket of its own,
+		 * on the button's menu -- the deck itself on the button. */
+		deck->listen_menu = new QMenu(deck->listen);
+		connect(deck->listen_menu, &QMenu::aboutToShow, this, [this, i] {
+			QMenu *menu = d->decks[i]->listen_menu;
+			menu->clear();
+			snurra_tile *tile = d->decks[i]->tile;
+			const int listener = d->chosen_listener;
+			const bool ours = listener < int(d->listeners.size()) && d->listeners[size_t(listener)]->deck == i;
+			const int track = ours ? d->listeners[size_t(listener)]->track : -2;
+			QAction *whole = menu->addAction(tr("The whole deck"), this, [this, i] { d->plug(d->chosen_listener, i); });
+			whole->setCheckable(true);
+			whole->setChecked(track == -1);
+			for (int t = 0; tile && t < tile->player_tracks(); ++t) {
+				const snurra_tile_state &state = tile->player_track(t);
+				const QString name = QFileInfo(state.source).fileName();
+				QAction *one = menu->addAction(name.isEmpty() ? state.source : name, this, [this, i, t] { d->plug(d->chosen_listener, i, t); });
+				one->setCheckable(true);
+				one->setChecked(track == t);
+			}
+		});
 		deck->on_tile_drop = [this, i](const QString &giver, int index) {
 			if (!d->server || giver.isEmpty()) return;
 			snurra_wire::message merge;

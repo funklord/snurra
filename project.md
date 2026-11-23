@@ -1691,8 +1691,23 @@ alike.
    With two listeners or more, a chooser by the crossfader says whose
    headphones a deck's "listen" moves (`choose_listener`); tested with a
    second listener, chosen there, its plug moved and the first's left
-   (with the choice ignored, it fails). **Not yet:** sockets on a nested
-   player's track.
+   (with the choice ignored, it fails). **A nested player's track is a
+   socket too, 2026-11-23:** on a deck holding a player, "listen" has a
+   menu -- the whole deck, then each track by name -- and a track chosen
+   is heard as the player sounds it: its own file mirrored where the
+   deck's player will play it, silent before it comes in (the mirror
+   started at its first frame for the moment the deck reaches it) and
+   after it ends, at its tempo in the player times the deck's, its own
+   key, EQ and level match -- before the player's envelope and the deck's
+   fader, as a deck's socket is before its fader. A tune loaded in place
+   of the player puts the plug back on the whole deck
+   (`snurra_dj::plug_track`, `SNURRA_EMBED_VERSION` 6). Tested in
+   `a_listener_hears_one_track_of_a_decks_player`: two tones, 440 Hz and
+   880 Hz coming in at 2.5 s, deck A's fader down; the first track heard
+   at 440, the second silent before it is in and 880 after; with the
+   mirror taken from the whole deck, or the second started at once, it
+   fails. Not yet: a socket inside a nested player's nested player (a
+   track that is itself a player is mirrored as that whole player).
 
 **Mixxx's mappings: plain, no JavaScript** {#mixxx-mappings}
 

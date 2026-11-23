@@ -130,6 +130,15 @@ public:
 	void nudge(int direction);
 	QString jump_step(bool large) const;
 	snurra_beat_grid beats() const { return m_grid; }
+	/* A player in this tile (a deck's, sec 3f): its tracks in timeline
+	 * order, 0 where it holds none. */
+	int player_tracks() const { return int(m_player_order.size()); }
+	const snurra_tile_state &player_track(int track) const { return m_player_order.at(size_t(track)); }
+	/* Where track `track` of that player is when this tile's own deck is
+	 * at `frame` (timeline frames): the track's frame -- below its own
+	 * start before it comes in -- and its tempo within the player. False
+	 * for no such track. */
+	bool player_track_at(int track, int64_t frame, double &track_frame, double &tempo) const;
 	void set_beats(const snurra_beat_grid &grid);
 	/* How far this tile's track is ahead of its lane's time: nudges. */
 	qint64 offset_us() const { return m_state.offset_us; }

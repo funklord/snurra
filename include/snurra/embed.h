@@ -39,8 +39,10 @@
 #include "snurra/source.h"
 
 /* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj.
- * 4: snurra_player's position_ms, length_ms, state_of and ended(). */
-#define SNURRA_EMBED_VERSION 5
+ * 4: snurra_player's position_ms, length_ms, state_of and ended().
+ * 5: four decks and the wire (the (5) parts of snurra_dj).
+ * 6: snurra_dj::plug_track and plugged_track. */
+#define SNURRA_EMBED_VERSION 6
 
 /* One thing to play. */
 struct snurra_media {
@@ -191,6 +193,14 @@ public:
 	int add_listener(const QString &output);
 	void plug(int listener, int deck);
 	int plugged(int listener) const;
+	/* (6) Into one track of the player deck `deck` plays (sec 3f, "a
+	 * nested player inside a deck"): that track as the player sounds it --
+	 * silent before it comes in and after it ends, at its tempo there
+	 * times the deck's, with its own EQ and level match -- before the
+	 * player's envelope and the deck's fader. The deck's "listen" offers
+	 * the tracks on its menu. plugged_track says which, -1 the deck. */
+	void plug_track(int listener, int deck, int track);
+	int plugged_track(int listener) const;
 	/* Which listener a deck's "listen" moves -- chosen on screen by the
 	 * crossfader where there are two or more. */
 	void choose_listener(int listener);

@@ -1506,6 +1506,14 @@ static bool loudness_matched() {
 	return QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("loudness/match"), true).toBool();
 }
 
+bool snurra_tile::player_track_at(int track, int64_t frame, double &track_frame, double &tempo) const {
+	if (!m_player_timeline || track < 0 || track >= int(m_player_timeline->tracks.size())) return false;
+	const snurra_timeline_track &one = m_player_timeline->tracks[size_t(track)];
+	tempo = one.tempo;
+	track_frame = double(one.offset) + double(frame - m_player_timeline->start(track)) * one.tempo;
+	return true;
+}
+
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
 	m_deck->set_trim(loudness_matched() ? snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE) : 1.0f);
