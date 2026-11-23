@@ -385,7 +385,10 @@ int main(int argc, char *argv[]) {
 	}
 
 	snurra_node node;
-	if (!node.listen()) return 1;
+	if (!node.listen()) {
+		std::fprintf(stderr, "snurra: %s\n", qPrintable(node.listen_error()));
+		return 1;
+	}
 	/* A named player takes controllers, its bindings its own (sec 3f). */
 	if (parser.isSet(player_name)) node.take_controllers(parser.value(player_name));
 

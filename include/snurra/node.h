@@ -50,8 +50,12 @@ public:
 	explicit snurra_node(QWidget *parent = nullptr);
 	~snurra_node() override;
 
-	/* Listens on this process's socket; false when it cannot. */
+	/* Listens on this process's socket; false when it cannot, and
+	 * listen_error() says why -- the socket's path and the system's word,
+	 * since a path past the 107 bytes a socket's name may take fails
+	 * with nothing else to show for it. */
 	bool listen();
+	QString listen_error() const { return m_listen_error; }
 	/* Controllers for this window as the player `player` (project.md sec
 	 * 3f): an emergency mix, say, its own process, its play on a button
 	 * of its own. Its controls are `play` (the group's, both ways) and
@@ -275,6 +279,7 @@ private:
 	bool m_timing_queued = false;   /* a lay_out_timeline is */
 	bool m_shape_queued = false;
 	QString m_path;
+	QString m_listen_error;
 	QLocalServer *m_server = nullptr;
 	QGridLayout *m_grid = nullptr;
 	QList<snurra_tile *> m_tiles;

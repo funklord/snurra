@@ -60,6 +60,7 @@ private slots:
 	void a_tile_plays_a_player_and_the_wire_carries_it();
 	void tiles_go_onto_decks_and_back_out_in_step();
 	void a_window_opens_its_player_in_the_decks();
+	void a_socket_it_cannot_make_is_said();
 	void a_dark_tde_desktop_gets_a_dark_player();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
@@ -1588,6 +1589,27 @@ void handover_test::a_tile_plays_a_player_and_the_wire_carries_it() {
  * the group's time; and deck C pulled out opens a window of its own that
  * plays on, the deck left empty.
  */
+/*
+ * A socket's name takes 107 bytes at most, and a runtime folder deep
+ * enough leaves no room for snurra's: it found one so (a session's
+ * scratch folder, 2026-11-23) and ended with status 1 and not a word.
+ * Now it says where it could not listen.
+ */
+void handover_test::a_socket_it_cannot_make_is_said() {
+	const QString deep = m_dir->path() + QStringLiteral("/") + QString(120, QLatin1Char('d'));
+	QProcess process;
+	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+	env.insert(QStringLiteral("SNURRA_RUNTIME_DIR"), deep);
+	env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+	env.insert(QStringLiteral("SNURRA_OUTPUT"), QStringLiteral("null"));
+	process.setProcessEnvironment(env);
+	process.start(qEnvironmentVariable("SNURRA_BIN", QStringLiteral(SNURRA_BIN)), { QStringLiteral("tone:440") });
+	QVERIFY(process.waitForFinished(10000));
+	QCOMPARE(process.exitCode(), 1);
+	const QString said = QString::fromLocal8Bit(process.readAllStandardError());
+	QVERIFY2(said.contains(QStringLiteral("snurra: cannot listen at ") + deep), qPrintable(said));
+}
+
 /*
  * The way to the decks from a window (the holder, 2026-11-21: "I don't
  * know how to switch to deck mode"): its menu's "Open in the decks", by

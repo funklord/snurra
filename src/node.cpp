@@ -385,7 +385,10 @@ bool snurra_node::listen() {
 	QLocalServer::removeServer(m_path);
 	m_server = new QLocalServer(this);
 	m_server->setSocketOptions(QLocalServer::UserAccessOption);
-	if (!m_server->listen(m_path)) return false;
+	if (!m_server->listen(m_path)) {
+		m_listen_error = QStringLiteral("cannot listen at %1: %2").arg(m_path, m_server->errorString());
+		return false;
+	}
 	connect(m_server, &QLocalServer::newConnection, this, &snurra_node::accept);
 	/* Whether a deck view has headphones a tile here could be heard in:
 	 * asked now and every two seconds -- not while a drag asks for itself. */
