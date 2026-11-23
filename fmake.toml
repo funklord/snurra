@@ -1,9 +1,10 @@
 # fmake's view of this tree -- see README.md for the plain `fmake` line.
 #
 # include-dirs: qtkit, the submodule at qtkit/, is included as
-# "qtkit/theme.h" from its include/, which fmake does not guess. snurra
-# vendors qtkit on purpose (project.md sec 3), so reaching into it is the
-# decision already made.
+# "qtkit/theme.h" from its include/. An fmake before 5316a04 cannot find it
+# on a real clone: fuzznet's nested qtty brings a second theme.h, and the
+# two cancel out (fmake's inbox 20261123T1847Z). fmake 5316a04 finds it
+# alone; the line stays while the packaged fmake predates that.
 #
 # defines: the version, from VERSION, the one place it lives, as snurra.pro
 # and the Makefile pass it; without it --version and About say "unknown".
