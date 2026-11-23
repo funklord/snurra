@@ -888,7 +888,28 @@ next join moves it. The set now reads 129.01 BPM (confidence 10.1); a
 made ten minute set at 128 whose beat moves 0.37 at each minute reads
 128 on its first minute's beats, and gets none without the windows
 (whole fold 5.7) (`a_set_whose_phase_moves_has_its_tempo`). Not yet: a
-grid that follows the set's phase from track to track.
+grid that follows the set's phase from track to track. **Tried and not
+kept, 2026-11-23**, on a real set (a three hour festival livestream,
+25 minutes of it from 30:00, which folds clear as a whole at 132.97 BPM,
+confidence 6.9). Measured independently -- spectral flux at 11 kHz,
+each 30 s window's phase as the circular mean of its fold at that tempo
+-- the grid sits on the beat for some ten minutes and then wanders up to
+200 ms, near half a beat; but mostly by **drifting through a track**
+(240 to 370 ms over four minutes), not by stepping at the joins, so
+"one tempo, the phase moving at each join" describes this set badly.
+What was tried: the set read again at its tempo 15 s at a time, the
+phase changing where two windows running agreed on one a tenth of a beat
+from the one in force, the join placed to 5 s, the changes kept with the
+grid (`phases`, `at(frame)`). It found ten changes in the 25 minutes,
+where the measurement saw movement, but each 15 s fold's peak flipped
+between the beat and the off-beat (about 225 ms apart: hats and claps
+fold as well as kicks), and the grid came out no nearer the measured
+beats (spread 93 ms rms against 85). What it would take instead: a beat
+tracker following the tempo as it moves -- a local tempo, not only a
+phase -- on the low band (`body`), which a kick dominates; and the same
+independent measurement to judge it by. Measuring runs the player headless
+with `SNURRA_CACHE` and reads what it keeps; its runtime folder must be
+short, since a socket's path takes 107 bytes at most.
 Measured on made signals, a minute each: a bare kick at 120 and a kick,
 snare, hat and chord pattern at 87.5, 128, 140 and 127.3 BPM -- tempo
 within 0.003 BPM, every beat within 2.7 ms of the grid (which sits 1.6
