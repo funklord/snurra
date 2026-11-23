@@ -2,3 +2,7 @@
 	path = fuzznet
 	url = git@github.com:funklord/fuzznet.git
 	shallow = true
+[submodule "vendor/qtkit"]
+	path = vendor/qtkit
+	url = git@github.com:funklord/qtkit.git
+	shallow = true

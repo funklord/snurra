@@ -48,7 +48,17 @@ $(FUZZNET_PROBE):
 	git submodule update --init --depth 1 fuzznet
 	@test -f $@ || { echo "snurra: fuzznet could not be fetched" >&2; exit 1; }
 
-$(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
+# qtkit, the workspace's shared Qt pieces (the theme), a submodule at
+# vendor/qtkit: fetched the same way, the pinned commit only.
+QTKIT_PROBE = vendor/qtkit/qtkit.pri
+$(QTKIT_PROBE):
+	@command -v git >/dev/null 2>&1 || { echo "snurra: vendor/qtkit is empty, and git is not installed to fetch it" >&2; exit 1; }
+	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: vendor/qtkit is empty, and this is not a git checkout: put qtkit at the commit snurra's gitlink names there" >&2; exit 1; }
+	@echo "snurra: fetching qtkit, the pinned commit only"
+	git submodule update --init --depth 1 vendor/qtkit
+	@test -f $@ || { echo "snurra: qtkit could not be fetched" >&2; exit 1; }
+
+$(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE) $(QTKIT_PROBE)
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release
 	@# qmake's rules depend on sources alone, so a change to the flags,
@@ -216,7 +226,7 @@ $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied: $(FFMPEG_KIT_LIB)
 # changes: then the build's objects and staged libraries are cleared, as
 # a kit updated in place carries dates older than what was built from the
 # last one.
-$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
+$(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE) $(QTKIT_PROBE)
 $(ANDROID_BUILD_DIR)/Makefile: $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
                               $(ANDROID_BUILD_DIR)/includes.list | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
@@ -291,12 +301,13 @@ $(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
 	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -Ifuzznet -c $< -o $@
 -include $(MK_FZN_OBJS:.o=.d)
 
-# And qtkit, the copy in vendor/qtkit, as vendor/qtkit/qtkit.pri names it:
+# And qtkit, the submodule at vendor/qtkit, as its qtkit.pri names it:
 # its sources and the three headers moc reads, with the portal (Qt DBus is
 # in SNURRA_PKGS).
 MK_QTKIT_SRCS := vendor/qtkit/src/theme.cpp vendor/qtkit/src/flow_layout.cpp
 MK_QTKIT_HDRS := vendor/qtkit/include/qtkit/theme.h vendor/qtkit/include/qtkit/flow_layout.h vendor/qtkit/src/portal_listener.h
 MK_QTKIT_MOCS := $(patsubst %.h,$(MK_BUILD_DIR)/qtkit/moc_%.cpp,$(notdir $(MK_QTKIT_HDRS)))
+$(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS): | $(QTKIT_PROBE)
 $(MK_BUILD_DIR)/qtkit/moc_%.cpp: vendor/qtkit/include/qtkit/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@

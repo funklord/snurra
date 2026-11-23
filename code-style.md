@@ -315,7 +315,7 @@ restate the precedence rule.
 
 
 Exempt paths: `build/` and anything generated into it, and `vendor/`
-(qtkit, copied as its tree has it). No formatter is run;
+(qtkit, a submodule, kept as its tree has it). No formatter is run;
 
 the gate (`make style`) checks whitespace and indentation, and holds
 

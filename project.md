@@ -337,13 +337,14 @@ and everything above it knows nothing of SFTP or fuzznet.
   with `qtkit_follow_desktop(app, "SNURRA_THEME")` -- the portal where Qt
   DBus is linked, `kdeglobals` and `lxqt.conf` session first, abstaining
   on identical colours, and following a change, none of which snurra's
-  own copy did. qtkit still has no remote, and snurra is public, so it
-  is a **copy at `vendor/qtkit/`**, qtkit's `qtkit.pri`, `include/` and
-  `src/` byte for byte at its ed18c25, included by `snurra.pro` after
-  `snurra.pri` (which links Qt DBus) and listed in the Makefile's
-  `check-mk` build; the style gate leaves `vendor/` to its tree. **Open,
-  the holder's:** a remote for qtkit, after which the copy becomes a
-  submodule at the same path. snurra's own detection and dark palette
+  own copy did. **A submodule at `vendor/qtkit`** (since 2026-11-23,
+  when qtkit went public on GitHub; until then a byte-for-byte copy of
+  the same commit, ed18c25, at the same path), fetched by the Makefile
+  as fuzznet is -- when absent, the pinned commit only, a build that
+  cannot fetch it stopping with the reason -- included by `snurra.pro`
+  after `snurra.pri` (which links Qt DBus) and named in the Makefile's
+  `check-mk` build; the style gate leaves `vendor/` to its own tree.
+  Moving the pin is this tree's act, as for fuzznet. snurra's own detection and dark palette
   are gone from the library (no host called them); what stays is
   `snurra_mute`, in `palette.cpp` -- `theme.cpp` beside qtkit's was one
   `theme.o` to qmake. Tested on the screen in Xvfb
