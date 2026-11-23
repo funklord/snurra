@@ -1,8 +1,8 @@
 [submodule "fuzznet"]
 	path = fuzznet
-	url = git@github.com:funklord/fuzznet.git
+	url = https://github.com/funklord/fuzznet.git
 	shallow = true
 [submodule "qtkit"]
 	path = qtkit
-	url = git@github.com:funklord/qtkit.git
+	url = https://github.com/funklord/qtkit.git
 	shallow = true
