@@ -43,9 +43,7 @@ How it differs from its neighbours:
 - **Mixing** -- more than one stream and their levels -- is part of the
   player, not a separate DAW.
 
-Not there yet: matching one tile's beat to another's (tempo and phase
-by themselves), and finding a track's key; `project.md` holds the plan
-and the state.
+`project.md` holds the plan and the state.
 
 ## Building
 

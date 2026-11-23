@@ -1,0 +1,9 @@
+# fmake's view of this tree -- see README.md for the plain `fmake` line.
+#
+# include-dirs: qtkit, the submodule at qtkit/, is included as
+# "qtkit/theme.h" from its include/, which fmake does not guess. snurra
+# vendors qtkit on purpose (project.md sec 3), so reaching into it is the
+# decision already made.
+
+[project]
+include-dirs = ["qtkit/include"]
