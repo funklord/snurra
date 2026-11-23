@@ -19,6 +19,7 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QMenu>
+#include <QMessageBox>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QLocalServer>
@@ -50,6 +51,15 @@
 
 using namespace snurra_wire::timing;
 using snurra_wire::TILE_MIME;
+
+static QString &about_text() {
+	static QString text;
+	return text;
+}
+
+void snurra_set_about(const QString &rich_text) {
+	about_text() = rich_text;
+}
 
 namespace {
 
@@ -1850,6 +1860,14 @@ void snurra_node::contextMenuEvent(QContextMenuEvent *event) {
 	QAction *decks = menu.addAction(tr("Open in the decks"));
 	decks->setToolTip(tr("This player onto a DJ's decks, each track on its deck"));
 	connect(decks, &QAction::triggered, this, &snurra_node::open_decks);
+	/* Who made it (the holder, 2026-11-23: in the right-click menu, as
+	 * XMMS and gmplayer put theirs -- snurra has no menu bar). */
+	if (!about_text().isEmpty()) {
+		menu.addSeparator();
+		QAction *about = menu.addAction(tr("About snurra"));
+		about->setObjectName(QStringLiteral("snurra-about"));
+		connect(about, &QAction::triggered, this, [this] { QMessageBox::about(this, tr("About snurra"), about_text()); });
+	}
 	menu.exec(event->globalPos());
 }
 

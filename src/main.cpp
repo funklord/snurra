@@ -200,6 +200,12 @@ int main(int argc, char *argv[]) {
 	 * (project.md sec 3b): qtkit's, as every GUI here; $SNURRA_THEME says
 	 * dark or light over it. A host embedding the library keeps its own. */
 	qtkit_follow_desktop(app, "SNURRA_THEME");
+	/* The right-click menu's About: the line --version prints, the
+	 * address escaped, since the box reads rich text and would drop it
+	 * as an unknown tag. */
+	snurra_set_about(QStringLiteral("<p><b>snurra</b> %1</p><p>A small media player that mixes.</p><p>%2</p>")
+	                         .arg(QStringLiteral(SNURRA_VERSION_TEXT),
+	                              QStringLiteral("Copyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>").toHtmlEscaped()));
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
 	/* Its own icon, the record make install puts in the icon theme, on
 	 * every window; the generic player's where it is not installed. And

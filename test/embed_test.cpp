@@ -7,6 +7,8 @@
  * it leaves no deck behind in the engine, whichever goes first.
  */
 #include <QMenu>
+#include <QMessageBox>
+#include <QTextDocument>
 #include <QToolTip>
 #include <QTimer>
 #include <QApplication>
@@ -84,6 +86,7 @@ private slots:
 	void a_folder_or_a_link_dropped_joins_too();
 	void a_trains_crossfade_is_drawn_on_its_tiles();
 	void the_waveform_to_come_shows_on_a_hosts_dark_palette();
+	void about_is_in_the_right_click_menu();
 	void a_lane_dragged_later_starts_later_on_the_beat();
 	void tiles_are_as_wide_as_their_time_on_the_timeline();
 	void a_width_the_person_set_is_kept();
@@ -3663,6 +3666,64 @@ void embed_test::the_waveform_to_come_shows_on_a_hosts_dark_palette() {
 		return count > 4 * drawn.height();
 	};
 	QTRY_VERIFY_WITH_TIMEOUT(seen(), 3000);
+}
+
+/*
+ * About (the holder, 2026-11-23): in the window's right-click menu, as
+ * the player sets it -- its version and copyright, the address escaped --
+ * and not there in a host's window, which has its own.
+ */
+void embed_test::about_is_in_the_right_click_menu() {
+	snurra_node node;
+	snurra_tile *tile = node.add_tile(placed(QStringLiteral("tone:220"), 0, 0));
+	node.resize(600, 200);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	auto offered = [&]() -> QString {
+		QString said;
+		QTimer::singleShot(200, [&said] {
+			QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+			if (!menu) return;
+			for (QAction *action : menu->actions())
+				if (action->objectName() == QLatin1String("snurra-about")) said = action->text();
+			menu->close();
+		});
+		const QPoint over = tile->geometry().center();
+		QContextMenuEvent asked(QContextMenuEvent::Mouse, over, node.mapToGlobal(over));
+		QCoreApplication::sendEvent(&node, &asked);
+		QTest::qWait(300);
+		return said;
+	};
+	QVERIFY2(offered().isEmpty(), "a host's window offers snurra's About");
+	snurra_set_about(QStringLiteral("<p>snurra 9</p><p>%1</p>")
+	                         .arg(QStringLiteral("Copyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>").toHtmlEscaped()));
+	auto unset = qScopeGuard([] { snurra_set_about(QString()); });
+	QCOMPARE(offered(), QStringLiteral("About snurra"));
+
+	/* Chosen, the box says whose, the address shown rather than dropped. */
+	QString shown;
+	QTimer::singleShot(200, [&shown] {
+		QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+		if (!menu) return;
+		for (QAction *action : menu->actions())
+			if (action->objectName() == QLatin1String("snurra-about")) {
+				QTimer::singleShot(300, [&shown] {
+					if (QMessageBox *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+						QTextDocument text;
+						text.setHtml(box->text());
+						shown = text.toPlainText();
+						box->accept();
+					}
+				});
+				action->trigger();
+			}
+		menu->close();
+	});
+	const QPoint over = tile->geometry().center();
+	QContextMenuEvent asked(QContextMenuEvent::Mouse, over, node.mapToGlobal(over));
+	QCoreApplication::sendEvent(&node, &asked);
+	QTRY_VERIFY_WITH_TIMEOUT(!shown.isEmpty(), 3000);
+	QVERIFY2(shown.contains(QLatin1String("Copyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>")), qPrintable(shown));
 }
 
 /*

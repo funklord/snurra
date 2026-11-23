@@ -11,7 +11,18 @@ record does), the one name of more than fifty checked that was free.
 - **A graphical but tiny player to replace mplayer** in the holder's own
   use, **with some mixing**: more than one stream, their levels, moving
   from one to the next. "A media player is rarely small" -- so small is
-  a goal held deliberately, not a description.
+  a goal held deliberately, not a description. **Replacing the holder's
+  use, not mplayer** (the holder, 2026-11-23): "the aim was not to be
+  100% compatible, just to replace my usage of it. If we can use the
+  same arguments, then that is great for familiarity, but we also
+  shouldn't copy bad design, and snurra is a superset of its features in
+  many regards, so some things necessarily have to change." So an
+  mplayer option is taken where it serves how the holder plays and fits
+  snurra's own design; it is not added because mplayer has it. What
+  the holder's shell history shows of that use (2026-11-23): three
+  lines, each a bare `mplayer FILE` -- an `.m4a` track, a downloaded
+  `.webm` DJ set with its picture -- no option at all; so the plain
+  open, sound and picture, is what has to be right.
 - **The library the other projects link**, rather than each growing a
   player of its own:
   - **BeerSSH**'s media tile (its project.md sec 6.4): a file on an SSH
@@ -67,7 +78,7 @@ and everything above it knows nothing of SFTP or fuzznet.
 - Waiting on the holder: a real screen and speaker trial, a Wayland
   compositor (weston), the AcoustID key, the phone (install, a node of
   its own, the fold cover, Android's FFmpeg), moving a joined window, the
-  cross-process drop's entry point, an About window's place, a deck's
+  cross-process drop's entry point, a deck's
   hand gain (Mixxx's pregain, sec 3f), what the phone's deck view cuts
   (sec 3f step 3), and qtkit's remote (sec 3).
 
@@ -312,14 +323,15 @@ and everything above it knows nothing of SFTP or fuzznet.
       so it lists nothing. Whether a phone should have both is the
       holder's.
 
-- **Open, the holder's (2026-11-20): an About window, and where.** The
-  workspace's GUIs carry one in a Help menu (harmonization.md); snurra
-  has no menu at all, by design -- a tile, a drawer, a library. Best
-  guess: About in a right-click menu on the title, as XMMS and gmplayer
-  put theirs, or none beyond `--version`. Not built until decided. Since
-  2026-11-21 a window has a right-click menu (Remove, Into a window of
-  its own, Open in the decks) and one bar, so the guess would be one
-  more entry there.
+- ~~Open, the holder's (2026-11-20): an About window, and where.~~
+  **Settled by the holder 2026-11-23: in the right-click menu**, as
+  guessed (XMMS and gmplayer put theirs there; snurra has no menu bar).
+  "About snurra" is the window's menu's last entry, after a separator:
+  the version and the copyright line `--version` prints, the address
+  escaped for the box's rich text. The player sets it
+  (`snurra_set_about`); a host's window, which has its own About, shows
+  none; a window following the decks has no menu at all
+  (`about_is_in_the_right_click_menu`).
 - ~~Open (2026-11-20): the theme onto qtkit.~~ **Settled by the holder
   2026-11-23** ("qtkit should be used"): the player follows the desktop
   with `qtkit_follow_desktop(app, "SNURRA_THEME")` -- the portal where Qt

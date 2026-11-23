@@ -37,6 +37,12 @@ struct snurra_beat_grid;
  * ABORT and keeps its tiles: a failed handover costs nothing; a taker
  * whose giver goes without a COMMIT fades in on its own.
  */
+/* What the window's right-click menu says under "About snurra" (rich
+ * text): the player sets it, with its version and copyright; a host
+ * embedding the library sets none and has no such entry -- its own About
+ * is its own. */
+void snurra_set_about(const QString &rich_text);
+
 class snurra_node : public QWidget {
 	Q_OBJECT
 
