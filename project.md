@@ -66,7 +66,9 @@ and everything above it knows nothing of SFTP or fuzznet.
   (sec 4, More bands).
 - Earlier the same day: live streams shown as live, an icon, -shuffle,
   -audiofile, --chapters-file, Wayland idle via the portal.
-- The suite takes some 4 to 5 minutes on a quiet machine
+- The suite is built at `-Os`, as the player ships (since 2026-11-23;
+  qmake had built it at `-O2`, so it never ran the code people run).
+  The suite takes some 4 to 5 minutes on a quiet machine
   (`TEST_TIMEOUT` 600 s). Read its exit code, not its FAIL lines. A
   test waiting for a snurra process to end by itself uses `ended()`:
   `waitForFinished()` is false for one already gone, which read as a
