@@ -174,8 +174,10 @@ QStringList snurra_dropped(const QMimeData *mime, int folder_most = 64);
 /*
  * A stem file's stems (project.md sec 3e): Native Instruments' .stem.mp4
  * (or .stem.m4a) holds the mix as its first sound track and four stems
- * after it, in this order -- drums, bass, other, vocals. Empty for any
- * other name. By the name, as the format's own programs know one.
+ * after it, by default in this order -- drums, bass, other, vocals. The
+ * names the file gives itself (its moov/udta/stem manifest) win, in their
+ * order, and say how many stems there are. Empty for any other name. By
+ * the name, as the format's own programs know one.
  */
 QStringList snurra_stem_names(const QString &path);
 

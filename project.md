@@ -964,9 +964,18 @@ later than the timeline (sec 3b, the holder's). Known by the name, as
 the format's own programs know it. The tile state carries
 `audio_track`, so a deck opens on its stem before a frame is read, a
 handover keeps it, and the waveform and the beats are read from the
-stem, not the mix. The title says which stem. Not yet: the stem names
-from the file's own metadata (NI's `stem` box, which FFmpeg is not known
-to expose), so a file whose stems are in another order is mislabelled.
+stem, not the mix. The title says which stem. **The file's own names,
+2026-11-23:** NI's tools write JSON in `moov/udta/stem` (`{"version": 1,
+"stems": [{"name", "color"}, ...]}`, one per track after the mix), which
+FFmpeg does not expose, so snurra walks the boxes itself, as Mixxx's
+`StemInfoImporter` does (read 2026-11-23, main branch): plain boxes, no
+version and flags, trailing NULs dropped. Unlike Mixxx's walk it takes a
+64-bit size and a box running to the end, and a size leaving its parent
+ends the walk; the manifest is read only up to 64 KiB, and at most eight
+stems are opened. A missing name keeps that place's usual one, and a file
+without a manifest keeps drums, bass, other, vocals. The colours are not
+used yet (snurra's lanes have none). Still by the name `.stem.mp4`, so a
+plain `.mp4` is never opened to look.
 
 **Two layouts** (the holder, 2026-11-12). The holder dislikes windows
 that are not rectangles, but the stack needs them, and some systems

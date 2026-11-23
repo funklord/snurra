@@ -28,6 +28,9 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QFile>
+#include <QtEndian>
+#include <cstring>
 #include <QtTest>
 #include <QDBusConnection>
 #include <QDBusObjectPath>
@@ -85,6 +88,7 @@ private slots:
 	void a_picture_is_shown_at_its_meant_shape_and_turn();
 	void a_films_other_sound_track_plays_from_where_it_is();
 	void a_stem_file_is_a_stack_of_its_stems();
+	void a_stem_file_names_its_own_stems();
 	void colours_are_ffmpegs_own_data();
 	void colours_are_ffmpegs_own();
 	void a_full_screen_button_shows_while_the_pointer_moves();
@@ -1264,6 +1268,58 @@ int run_video_tests(int argc, char **argv) {
 }
 
 #include "video_test.moc"
+
+/*
+ * A stem file's own names (project.md sec 3e): the JSON in moov/udta/stem
+ * says what each track after the mix is, in its order, so a file with its
+ * vocals first is not called "drums" there. Boxes written by hand: an mdat
+ * with a 64-bit size before the moov, and a moov running to the end (size
+ * 0). A name left empty keeps that place's usual one; a box whose size
+ * leaves its parent, or a manifest that is not the format's, keeps all
+ * four; a manifest listing twenty stems opens eight.
+ */
+void video_test::a_stem_file_names_its_own_stems() {
+	auto box = [](const char *type, const QByteArray &body, bool to_end = false) {
+		QByteArray out(4, 0);
+		qToBigEndian<quint32>(to_end ? 0 : quint32(8 + body.size()), out.data());
+		return out + QByteArray(type, 4) + body;
+	};
+	auto wide_box = [](const char *type, const QByteArray &body) {
+		QByteArray out(16, 0);
+		qToBigEndian<quint32>(1, out.data());
+		memcpy(out.data() + 4, type, 4);
+		qToBigEndian<quint64>(quint64(16 + body.size()), out.data() + 8);
+		return out + body;
+	};
+	auto stem_file = [&](const QString &name, const QByteArray &manifest, bool overrun = false) {
+		QByteArray stem = box("stem", manifest + QByteArray(2, 0));
+		if (overrun) qToBigEndian<quint32>(quint32(stem.size() + 100), stem.data());
+		const QByteArray udta = box("udta", box("meta", QByteArray(12, 'm')) + stem);
+		const QByteArray moov = box("moov", box("mvhd", QByteArray(100, 'v')) + udta, true);
+		const QString path = m_dir.filePath(name);
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly)) return QString();
+		file.write(box("ftyp", "M4A mp42isom") + wide_box("mdat", QByteArray(3000, 'a')) + moov);
+		return path;
+	};
+	const QStringList usual{ QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
+	const QByteArray own = R"({"version": 1, "mastering_dsp": {}, "stems": [
+		{"name": "Vocals", "color": "#56B4E9"}, {"name": "Drums", "color": "#009E73"},
+		{"name": "", "color": "#CC79A7"}, {"name": "Synth", "color": "#D55E00"}]})";
+	QCOMPARE(snurra_stem_names(stem_file(QStringLiteral("own.stem.mp4"), own)),
+	         (QStringList{ QStringLiteral("Vocals"), QStringLiteral("Drums"), QStringLiteral("other"), QStringLiteral("Synth") }));
+	QCOMPARE(snurra_stem_names(stem_file(QStringLiteral("overrun.stem.m4a"), own, true)), usual);
+	QCOMPARE(snurra_stem_names(stem_file(QStringLiteral("unversioned.stem.mp4"), R"({"stems": [{"name": "Vocals"}]})")), usual);
+	QCOMPARE(snurra_stem_names(stem_file(QStringLiteral("garbage.stem.mp4"), "not json")), usual);
+	QByteArray many = R"({"version": 1, "stems": [)";
+	for (int i = 0; i < 20; ++i) many += QByteArray(i ? "," : "") + R"({"name": "s)" + QByteArray::number(i) + "\"}";
+	many += "]}";
+	const QStringList eight = snurra_stem_names(stem_file(QStringLiteral("many.stem.mp4"), many));
+	QCOMPARE(eight.size(), 8);
+	QCOMPARE(eight.last(), QStringLiteral("s7"));
+	/* Not a stem file by its name: nothing is read. */
+	QVERIFY(snurra_stem_names(stem_file(QStringLiteral("own.mp4"), own)).isEmpty());
+}
 
 /*
  * Stems (project.md sec 3e, step 1): a .stem.mp4 of five sound tracks --

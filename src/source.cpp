@@ -7,6 +7,9 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMap>
 #include <QMimeData>
 #include <QMimeDatabase>
@@ -699,12 +702,75 @@ QStringList snurra_playlist(const QString &path, int most) {
 	return entries;
 }
 
+namespace {
+/*
+ * The payload of the box at `path` below the current position of `file`,
+ * among the boxes between here and `end`; empty when there is none. An MP4
+ * box is a 32-bit big-endian size (header included) and a four-letter
+ * type; size 1 puts a 64-bit size after the type, size 0 runs to `end`.
+ * A size that leaves its parent ends the walk, so a damaged file reads as
+ * one with no manifest rather than past its end. moov, udta and stem are
+ * plain boxes, with no version and flags (Mixxx reads them the same way).
+ */
+QByteArray mp4_box(QFile &file, qint64 end, const QList<QByteArray> &path, qint64 most) {
+	qint64 at = file.pos();
+	while (at + 8 <= end) {
+		if (!file.seek(at)) return {};
+		const QByteArray header = file.read(8);
+		if (header.size() != 8) return {};
+		qint64 size = qint64(quint32(AV_RB32(header.constData())));
+		qint64 body = at + 8;
+		if (size == 1) {
+			const QByteArray wide = file.read(8);
+			if (wide.size() != 8) return {};
+			size = qint64(AV_RB64(wide.constData()));
+			body = at + 16;
+		} else if (size == 0) {
+			size = end - at;
+		}
+		if (size < body - at || size > end - at) return {};
+		if (header.mid(4, 4) == path.first()) {
+			if (path.size() == 1) {
+				if (at + size - body > most) return {};
+				return file.read(at + size - body);
+			}
+			if (!file.seek(body)) return {};
+			return mp4_box(file, at + size, path.mid(1), most);
+		}
+		at += size;
+	}
+	return {};
+}
+}
+
 QStringList snurra_stem_names(const QString &path) {
 	const QString name = QFileInfo(path).fileName();
 	if (!name.endsWith(QLatin1String(".stem.mp4"), Qt::CaseInsensitive)
 	    && !name.endsWith(QLatin1String(".stem.m4a"), Qt::CaseInsensitive))
 		return {};
-	return { QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
+	QStringList names{ QStringLiteral("drums"), QStringLiteral("bass"), QStringLiteral("other"), QStringLiteral("vocals") };
+	/* The file's own names, from the JSON Native Instruments' tools write
+	 * in moov/udta/stem: {"version": 1, "stems": [{"name": ..., "color":
+	 * ...}, ...]}, one per track after the mix, in track order. A name
+	 * missing keeps the usual one for that place; a manifest that is not
+	 * this shape keeps them all. 64 KiB is far past any real one. */
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) return names;
+	QByteArray manifest = mp4_box(file, file.size(), { "moov", "udta", "stem" }, 64 * 1024);
+	while (manifest.endsWith('\0')) manifest.chop(1);   /* some carry trailing NULs */
+	const QJsonObject root = QJsonDocument::fromJson(manifest).object();
+	if (root.value(QLatin1String("version")).toInt(0) <= 0) return names;
+	const QJsonArray stems = root.value(QLatin1String("stems")).toArray();
+	if (stems.isEmpty()) return names;
+	/* Four in every file the format's tools make; eight is room for a
+	 * richer one, and keeps a damaged manifest from opening hundreds of
+	 * lanes. */
+	QStringList own;
+	for (int i = 0; i < stems.size() && i < 8; ++i) {
+		const QString given = stems.at(i).toObject().value(QLatin1String("name")).toString().trimmed();
+		own << (!given.isEmpty() ? given : i < names.size() ? names.at(i) : QStringLiteral("stem %1").arg(i + 1));
+	}
+	return own;
 }
 
 snurra_tags snurra_read_tags(const QString &path) {
