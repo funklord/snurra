@@ -29,6 +29,8 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QDateTime>
+#include <QFileInfo>
 #include <QtEndian>
 #include <cstring>
 #include <QtTest>
@@ -45,6 +47,7 @@
 #include "snurra/library.h"
 #include "snurra/node.h"
 #include "snurra/peaks.h"
+#include "snurra/beats.h"
 #include "snurra/source.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
@@ -89,6 +92,7 @@ private slots:
 	void a_films_other_sound_track_plays_from_where_it_is();
 	void a_stem_file_is_a_stack_of_its_stems();
 	void a_stem_file_names_its_own_stems();
+	void a_files_waveform_is_kept_until_it_changes();
 	void colours_are_ffmpegs_own_data();
 	void colours_are_ffmpegs_own();
 	void a_full_screen_button_shows_while_the_pointer_moves();
@@ -1268,6 +1272,64 @@ int run_video_tests(int argc, char **argv) {
 }
 
 #include "video_test.moc"
+
+/*
+ * A file's waveform is kept (peaks.cpp): reading one decodes the whole of
+ * its sound, which for a three hour set took some 100 s of a core at each
+ * open. A WAV loud in its first half is read; rewritten loud in its second
+ * half, the same size and given back its time, it is the kept waveform
+ * that comes, unread; given a new time, the new one.
+ */
+void video_test::a_files_waveform_is_kept_until_it_changes() {
+	const QString path = m_dir.filePath(QStringLiteral("kept.wav"));
+	auto write = [&path](bool loud_first) {
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly)) return false;
+		file.write(make_wav_of(48000, [loud_first](int i) { return (i < 24000) == loud_first ? 16000 : 0; }));
+		return true;
+	};
+	auto read = [&path] {
+		std::vector<float> columns(10, -1);
+		std::atomic<int> done{ 0 };
+		{
+			snurra_peaks peaks(path, 48000, 10, [&](int first, const std::vector<float> &values) {
+				for (size_t i = 0; i < values.size(); ++i) columns[size_t(first) + i] = values[i];
+				done += int(values.size());
+			});
+			QElapsedTimer waited;
+			waited.start();
+			while (done.load() < 10 && waited.elapsed() < 10000) QTest::qWait(10);
+		}
+		return columns;
+	};
+	QVERIFY(write(true));
+	QDateTime when;
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadWrite));
+		when = file.fileTime(QFileDevice::FileModificationTime);
+	}
+	const std::vector<float> first = read();
+	QVERIFY2(first[0] > 0.4f && first[9] < 0.01f, qPrintable(QStringLiteral("%1 .. %2").arg(first[0]).arg(first[9])));
+	QVERIFY(QFileInfo::exists(qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/peaks/") + snurra_kept_key(path, -1)));
+
+	QVERIFY(write(false));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadWrite));
+		QVERIFY(file.setFileTime(when, QFileDevice::FileModificationTime));
+	}
+	const std::vector<float> kept = read();
+	QVERIFY2(kept == first, "the same size and time read the file again");
+
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadWrite));
+		QVERIFY(file.setFileTime(when.addSecs(60), QFileDevice::FileModificationTime));
+	}
+	const std::vector<float> again = read();
+	QVERIFY2(again[0] < 0.01f && again[9] > 0.4f, qPrintable(QStringLiteral("changed, still %1 .. %2").arg(again[0]).arg(again[9])));
+}
 
 /*
  * A stem file's own names (project.md sec 3e): the JSON in moov/udta/stem

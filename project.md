@@ -660,7 +660,19 @@ does the same with a tile's playback:
   second time has its grid at once (a test kick: 196 ms found, 1 ms
   kept; the 42 minute set took 27 s), and the library's BPM column shows
   what decks have found -- nothing is analysed for the list
-  (`a_beat_found_once_is_kept_and_shown`). **Find tempos**, a button,
+  (`a_beat_found_once_is_kept_and_shown`). **Waveforms are kept too**
+  (2026-11-24), each a file of its own under the cache's `peaks/` -- the
+  file's stamp and column count, then 1024 floats, 4 KB a track -- good
+  while the file's size and time are the same, kept only when read
+  whole. Measured on the holder's own use, a three hour `.webm` DJ set
+  opened bare: the first open costs 318 s of CPU over three minutes,
+  two cores (the waveform's read, decoding the whole of the sound -- 91
+  s for FFmpeg alone -- and the beat analysis, decoding it again); a
+  second open had cost the waveform's 100 s again, and now costs 17.8 s
+  in its first minute, the picture and sound alone
+  (`a_files_waveform_is_kept_until_it_changes`; with the kept one never
+  read, it fails). Not yet: one decode shared by the first open's two
+  readers. **Find tempos**, a button,
   works out the rest -- every tune listed with no BPM kept, one after
   another on a thread of its own, kept as it goes; asked for, never by
   itself, since it holds a core a while and a phone's battery (Traktor
