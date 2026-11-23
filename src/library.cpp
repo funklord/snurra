@@ -32,7 +32,7 @@
 #include "snurra/beats.h"
 #include "snurra/fingerprint.h"
 #include "snurra/source.h"
-#include "snurra/theme.h"
+#include "snurra/palette.h"
 
 namespace {
 

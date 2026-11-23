@@ -38,7 +38,7 @@
 #include "snurra/engine.h"
 #include "snurra/library.h"
 #include "snurra/midi.h"
-#include "snurra/theme.h"
+#include "snurra/palette.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
 #include "snurra/wire.h"

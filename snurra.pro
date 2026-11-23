@@ -12,6 +12,11 @@ QMAKE_CXXFLAGS_RELEASE += -Os
 QMAKE_LFLAGS += -Wl,--gc-sections
 include(snurra.pri)
 include(app/fuzznet.pri)
+# The workspace's shared Qt pieces: the theme (project.md sec 3b). A copy
+# of qtkit at a commit, until qtkit has a remote to be a submodule from.
+# After snurra.pri, which says QT += dbus where there is one, so qtkit
+# asks the portal there too.
+include(vendor/qtkit/qtkit.pri)
 SOURCES += src/main.cpp
 # The version, from VERSION, the one place it lives: what --version says.
 SNURRA_VERSION_TEXT = $$cat($$PWD/VERSION)

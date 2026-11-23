@@ -291,8 +291,21 @@ $(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
 	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -Ifuzznet -c $< -o $@
 -include $(MK_FZN_OBJS:.o=.d)
 
-$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) VERSION
-	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) -Wl,--gc-sections -o $@ $(MK_LIBS)
+# And qtkit, the copy in vendor/qtkit, as vendor/qtkit/qtkit.pri names it:
+# its sources and the three headers moc reads, with the portal (Qt DBus is
+# in SNURRA_PKGS).
+MK_QTKIT_SRCS := vendor/qtkit/src/theme.cpp vendor/qtkit/src/flow_layout.cpp
+MK_QTKIT_HDRS := vendor/qtkit/include/qtkit/theme.h vendor/qtkit/include/qtkit/flow_layout.h vendor/qtkit/src/portal_listener.h
+MK_QTKIT_MOCS := $(patsubst %.h,$(MK_BUILD_DIR)/qtkit/moc_%.cpp,$(notdir $(MK_QTKIT_HDRS)))
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: vendor/qtkit/include/qtkit/%.h
+	@mkdir -p $(@D)
+	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: vendor/qtkit/src/%.h
+	@mkdir -p $(@D)
+	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
+
+$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS) $(MK_QTKIT_MOCS) VERSION
+	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -Ivendor/qtkit/include -Ivendor/qtkit/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build fuzznetd
 	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)

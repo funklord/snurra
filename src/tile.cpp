@@ -46,7 +46,7 @@
 #include "snurra/engine.h"
 #include "snurra/peaks.h"
 #include "snurra/subtitles.h"
-#include "snurra/theme.h"
+#include "snurra/palette.h"
 #include "snurra/video.h"
 
 /*

@@ -320,13 +320,24 @@ and everything above it knows nothing of SFTP or fuzznet.
   2026-11-21 a window has a right-click menu (Remove, Into a window of
   its own, Open in the decks) and one bar, so the guess would be one
   more entry there.
-- **Open (2026-11-20): the theme onto qtkit.** qtkit's
-  `qtkit_follow_desktop` asks the portal, reads `~/.config/kdeglobals`,
-  abstains on identical colours and follows a change, which snurra's own
-  `snurra_follow_desktop` does not. qtkit has no remote yet, and snurra
-  is public, so a submodule at a local path would break every clone and
-  CI. Waits on qtkit being published; then the player (not snurra.pri,
-  whose hosts keep their own palettes) takes it.
+- ~~Open (2026-11-20): the theme onto qtkit.~~ **Settled by the holder
+  2026-11-23** ("qtkit should be used"): the player follows the desktop
+  with `qtkit_follow_desktop(app, "SNURRA_THEME")` -- the portal where Qt
+  DBus is linked, `kdeglobals` and `lxqt.conf` session first, abstaining
+  on identical colours, and following a change, none of which snurra's
+  own copy did. qtkit still has no remote, and snurra is public, so it
+  is a **copy at `vendor/qtkit/`**, qtkit's `qtkit.pri`, `include/` and
+  `src/` byte for byte at its ed18c25, included by `snurra.pro` after
+  `snurra.pri` (which links Qt DBus) and listed in the Makefile's
+  `check-mk` build; the style gate leaves `vendor/` to its tree. **Open,
+  the holder's:** a remote for qtkit, after which the copy becomes a
+  submodule at the same path. snurra's own detection and dark palette
+  are gone from the library (no host called them); what stays is
+  `snurra_mute`, in `palette.cpp` -- `theme.cpp` beside qtkit's was one
+  `theme.o` to qmake. Tested on the screen in Xvfb
+  (`a_dark_tde_desktop_gets_a_dark_player`: a TDE session whose
+  kdeglobals is dark gives a window over 60% dark, `SNURRA_THEME=light`
+  one under 40%; without the call, 1%).
 
 - ~~Headphone pre-listen.~~ **Settled by the holder 2026-11-20**: a plug
   moved between taps, many listeners at once (sec 3f).
@@ -696,7 +707,7 @@ does the same with a tile's playback:
   the same way.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
-  `snurra_follow_desktop`, `src/theme.cpp`). Asked in this order, the
+  now qtkit's `qtkit_follow_desktop`, `vendor/qtkit/`). Asked in this order, the
   first that answers: `$SNURRA_THEME`; Qt's own colour scheme; the file
   a desktop with no status writes -- TDE's and KDE 3's `kdeglobals`
   ([General] windowBackground against windowForeground, `0,42,78` and
@@ -706,7 +717,8 @@ does the same with a tile's playback:
   answers, light where Qt is not integrated, so asked earlier it would
   hide the file. The scheme's name is never read (it says nothing in
   most), and the desktop's hue is not taken: dark means snurra's own dark
-  scheme, in Fusion, its accents chosen against its own ground. Unknown
+  scheme, in Fusion, its accents chosen against its own ground (since
+  2026-11-23 qtkit's, sec 3: the same order, the portal added). Unknown
   leaves Qt's default -- a wrong dark is unreadable, a wrong light only
   plain. The player only; a host embedding the library keeps its own --
   so the tile draws from roles every palette gives the same sense: what

@@ -17,6 +17,7 @@
 #include <QMap>
 #include <QFileInfo>
 #include <QProcess>
+#include <QImage>
 #include <QStandardPaths>
 
 #include <cmath>
@@ -59,6 +60,7 @@ private slots:
 	void a_tile_plays_a_player_and_the_wire_carries_it();
 	void tiles_go_onto_decks_and_back_out_in_step();
 	void a_window_opens_its_player_in_the_decks();
+	void a_dark_tde_desktop_gets_a_dark_player();
 	void started_with_nothing_it_plays_nothing();
 	void a_film_playing_keeps_the_screen_awake();
 	void a_train_plays_its_tiles_in_sequence_crossed_at_equal_power();
@@ -1660,6 +1662,65 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 	QVERIFY2(!back.isEmpty(), "the decks' player did not come back into a window whole");
 	QTRY_COMPARE_WITH_TIMEOUT(ask(decks, status_request()).states.size(), 0, 5000);
 	QVERIFY2(ended(window, 10000), "the window following the decks stayed after they folded");
+}
+
+/*
+ * The holder's desktop (project.md sec 3b): TDE, dark, with no dark status
+ * to ask -- only its kdeglobals says so. The player, through qtkit's
+ * theme, comes up dark on it, as seen on the screen; $SNURRA_THEME=light
+ * over the same desktop, light. Measured as the share of the window's
+ * pixels darker than a third of full luma.
+ */
+void handover_test::a_dark_tde_desktop_gets_a_dark_player() {
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	if (QStandardPaths::findExecutable(QStringLiteral("import")).isEmpty()) QSKIP("no ImageMagick import to read the screen");
+	QTemporaryDir home;
+	QVERIFY(QDir(home.path()).mkpath(QStringLiteral(".trinity/share/config")));
+	QFile kdeglobals(home.filePath(QStringLiteral(".trinity/share/config/kdeglobals")));
+	QVERIFY(kdeglobals.open(QIODevice::WriteOnly));
+	kdeglobals.write("[General]\nwindowBackground=0,42,78\nwindowForeground=220,220,220\n");
+	kdeglobals.close();
+	auto dark_share = [&](const QString &theme) -> double {
+		QProcessEnvironment x11;
+		x11.insert(QStringLiteral("DISPLAY"), name);
+		x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+		x11.insert(QStringLiteral("QT_QPA_PLATFORMTHEME"), QString());
+		x11.insert(QStringLiteral("HOME"), home.path());
+		x11.insert(QStringLiteral("TDEHOME"), home.filePath(QStringLiteral(".trinity")));
+		x11.insert(QStringLiteral("XDG_CURRENT_DESKTOP"), QStringLiteral("TDE"));
+		x11.insert(QStringLiteral("SNURRA_THEME"), theme);
+		QProcess *player = start({ QStringLiteral("--paused"), QStringLiteral("a.flac") }, QStringLiteral("null"), x11);
+		if (!player->waitForStarted() || !wait_for_socket(socket_of(player))) return -1;
+		snurra_wire::message where;
+		where.type = snurra_wire::WHERE;
+		QRect frame;
+		QElapsedTimer waited;
+		waited.start();
+		while (!(frame = ask(socket_of(player), where).frame).isValid() && waited.elapsed() < 5000) QTest::qWait(100);
+		QTest::qWait(500);
+		const QString shot = m_dir->filePath(QStringLiteral("screen-%1.png").arg(theme.isEmpty() ? QStringLiteral("desktop") : theme));
+		QProcess import;
+		import.start(QStringLiteral("import"), { QStringLiteral("-display"), name, QStringLiteral("-window"), QStringLiteral("root"), shot });
+		import.waitForFinished(10000);
+		player->terminate();
+		player->waitForFinished(3000);
+		const QImage screen(shot);
+		if (screen.isNull() || !frame.isValid()) return -1;
+		const QRect inside = frame.intersected(screen.rect());
+		qint64 dark = 0, all = 0;
+		for (int y = inside.top(); y <= inside.bottom(); y += 2)
+			for (int x = inside.left(); x <= inside.right(); x += 2) {
+				const QColor c = screen.pixelColor(x, y);
+				dark += 0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF() < 1.0 / 3;
+				++all;
+			}
+		return all ? double(dark) / all : -1;
+	};
+	const double on_tde = dark_share(QString());
+	QVERIFY2(on_tde > 0.6, qPrintable(QStringLiteral("dark on a dark TDE desktop: %1 of the window dark").arg(on_tde)));
+	const double asked_light = dark_share(QStringLiteral("light"));
+	QVERIFY2(asked_light >= 0 && asked_light < 0.4, qPrintable(QStringLiteral("light when asked: %1 of the window dark").arg(asked_light)));
 }
 
 void handover_test::tiles_go_onto_decks_and_back_out_in_step() {

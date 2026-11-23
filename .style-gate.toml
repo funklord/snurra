@@ -8,7 +8,9 @@ indent_width = 4
 # A small tree; the floor guards against a filter collapsing the gated set.
 floor = 0.3
 
-exclude = ["build", "__pycache__", ".claude"]
+# vendor/: copies of the workspace's shared pieces, kept as their own
+# trees have them (code-style.md, vendored sources).
+exclude = ["build", "__pycache__", ".claude", "vendor"]
 
 # ASCII outside string literals (code-style.md).
 ascii_only = true

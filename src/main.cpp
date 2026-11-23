@@ -38,7 +38,7 @@
 #include "snurra/midi.h"
 #include "snurra/node.h"
 #include "snurra/source.h"
-#include "snurra/theme.h"
+#include "qtkit/theme.h"
 #include "snurra/tile.h"
 #include "snurra/wire.h"
 
@@ -196,9 +196,10 @@ qint64 parse_time_us(const QString &text) {
  */
 int main(int argc, char *argv[]) {
 	QApplication app(argc, argv);
-	/* Dark where the desktop is (project.md sec 3b), in snurra's own
-	 * colours; a host embedding the library keeps its own palette. */
-	snurra_follow_desktop(app);
+	/* Dark where the desktop is, and following it when it changes
+	 * (project.md sec 3b): qtkit's, as every GUI here; $SNURRA_THEME says
+	 * dark or light over it. A host embedding the library keeps its own. */
+	qtkit_follow_desktop(app, "SNURRA_THEME");
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
 	/* Its own icon, the record make install puts in the icon theme, on
 	 * every window; the generic player's where it is not installed. And
