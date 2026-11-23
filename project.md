@@ -337,13 +337,15 @@ and everything above it knows nothing of SFTP or fuzznet.
   with `qtkit_follow_desktop(app, "SNURRA_THEME")` -- the portal where Qt
   DBus is linked, `kdeglobals` and `lxqt.conf` session first, abstaining
   on identical colours, and following a change, none of which snurra's
-  own copy did. **A submodule at `vendor/qtkit`** (since 2026-11-23,
-  when qtkit went public on GitHub; until then a byte-for-byte copy of
-  the same commit, ed18c25, at the same path), fetched by the Makefile
+  own copy did. **A submodule at `qtkit/`**, at the tree's root as
+  every vendored sibling is (harmonization.md, the holder 2026-11-23;
+  first at `vendor/qtkit`, as qtkit's instructions then said, and before
+  qtkit went public a byte-for-byte copy there), pinned at e6325af --
+  the same `qtkit.pri`, `include/` and `src/` as ed18c25 -- fetched by the Makefile
   as fuzznet is -- when absent, the pinned commit only, a build that
   cannot fetch it stopping with the reason -- included by `snurra.pro`
   after `snurra.pri` (which links Qt DBus) and named in the Makefile's
-  `check-mk` build; the style gate leaves `vendor/` to its own tree.
+  `check-mk` build; the style gate leaves the submodule to its own tree.
   Moving the pin is this tree's act, as for fuzznet. snurra's own detection and dark palette
   are gone from the library (no host called them); what stays is
   `snurra_mute`, in `palette.cpp` -- `theme.cpp` beside qtkit's was one
@@ -720,7 +722,7 @@ does the same with a tile's playback:
   the same way.
 - **Dark where the desktop is** (the holder, 2026-11-13: the players
   are light on a dark TDE desktop that has no light/dark status;
-  now qtkit's `qtkit_follow_desktop`, `vendor/qtkit/`). Asked in this order, the
+  now qtkit's `qtkit_follow_desktop`, `qtkit/`). Asked in this order, the
   first that answers: `$SNURRA_THEME`; Qt's own colour scheme; the file
   a desktop with no status writes -- TDE's and KDE 3's `kdeglobals`
   ([General] windowBackground against windowForeground, `0,42,78` and

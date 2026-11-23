@@ -314,8 +314,8 @@ restate the precedence rule.
 
 
 
-Exempt paths: `build/` and anything generated into it, and `vendor/`
-(qtkit, a submodule, kept as its tree has it). No formatter is run;
+Exempt paths: `build/` and anything generated into it; the submodules
+(`fuzznet/`, `qtkit/`) are their own trees'. No formatter is run;
 
 the gate (`make style`) checks whitespace and indentation, and holds
 

@@ -49,13 +49,13 @@ $(FUZZNET_PROBE):
 	@test -f $@ || { echo "snurra: fuzznet could not be fetched" >&2; exit 1; }
 
 # qtkit, the workspace's shared Qt pieces (the theme), a submodule at
-# vendor/qtkit: fetched the same way, the pinned commit only.
-QTKIT_PROBE = vendor/qtkit/qtkit.pri
+# qtkit/: fetched the same way, the pinned commit only.
+QTKIT_PROBE = qtkit/qtkit.pri
 $(QTKIT_PROBE):
-	@command -v git >/dev/null 2>&1 || { echo "snurra: vendor/qtkit is empty, and git is not installed to fetch it" >&2; exit 1; }
-	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: vendor/qtkit is empty, and this is not a git checkout: put qtkit at the commit snurra's gitlink names there" >&2; exit 1; }
+	@command -v git >/dev/null 2>&1 || { echo "snurra: qtkit/ is empty, and git is not installed to fetch it" >&2; exit 1; }
+	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: qtkit/ is empty, and this is not a git checkout: put qtkit at the commit snurra's gitlink names there" >&2; exit 1; }
 	@echo "snurra: fetching qtkit, the pinned commit only"
-	git submodule update --init --depth 1 vendor/qtkit
+	git submodule update --init --depth 1 qtkit
 	@test -f $@ || { echo "snurra: qtkit could not be fetched" >&2; exit 1; }
 
 $(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE) $(QTKIT_PROBE)
@@ -301,22 +301,22 @@ $(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
 	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -Ifuzznet -c $< -o $@
 -include $(MK_FZN_OBJS:.o=.d)
 
-# And qtkit, the submodule at vendor/qtkit, as its qtkit.pri names it:
+# And qtkit, the submodule at qtkit/, as its qtkit.pri names it:
 # its sources and the three headers moc reads, with the portal (Qt DBus is
 # in SNURRA_PKGS).
-MK_QTKIT_SRCS := vendor/qtkit/src/theme.cpp vendor/qtkit/src/flow_layout.cpp
-MK_QTKIT_HDRS := vendor/qtkit/include/qtkit/theme.h vendor/qtkit/include/qtkit/flow_layout.h vendor/qtkit/src/portal_listener.h
+MK_QTKIT_SRCS := qtkit/src/theme.cpp qtkit/src/flow_layout.cpp
+MK_QTKIT_HDRS := qtkit/include/qtkit/theme.h qtkit/include/qtkit/flow_layout.h qtkit/src/portal_listener.h
 MK_QTKIT_MOCS := $(patsubst %.h,$(MK_BUILD_DIR)/qtkit/moc_%.cpp,$(notdir $(MK_QTKIT_HDRS)))
 $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS): | $(QTKIT_PROBE)
-$(MK_BUILD_DIR)/qtkit/moc_%.cpp: vendor/qtkit/include/qtkit/%.h
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: qtkit/include/qtkit/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
-$(MK_BUILD_DIR)/qtkit/moc_%.cpp: vendor/qtkit/src/%.h
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: qtkit/src/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
 
 $(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS) $(MK_QTKIT_MOCS) VERSION
-	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -Ivendor/qtkit/include -Ivendor/qtkit/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
+	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -Iqtkit/include -Iqtkit/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build fuzznetd
 	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
