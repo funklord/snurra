@@ -82,7 +82,8 @@ and everything above it knows nothing of SFTP or fuzznet.
   its own, the fold cover, Android's FFmpeg), moving a joined window, the
   cross-process drop's entry point, a deck's
   hand gain (Mixxx's pregain, sec 3f), what the phone's deck view cuts
-  (sec 3f step 3), and qtkit's remote (sec 3).
+  (sec 3f step 3). qtkit's remote came 2026-11-23: it is the submodule
+  at `qtkit/` (sec 3).
 
 ## 2. Decided
 
