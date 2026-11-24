@@ -126,6 +126,7 @@ private slots:
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
 	void no_control_shows_twice_on_the_decks();
+	void a_deck_has_its_tempo_fader_at_its_edge();
 	void a_tempo_change_keeps_the_pitch_by_default();
 	void the_knob_and_the_fader_move_by_the_hand_not_the_press();
 	void a_listener_plugs_into_a_windows_tile();
@@ -2168,6 +2169,40 @@ void embed_test::a_tempo_change_keeps_the_pitch_by_default() {
 }
 
 /*
+ * The deck's tempo (project.md sec 3f, step 2b): a long fader at the
+ * deck's edge, as Traktor's and a turntable's, slower at the top. Beside
+ * the mixer it shows and the panel's tempo does not; pushed up 8 % the
+ * deck slows to 0.92, toward the hand it speeds up; a tempo set on the
+ * tile shows on it; at a phone's width it hides and the panel's returns.
+ */
+void embed_test::a_deck_has_its_tempo_fader_at_its_edge() {
+	snurra_dj dj;
+	dj.resize(1400, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	snurra_tile *tile = place->findChild<snurra_tile *>();
+	QSlider *fader = place->findChild<QSlider *>(QStringLiteral("snurra-deck-tempo"));
+	QSlider *panels = tile->findChild<QSlider *>(QStringLiteral("snurra-tempo"));
+	QVERIFY(fader && panels);
+	QTRY_VERIFY_WITH_TIMEOUT(fader->isEnabled(), 2000);
+	QVERIFY(fader->isVisibleTo(&dj));
+	QVERIFY(!panels->isVisibleTo(&dj));
+	fader->setValue(80);
+	QCOMPARE(tile->tempo(), 0.92f);
+	fader->setValue(-30);
+	QCOMPARE(tile->tempo(), 1.03f);
+	tile->set_tempo(1.05f);
+	QTRY_COMPARE_WITH_TIMEOUT(fader->value(), -50, 1000);
+	dj.resize(412, 915);
+	QTRY_VERIFY_WITH_TIMEOUT(!fader->isVisibleTo(&dj), 2000);
+	QVERIFY(panels->isVisibleTo(&dj));
+}
+
+/*
  * No control twice on the decks (the holder, 2026-11-25: "there are quite
  * a few duplicated controls, and if we want that expanded EQ on each
  * channel we should open it manually using an EQ? button"): beside the
@@ -2195,7 +2230,9 @@ void embed_test::no_control_shows_twice_on_the_decks() {
 	QTRY_VERIFY_WITH_TIMEOUT(tile->on_mixer(), 2000);
 	QVERIFY(!shown(QStringLiteral("Level")));
 	QVERIFY(!shown(QStringLiteral("snurra-eq")));
-	QVERIFY(shown(QStringLiteral("snurra-tempo")));
+	/* The tempo is the deck's own fader beside the mixer (step 2b). */
+	QVERIFY(!shown(QStringLiteral("snurra-tempo")));
+	QVERIFY(place->findChild<QWidget *>(QStringLiteral("snurra-deck-tempo"))->isVisibleTo(&dj));
 	snurra_mixer *mixer = dj.findChild<snurra_mixer *>(QStringLiteral("snurra-mixer"));
 	QToolButton *eq = mixer->strip_of(0).eq;
 	QTRY_VERIFY_WITH_TIMEOUT(eq->isEnabled(), 2000);

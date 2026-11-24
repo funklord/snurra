@@ -198,8 +198,44 @@ public:
 		setFrameShape(QFrame::StyledPanel);
 		setAcceptDrops(true);
 		setMinimumHeight(fontMetrics().height() * 8);
-		column = new QVBoxLayout(this);
-		column->setContentsMargins(2, 2, 2, 2);
+		/* The deck's tempo, a long fader at its edge, as Traktor's and a
+		 * turntable's (sec 3f, step 2b): slower at the top, faster toward
+		 * the hand, as Technics' and CDJs' run; +-16 %, the middle 0 and
+		 * caught within half a per cent, a double-click back to it. Beside
+		 * the mixer it is the deck's tempo, the panel's not shown. */
+		QHBoxLayout *row = new QHBoxLayout(this);
+		row->setContentsMargins(2, 2, 2, 2);
+		column = new QVBoxLayout;
+		column->setContentsMargins(0, 0, 0, 0);
+		row->addLayout(column, 1);
+		tempo = new snurra_fader(Qt::Vertical, this);
+		tempo->setObjectName(QStringLiteral("snurra-deck-tempo"));
+		tempo->setAccessibleName(QObject::tr("Deck %1 tempo").arg(name));
+		tempo->setToolTip(QObject::tr("Tempo: up slower, down faster; a double-click puts it back"));
+		tempo->setRange(-160, 160);
+		tempo->set_home(0);
+		tempo->setEnabled(false);
+		/* No width owed where there is no room: it hides with the mixer
+		 * (a phone upright), so it asks nothing of the narrowest view. */
+		tempo->setMinimumWidth(1);
+		row->addWidget(tempo);
+		QObject::connect(tempo, &QSlider::valueChanged, this, [this](int step) {
+			if (!tile) return;
+			if (tempo->isSliderDown() && std::abs(step) <= 5) step = 0;
+			tile->set_tempo(1.0f - float(step) / 1000);
+		});
+		QTimer *follow = new QTimer(this);
+		follow->setInterval(100);
+		QObject::connect(follow, &QTimer::timeout, this, [this] {
+			tempo->setEnabled(tile != nullptr);
+			if (!tile || tempo->isSliderDown()) return;
+			const int step = int(std::lround((1.0f - tile->tempo()) * 1000));
+			if (step == tempo->value()) return;
+			tempo->blockSignals(true);
+			tempo->setValue(step);
+			tempo->blockSignals(false);
+		});
+		follow->start();
 		/* Its head, as Traktor's (sec 3f step 2): what plays, its tempo,
 		 * key and time left, play, cue and sync. */
 		head = new snurra_deck_head(name.isEmpty() ? 0 : name.at(0).toLatin1() - 'A', this);
@@ -255,6 +291,7 @@ public:
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
 	snurra_deck_head *head;
+	snurra_fader *tempo;
 	QToolButton *side;
 	QToolButton *listen;
 	QMenu *listen_menu = nullptr;   /* a player's tracks, while it holds one */
@@ -1670,8 +1707,10 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	 * none of what the head and the strip hold; without room for the
 	 * mixer, it shows them again. */
 	d->mixer->on_shown = [this](bool shown) {
-		for (dj_deck *deck : d->decks)
+		for (dj_deck *deck : d->decks) {
 			if (deck->tile) deck->tile->set_on_mixer(shown);
+			deck->tempo->setVisible(shown);
+		}
 	};
 	set_deck_count(2);
 	QHBoxLayout *fader = new QHBoxLayout;
@@ -1803,6 +1842,7 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->tile = tile;
 	place->head->set_tile(tile);
 	tile->set_on_mixer(mixer && !mixer->isHidden());
+	place->tempo->setVisible(mixer && !mixer->isHidden());
 	place->name = name;
 	place->empty->hide();
 	/* One player or its decks (sec 3f, 2026-11-24): a player on a deck

@@ -2452,7 +2452,8 @@ int64_t snurra_tile::length_frames() const {
 void snurra_tile::set_on_mixer(bool on) {
 	m_on_mixer = on;
 	for (QWidget *twice : { static_cast<QWidget *>(m_play), static_cast<QWidget *>(m_cue), static_cast<QWidget *>(m_sync),
-	                        static_cast<QWidget *>(m_level), m_speaker, static_cast<QWidget *>(m_beat_label) })
+	                        static_cast<QWidget *>(m_level), m_speaker, static_cast<QWidget *>(m_beat_label),
+	                        static_cast<QWidget *>(m_tempo), static_cast<QWidget *>(m_tempo_label) })
 		if (twice) twice->setVisible(!on);
 	show_eq();
 }

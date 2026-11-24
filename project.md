@@ -1585,7 +1585,25 @@ width -- the mixer tells the decks and the tiles show their own again.
 Left, for the holder to see: the tile's own title row, with its close
 button, still names the track the head names. Tested in
 `no_control_shows_twice_on_the_decks` (with mixer mode not set when a
-tile is installed, it fails).
+tile is installed, it fails). **Step 2b built 2026-11-25: a tempo fader at
+each deck's edge**, long and vertical, as Traktor's and a turntable's:
++-16 % in tenths, the middle caught within half a per cent while held,
+a double-click back to it -- **slower at the top, faster toward the
+hand, as Technics' and CDJs' run (an assumption: the holder's hands may
+expect the other way)**. Beside the mixer it is the deck's tempo and the
+panel's compact one is not shown; at a phone's width it hides with the
+mixer, asking nothing of the narrowest view, and the panel's returns.
+Read back from the tile ten times a second. Tested in
+`a_deck_has_its_tempo_fader_at_its_edge` (up 8 %, 0.92; down 3 %,
+1.03; the tile's 1.05 shown; with the direction flipped, it fails). **Open, asked
+2026-11-25: the drawn EQ as the master's (3b).** Decided 2026-11-24 that
+the player's drawn EQ is its master EQ; the master section since has its
+own three EQ knobs on all that goes out. Moving the drawn line there too
+changes what a window's EQ does today -- the track's, under its panel --
+into the whole output's, and a window would then have no EQ of a track
+of its own. Built either way the rest of the master stands; the
+holder's word after trying the master section decides whether the line
+moves.
 
 **The holder's answers, 2026-11-25:** "1. where the master section goes
 is irrelevant at this point, just make it contain the controls we need,
