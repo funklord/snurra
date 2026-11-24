@@ -107,6 +107,23 @@ and everything above it knows nothing of SFTP or fuzznet.
 
 ## 3. Open -- the holder's, or to settle with the first code
 
+- **Desktop entry, icons and their id -- open, to do** (claude-guidelines'
+  inbox messages 20261124T2059Z, T2111Z and T2112Z; rules in its
+  `desktop-entry` and `qt-desktop-integration` skills, 1f1404d, 2823b74,
+  28443ad). Three things measured there for this tree: **(1)** the icon is
+  SVG only (hicolor/scalable); TDE prefers PNGs, so add 16, 22, 32, 48, 64
+  and 128; `snurra.desktop` and `snurra.svg` sit at the root, where the
+  checklist's place is `packaging/`. **(2)** `src/main.cpp`'s window icon
+  falls back to `QIcon::fromTheme("multimedia-audio-player")`, null under
+  hicolor and crystalsvg alike on the holder's TDE, so an uninstalled
+  snurra has no window icon: fall back to `snurra.svg` compiled in instead,
+  and take the icon-theme step from qtkit when it lands there. **(3)** the
+  entry's id is `snurra`; settled since as reverse-DNS, `se.vibes.<name>`,
+  naming the .desktop file, the icon files, `Icon=` and
+  `setDesktopFileName`, the binary and `StartupWMClass` keeping `snurra`;
+  uninstall removes the old name too, and the commit says the rename
+  happened. Recorded at the weekly fold (96 %), 2026-11-25; not yet done.
+
 - ~~The decoding and output backend.~~ **Settled 2026-11-12 by building
   it:** FFmpeg's libraries decode into snurra's own engine (sec 3a, 4),
   since `QMediaPlayer` cannot be a deck in a mixer and libmpv is not
