@@ -4,6 +4,9 @@
 #include "snurra/deck_waves.h"
 #include "snurra/eq.h"
 #include "snurra/tile.h"
+#include "snurra/engine.h"
+
+#include <QProgressBar>
 
 #include <QDial>
 #include <QHBoxLayout>
@@ -141,6 +144,89 @@ void snurra_mixer::set_deck_count(int count) {
 	refresh();
 }
 
+void snurra_mixer::set_master(snurra_engine *engine) {
+	m_engine = engine;
+	if (m_master.box) return;
+	m_master.box = new QWidget(this);
+	m_master.box->setObjectName(QStringLiteral("snurra-master"));
+	m_master.box->setAccessibleName(tr("Master"));
+	QVBoxLayout *column = new QVBoxLayout(m_master.box);
+	column->setContentsMargins(6, 0, 0, 0);
+	column->setSpacing(0);
+	QLabel *name = new QLabel(tr("MASTER"), m_master.box);
+	QFont bold = name->font();
+	bold.setBold(true);
+	name->setFont(bold);
+	name->setAlignment(Qt::AlignHCenter);
+	column->addWidget(name);
+	const int size = fontMetrics().height() * 2;
+	auto dial = [&](const QString &label, const QString &accessible, int from, int to, int home) {
+		QLabel *text = new QLabel(label, m_master.box);
+		QFont small = text->font();
+		small.setPointSizeF(small.pointSizeF() * 0.8);
+		text->setFont(small);
+		text->setAlignment(Qt::AlignHCenter);
+		column->addWidget(text);
+		snurra_knob *knob = new snurra_knob(m_master.box);
+		knob->setRange(from, to);
+		knob->set_home(home);
+		knob->setValue(home);
+		knob->setFixedSize(size, size);
+		knob->setNotchesVisible(true);
+		knob->setAccessibleName(tr("Master %1").arg(accessible));
+		column->addWidget(knob, 0, Qt::AlignHCenter);
+		return knob;
+	};
+	m_master.level = dial(tr("LEVEL"), tr("level"), 0, 100, 100);
+	m_master.high = dial(tr("HI"), tr("high"), KILL_STEP, 100, 0);
+	m_master.mid = dial(tr("MID"), tr("mid"), KILL_STEP, 100, 0);
+	m_master.low = dial(tr("LOW"), tr("low"), KILL_STEP, 100, 0);
+	m_master.limit = new QToolButton(m_master.box);
+	m_master.limit->setText(tr("LIMIT"));
+	m_master.limit->setCheckable(true);
+	m_master.limit->setChecked(true);
+	m_master.limit->setAccessibleName(tr("Master limiter"));
+	m_master.limit->setToolTip(tr("The limiter: what would go over full scale is held under it"));
+	column->addWidget(m_master.limit, 0, Qt::AlignHCenter);
+	/* What goes out, its peak in dB from -48 to 0. */
+	m_master.meter = new QProgressBar(m_master.box);
+	m_master.meter->setOrientation(Qt::Vertical);
+	m_master.meter->setRange(-48, 0);
+	m_master.meter->setValue(-48);
+	m_master.meter->setTextVisible(false);
+	m_master.meter->setAccessibleName(tr("Master peak"));
+	m_master.meter->setFixedWidth(fontMetrics().height() / 2 + 2);
+	column->addWidget(m_master.meter, 1, Qt::AlignHCenter);
+	m_master.reduction = new QLabel(m_master.box);
+	m_master.reduction->setAccessibleName(tr("Limiter's reduction"));
+	m_master.reduction->setAlignment(Qt::AlignHCenter);
+	column->addWidget(m_master.reduction);
+	connect(m_master.level, &QDial::valueChanged, this, [this](int level) {
+		if (m_engine) m_engine->set_master_level(float(level) / 100);
+	});
+	auto eq = [this](int part, QDial *knob) {
+		connect(knob, &QDial::valueChanged, this, [this, part](int step) {
+			if (m_engine) m_engine->set_master_eq(part, db_of(step));
+		});
+	};
+	eq(0, m_master.low);
+	eq(1, m_master.mid);
+	eq(2, m_master.high);
+	connect(m_master.limit, &QToolButton::toggled, this, [this](bool on) {
+		if (m_engine) m_engine->set_limiter(on);
+	});
+	m_row->addWidget(m_master.box);
+	m_master.box->hide();
+}
+
+void snurra_mixer::set_master_open(bool open) {
+	if (m_master.box) m_master.box->setVisible(open);
+}
+
+bool snurra_mixer::master_open() const {
+	return m_master.box && !m_master.box->isHidden();
+}
+
 void snurra_mixer::set_order(const std::vector<int> &decks) {
 	int at = 0;
 	for (int deck : decks)
@@ -152,6 +238,25 @@ int snurra_mixer::place_of(int deck) const {
 }
 
 void snurra_mixer::refresh() {
+	if (m_engine && master_open()) {
+		auto show = [](QAbstractSlider *control, int value) {
+			if (control->isSliderDown() || control->value() == value) return;
+			control->blockSignals(true);
+			control->setValue(value);
+			control->blockSignals(false);
+		};
+		show(m_master.level, int(std::lround(m_engine->master_level() * 100)));
+		show(m_master.low, step_of(m_engine->master_eq(0)));
+		show(m_master.mid, step_of(m_engine->master_eq(1)));
+		show(m_master.high, step_of(m_engine->master_eq(2)));
+		m_master.limit->blockSignals(true);
+		m_master.limit->setChecked(m_engine->limiter());
+		m_master.limit->blockSignals(false);
+		const float peak = m_engine->take_master_peak();
+		m_master.meter->setValue(peak > 0 ? std::clamp(int(std::lround(20 * std::log10(peak))), -48, 0) : -48);
+		const float taken = m_engine->take_master_reduction();
+		m_master.reduction->setText(taken < 0.999f ? QStringLiteral("%1").arg(20 * std::log10(taken), 0, 'f', 1) : QString());
+	}
 	for (size_t deck = 0; deck < m_strips.size(); ++deck) {
 		const strip &one = m_strips[deck];
 		snurra_tile *tile = tile_of ? tile_of(int(deck)) : nullptr;

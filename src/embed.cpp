@@ -1712,6 +1712,23 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	player->setAutoRaise(true);
 	connect(player, &QToolButton::clicked, this, [this] { show_player(); });
 	fader->insertWidget(0, player);
+	/* The master section, opened and closed by hand (the holder,
+	 * 2026-11-25: "just make it contain the controls we need, and make it
+	 * open/close"). Its engine made when first opened, if no deck has
+	 * made it yet -- making it opens the output. */
+	QToolButton *master = new QToolButton(this);
+	master->setObjectName(QStringLiteral("snurra-master-toggle"));
+	master->setText(tr("MASTER"));
+	master->setCheckable(true);
+	master->setAutoRaise(true);
+	master->setAccessibleName(tr("The master section"));
+	master->setToolTip(tr("The master: level, EQ and limiter of all that is sent out, with a meter"));
+	connect(master, &QToolButton::toggled, this, [this](bool open) {
+		if (!d->engine) d->engine = shared_engine();
+		d->mixer->set_master(d->engine.get());
+		d->mixer->set_master_open(open);
+	});
+	fader->insertWidget(1, master);
 	column->addLayout(fader);
 	d->browser = new snurra_library(QString(), this);
 	d->browser->setWindowFlags(Qt::Widget);

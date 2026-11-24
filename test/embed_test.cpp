@@ -118,6 +118,8 @@ private slots:
 	void the_decks_waveforms_scroll_stacked_above_them();
 	void the_waveforms_layout_is_kept_as_chosen();
 	void a_deck_is_scratched_on_its_waveform();
+	void the_master_shapes_all_that_goes_out();
+	void the_master_section_opens_and_closes();
 	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
 	void the_players_waveform_is_fine_and_cheap_maximized();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
@@ -2386,6 +2388,114 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 		qInfo("waveforms, 4 decks at 1900 x 400, %g s across: %.2f ms a frame", span, each);
 		QVERIFY2(each < 16, qPrintable(QStringLiteral("%1 ms a frame at %2 s").arg(each).arg(span)));
 	}
+}
+
+/*
+ * The master section on the decks (2026-11-25: "make it open/close"):
+ * closed at first, opened by MASTER at the right of the strips, closed
+ * again; a level turned on it reaches the engine, read back when the
+ * section is opened again.
+ */
+void embed_test::the_master_section_opens_and_closes() {
+	snurra_dj dj;
+	dj.resize(1400, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_mixer *mixer = dj.findChild<snurra_mixer *>(QStringLiteral("snurra-mixer"));
+	QToolButton *toggle = dj.findChild<QToolButton *>(QStringLiteral("snurra-master-toggle"));
+	QVERIFY(mixer && toggle && toggle->isVisible());
+	QVERIFY(!mixer->master_open());
+	toggle->click();
+	QVERIFY(mixer->master_open());
+	QVERIFY(mixer->master().box->isVisible());
+	mixer->master().level->setValue(50);
+	toggle->click();
+	QVERIFY(!mixer->master_open());
+	mixer->master().level->blockSignals(true);
+	mixer->master().level->setValue(100);   /* as if shown stale: what is read back is the engine's */
+	mixer->master().level->blockSignals(false);
+	toggle->click();
+	QTRY_COMPARE_WITH_TIMEOUT(mixer->master().level->value(), 50, 1000);
+	mixer->master().level->setValue(100);
+	toggle->click();
+}
+
+/*
+ * The master section (project.md sec 3f, e; the holder, 2026-11-25: "make
+ * it contain the controls we need"): what every deck's sum goes through.
+ * A 440 Hz tone, captured: untouched, flat and at full with the limiter
+ * on, it goes out as it is; at half the master level, half; a deck pushed
+ * eight times over full scale is held at full by the limiter, and is not
+ * without it; the mid part killed, the tone is gone; the meter says its
+ * peak.
+ */
+void embed_test::the_master_shapes_all_that_goes_out() {
+	QTemporaryDir captures;
+	snurra_engine engine(QStringLiteral("capture:") + captures.path(), nullptr);
+	snurra_deck::start_t start;
+	start.source = QStringLiteral("tone:440");
+	start.rate = engine.rate();
+	start.fallback_length = int64_t(engine.rate()) * 60;
+	start.playing = true;
+	snurra_deck *deck = engine.add(start);
+	QVERIFY(deck);
+	const QString capture = QDir(captures.path()).filePath(QStringLiteral("%1.capture").arg(QCoreApplication::applicationPid()));
+	auto heard = [&capture](double &rms, double &peak) {
+		QFile file(capture);
+		if (!file.open(QIODevice::ReadOnly)) return false;
+		const QByteArray all = file.readAll();
+		std::vector<float> left;
+		for (qsizetype at = 0; at + 12 <= all.size();) {
+			int32_t frames = 0;
+			std::memcpy(&frames, all.constData() + at + 8, 4);
+			const qsizetype size = 12 + qsizetype(frames) * 8;
+			if (at + size > all.size()) break;
+			const float *samples = reinterpret_cast<const float *>(all.constData() + at + 12);
+			for (int i = 0; i < frames; ++i) left.push_back(samples[2 * i]);
+			at += size;
+		}
+		const size_t span = 12000;
+		if (left.size() < span) return false;
+		double sum = 0;
+		peak = 0;
+		for (size_t i = left.size() - span; i < left.size(); ++i) {
+			sum += double(left[i]) * left[i];
+			peak = std::max(peak, std::abs(double(left[i])));
+		}
+		rms = std::sqrt(sum / double(span));
+		return true;
+	};
+	double rms = 0, peak = 0;
+	QTest::qWait(600);
+	QVERIFY(heard(rms, peak));
+	const double plain = rms;
+	QVERIFY2(qAbs(plain - 0.1414) < 0.01, qPrintable(QString::number(plain)));
+	engine.set_master_level(0.5f);
+	QTest::qWait(500);
+	QVERIFY(heard(rms, peak));
+	QVERIFY2(qAbs(rms - plain / 2) < 0.01, qPrintable(QStringLiteral("at half: %1 of %2").arg(rms).arg(plain)));
+	engine.set_master_level(1.0f);
+	deck->set_level(8.0f);
+	QTest::qWait(500);
+	QVERIFY(heard(rms, peak));
+	QVERIFY2(peak <= 1.0001, qPrintable(QStringLiteral("limited, a peak of %1").arg(peak)));
+	QVERIFY(engine.take_master_reduction() < 0.7f);
+	engine.set_limiter(false);
+	QTest::qWait(500);
+	QVERIFY(heard(rms, peak));
+	QVERIFY2(peak > 1.4, qPrintable(QStringLiteral("unlimited, a peak of %1").arg(peak)));
+	engine.set_limiter(true);
+	deck->set_level(1.0f);
+	engine.set_master_eq(1, SNURRA_EQ_KILL);
+	QTest::qWait(500);
+	QVERIFY(heard(rms, peak));
+	QVERIFY2(rms < 0.01, qPrintable(QStringLiteral("the mid killed, still %1").arg(rms)));
+	engine.set_master_eq(1, 0);
+	engine.take_master_peak();
+	QTest::qWait(300);
+	const float said = engine.take_master_peak();
+	QVERIFY2(qAbs(said - 0.2f) < 0.02f, qPrintable(QString::number(said)));
+	engine.retire(deck);
 }
 
 /*

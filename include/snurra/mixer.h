@@ -10,6 +10,9 @@ class QDial;
 class QSlider;
 class QToolButton;
 class snurra_tile;
+class snurra_engine;
+class QLabel;
+class QProgressBar;
 
 /*
  * The decks' mixer, between them as Traktor's (project.md sec 3f, step 3,
@@ -46,6 +49,24 @@ public:
 	 * holds can show on the decks instead. */
 	std::function<void(bool shown)> on_shown;
 
+	/* The master section (project.md sec 3f, e): the level, the EQ's three
+	 * parts and the limiter of everything sent out, with a meter -- opened
+	 * and closed by hand, at the right end of the strips. */
+	void set_master(snurra_engine *engine);
+	void set_master_open(bool open);
+	bool master_open() const;
+	struct master_strip {
+		QWidget *box = nullptr;
+		QDial *level = nullptr;
+		QDial *high = nullptr;
+		QDial *mid = nullptr;
+		QDial *low = nullptr;
+		QToolButton *limit = nullptr;
+		QProgressBar *meter = nullptr;
+		QLabel *reduction = nullptr;
+	};
+	const master_strip &master() const { return m_master; }
+
 	/* An EQ knob runs -100 to 100, 0 dB at its middle; -100 the kill. */
 	static constexpr int KILL_STEP = -100;
 	/* The strips left to right, by deck: as the decks sit, the left
@@ -74,6 +95,8 @@ private:
 	void refresh();
 
 	std::vector<strip> m_strips;
+	master_strip m_master;
+	snurra_engine *m_engine = nullptr;
 	class QHBoxLayout *m_row;
 };
 

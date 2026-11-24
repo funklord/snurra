@@ -1608,7 +1608,26 @@ to the next instead of in steps. Measured on the way and ruled out: the
 picture scaled to a maximized window on the UI thread costs 2.9 ms a
 frame (640 x 360 to 1920 x 1080, smooth), so it is not the slowness.
 Tested in `the_players_waveform_is_fine_and_cheap_maximized` (kept at
-4096; under 4 ms a frame; at 1024 it fails). So: **(e)** the master section is built where it falls,
+4096; under 4 ms a frame; at 1024 it fails). **(e) built the same day:
+the master section.** In the engine, after every deck's sum
+(`snurra_engine::master`): an EQ of three parts, the decks' own
+isolator, run only when not flat; a level eased over some 10 ms; and a
+limiter, on by default, whose ceiling is full scale -- it takes off at
+once what would go over and gives it back over some 100 ms, and never
+touches a sum that stays under, so an untouched mix goes out exactly as
+it was and no exactness test moved; a peak and the limiter's most taken
+off, for a meter. On the decks, MASTER in the crossfader's row opens and
+closes a master strip at the right of the channel strips: LEVEL, HI, MID
+and LOW knobs (snurra's own), LIMIT, a meter of the peak sent out from
+-48 dB to 0, and the dB the limiter takes off while it does; each read
+back from the engine. The engine is the process's, so it is the
+player's master as much as the decks'; the player's own panel has no
+master strip yet. Tested in `the_master_shapes_all_that_goes_out`
+(untouched exact; half the level, half; eight times over held at full by
+the limiter and not without it; the mid killed, silent; the meter's
+peak; with the stage not run, it fails) and
+`the_master_section_opens_and_closes` (with the level knob not reaching
+the engine, it fails). So: **(e)** the master section is built where it falls,
 with the controls a master needs, and opened and closed like the strip's
 EQ; **(c1)** the waveform maximized wants finer detail and less cost --
 the player's tile waveform, whose overview of 1024 columns is stretched

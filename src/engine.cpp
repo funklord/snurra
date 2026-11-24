@@ -90,7 +90,64 @@ void snurra_engine::retire(snurra_deck *deck, int64_t at_us) {
 void snurra_engine::render(float *out, int frames, int64_t present_us) {
 	for (std::atomic<snurra_deck *> &slot : m_slots)
 		if (snurra_deck *deck = slot.load(std::memory_order_acquire)) deck->render_add(out, frames, present_us);
+	master(out, frames);
 	m_cycles.fetch_add(1, std::memory_order_release);
+}
+
+/*
+ * The master section's sound (the holder, 2026-11-25: "just make it
+ * contain the controls we need"): the sum through an EQ of three parts --
+ * the decks' own isolator -- a level eased over some 10 ms so a turn does
+ * not click, and a limiter. The limiter's ceiling is full scale: it takes
+ * off at once what would go over and gives it back over some 100 ms, and
+ * never touches a sum that stays under, so with it on by default a mix
+ * that does not clip is sent out as it was. Flat and at full, the EQ and
+ * the level are not run at all.
+ */
+void snurra_engine::master(float *out, int frames) {
+	const int rate = m_output ? m_output->rate() : 48000;
+	if (!m_master_made) {
+		m_master_eq.make(rate, snurra_eq::THREE);
+		m_master_made = true;
+	}
+	float db[3];
+	bool flat = true;
+	for (int part = 0; part < 3; ++part) {
+		db[part] = m_master_db[size_t(part)].load(std::memory_order_relaxed);
+		flat = flat && db[part] == 0;
+	}
+	if (!flat) {
+		for (int band = 0; band < 3; ++band) m_master_gain[band] = db[band] <= SNURRA_EQ_KILL / 2 ? 0.0f : std::pow(10.0f, db[band] / 20);
+		for (int i = 0; i < frames; ++i) {
+			out[2 * i] = m_master_eq.run(out[2 * i], 0, m_master_gain);
+			out[2 * i + 1] = m_master_eq.run(out[2 * i + 1], 1, m_master_gain);
+		}
+	}
+	const float level = m_master_level.load(std::memory_order_relaxed);
+	if (level != 1.0f || m_master_now != 1.0f) {
+		const float most = 1.0f / (0.01f * float(rate));
+		for (int i = 0; i < frames; ++i) {
+			m_master_now += std::clamp(level - m_master_now, -most, most);
+			out[2 * i] *= m_master_now;
+			out[2 * i + 1] *= m_master_now;
+		}
+	}
+	const bool limiting = m_limiter.load(std::memory_order_relaxed);
+	const float release = 1.0f / (0.1f * float(rate));
+	float peak = 0, least = 1;
+	for (int i = 0; i < frames; ++i) {
+		const float loudest = std::max(std::abs(out[2 * i]), std::abs(out[2 * i + 1]));
+		if (limiting) {
+			m_limit_gain = std::min(1.0f, m_limit_gain + release);
+			if (loudest * m_limit_gain > 1.0f) m_limit_gain = 1.0f / loudest;
+			out[2 * i] *= m_limit_gain;
+			out[2 * i + 1] *= m_limit_gain;
+			least = std::min(least, m_limit_gain);
+		}
+		peak = std::max(peak, loudest * (limiting ? m_limit_gain : 1.0f));
+	}
+	if (peak > m_master_peak.load(std::memory_order_relaxed)) m_master_peak.store(peak, std::memory_order_relaxed);
+	if (least < m_master_reduction.load(std::memory_order_relaxed)) m_master_reduction.store(least, std::memory_order_relaxed);
 }
 
 void snurra_engine::sweep() {
