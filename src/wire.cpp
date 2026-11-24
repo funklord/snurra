@@ -38,8 +38,9 @@ QList<message> decode(QByteArray &buffer) {
 		message m;
 		quint8 type = 0;
 		quint8 side = 0;
-		in >> type >> m.token >> side >> m.states >> m.frame >> m.path >> m.index >> m.time >> m.fade >> m.started
-		   >> m.stopped >> m.deck;
+		in >> type >> m.token >> side;
+		snurra_read_list(in, m.states);
+		in >> m.frame >> m.path >> m.index >> m.time >> m.fade >> m.started >> m.stopped >> m.deck;
 		m.type = type_t(type);
 		m.side = side_t(side);
 		buffer.remove(0, 4 + size);

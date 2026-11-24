@@ -2,6 +2,7 @@
 #define SNURRA_TILE_STATE_H
 
 #include <QDataStream>
+#include <QIODevice>
 #include <QList>
 #include <QPair>
 #include <QString>
@@ -120,6 +121,36 @@ inline QDataStream &operator<<(QDataStream &out, const snurra_tile_state &state)
 	return out;
 }
 
+/*
+ * A list read with its count checked first. Qt's own reader reserves the
+ * count a stream gives before it reads an element, so bytes that are not
+ * a list -- a stranger on a socket, a frame cut short -- asked for 140 GB
+ * (found by fuzzing the wire, 2026-11-24): refused by the machine and
+ * passed over by Qt in a plain build, but an out-of-memory under ASan,
+ * where it stopped the fuzzer from going further. No list
+ * here holds more elements than its stream has bytes left, so a count past
+ * that marks the stream corrupt instead. Written by Qt's own writer: a
+ * 32-bit count, then the elements.
+ */
+template <typename T>
+inline QDataStream &snurra_read_list(QDataStream &in, QList<T> &list) {
+	list.clear();
+	quint32 count = 0;
+	in >> count;
+	if (in.status() != QDataStream::Ok) return in;
+	const qint64 left = in.device() ? in.device()->bytesAvailable() : 0;
+	if (qint64(count) > left) {
+		in.setStatus(QDataStream::ReadCorruptData);
+		return in;
+	}
+	for (quint32 i = 0; i < count && in.status() == QDataStream::Ok; ++i) {
+		T one;
+		in >> one;
+		if (in.status() == QDataStream::Ok) list.append(std::move(one));
+	}
+	return in;
+}
+
 inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 level = 0;
 	qint32 row = 0;
@@ -127,11 +158,14 @@ inline QDataStream &operator>>(QDataStream &in, snurra_tile_state &state) {
 	qint32 audio_track = -1;
 	qint32 key_shift = 0;
 	in >> state.source >> state.duration_us >> state.position_us >> state.sampled_at_us >> state.playing >> level
-	   >> row >> column >> state.controls >> state.envelope >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq.splits;
+	   >> row >> column >> state.controls;
+	snurra_read_list(in, state.envelope);
+	in >> state.offset_us >> state.tempo >> state.key_lock >> audio_track >> state.lane_start_us >> state.cue_us >> state.eq.splits;
 	for (float &db : state.eq.db) in >> db;
 	for (float &db : state.eq.part) in >> db;
 	state.eq.splits = quint16((state.eq.splits | snurra_eq::THREE) & snurra_eq::TWELVE);
-	in >> key_shift >> state.overlap_us >> state.sound >> state.chapters;
+	in >> key_shift >> state.overlap_us >> state.sound;
+	snurra_read_list(in, state.chapters);
 	quint32 inner = 0;
 	in >> inner;
 	/* No more than a stream can hold: a count read from bytes that are not

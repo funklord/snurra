@@ -18,6 +18,7 @@
 #include "snurra/embed.h"
 #include "snurra/node.h"
 #include "snurra/subtitles.h"
+#include "snurra/wire.h"
 #include "snurra/tile.h"
 #include "snurra/video.h"
 #include "test_bytes.h"
@@ -54,6 +55,8 @@ class subtitles_test : public QObject {
 private slots:
 	void initTestCase();
 	void a_srt_reads_as_people_write_them();
+	void a_srt_time_past_any_film_is_dropped();
+	void a_wire_frame_counting_past_its_bytes_is_refused();
 	void a_srt_not_in_utf8_is_windows_1252();
 	void a_srt_keeps_italic_and_bold_and_drops_other_tags();
 	void ass_text_is_its_words_and_styles();
@@ -526,6 +529,46 @@ void subtitles_test::a_hosts_subtitle_file_comes_first_for_its_bytes() {
 int run_subtitles_tests(int argc, char **argv) {
 	subtitles_test test;
 	return QTest::qExec(&test, argc, argv);
+}
+
+/*
+ * Found by fuzzing (2026-11-24): a time of twenty digits overflowed the
+ * sum in 64 bits, undefined behaviour (seen by UBSan; here it wraps
+ * negative and was dropped anyway, so this pins the intent and the
+ * sanitizer harness proves the fix). Six digits a field is past any
+ * film, so such a cue is dropped as any unreadable one is, and the cue
+ * after it is kept.
+ */
+void subtitles_test::a_srt_time_past_any_film_is_dropped() {
+	const std::vector<snurra_cue> cues = snurra_read_srt(
+	        "1\n53333333333332802:00:00,000 --> 53333333333332802:00:01,000\nnever\n\n"
+	        "2\n999999:00:00,000 --> 999999:00:01,000\nlate\n\n"
+	        "3\n00:00:01,000 --> 00:00:02,000\nkept\n");
+	QCOMPARE(cues.size(), size_t(2));
+	QCOMPARE(words(cues[0]), QStringLiteral("kept"));
+	QCOMPARE(cues[1].start_us, qint64(999999) * 3600 * SECOND);
+}
+
+/*
+ * Found by fuzzing the wire (2026-11-24): a frame whose list of states
+ * gave a count past its bytes made Qt's reader reserve 140 GB -- an
+ * out-of-memory under ASan, a refused allocation Qt passed over in a plain
+ * build. Now such a count marks the frame corrupt and it is dropped, and
+ * the next frame arrives. The plain build cannot tell the two apart; the
+ * sanitizer harness (project.md) is what proved it.
+ */
+void subtitles_test::a_wire_frame_counting_past_its_bytes_is_refused() {
+	/* As the fuzzer gave it, its two whole frames: an empty one, then
+	 * one of 29 bytes. */
+	QByteArray buffer = QByteArray::fromBase64("AAAAAAAAAB0dHR0dHR0dHR0dAAAAAAAAAAAAAADUAAAAAAAAAAAAAAAAAAA=").left(37);
+	snurra_wire::message m;
+	m.type = snurra_wire::STATUS;
+	m.states << snurra_tile_state{};
+	buffer += snurra_wire::encode(m);
+	const QList<snurra_wire::message> found = snurra_wire::decode(buffer);
+	QCOMPARE(found.size(), 1);
+	QCOMPARE(found.at(0).type, snurra_wire::STATUS);
+	QCOMPARE(found.at(0).states.size(), 1);
 }
 
 #include "subtitles_test.moc"

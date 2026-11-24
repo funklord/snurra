@@ -81,9 +81,11 @@ QString decode(const QByteArray &data) {
 	return text;
 }
 
-/* "01:02:03,456", "01:02:03.456" or "02:03,456": microseconds, or -1. */
+/* "01:02:03,456", "01:02:03.456" or "02:03,456": microseconds, or -1.
+ * Six digits a field at most: a time of twenty digits overflowed the sum
+ * (found by fuzzing, 2026-11-24), and no film runs a million hours. */
 int64_t srt_time(const QString &text) {
-	static const QRegularExpression form(QStringLiteral("^\\s*(?:(\\d+):)?(\\d+):(\\d+)[,.](\\d{1,3})\\s*$"));
+	static const QRegularExpression form(QStringLiteral("^\\s*(?:(\\d{1,6}):)?(\\d{1,6}):(\\d{1,6})[,.](\\d{1,3})\\s*$"));
 	const QRegularExpressionMatch match = form.match(text);
 	if (!match.hasMatch()) return -1;
 	const int64_t hours = match.captured(1).toLongLong();

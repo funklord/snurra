@@ -1994,6 +1994,32 @@ checked live in both binaries (linked, and answering `ASAN_OPTIONS=help=1`);
 no deliberate fault was planted this time. The window's sockets came after
 this run.
 
+**Fuzzing, 2026-11-24, the first:** libFuzzer with ASan and UBSan over
+the parsers of outside text -- `.srt` subtitles (they come beside
+downloaded films), ASS dialogue, the wire's `decode`, playlists and cue
+sheets -- each harness a few lines that link only the file it tests:
+
+    clang++ -std=c++17 -g -O1 -fPIC -fsanitize=fuzzer,address,undefined \
+        -Iinclude fuzz.cpp src/subtitles.cpp src/wire.cpp \
+        $(pkg-config --cflags --libs Qt6Core Qt6Gui Qt6Network) -o run
+    ./run -max_total_time=180 -rss_limit_mb=2048 -max_len=4096 corpus
+
+(playlists and cue sheets link `src/source.cpp src/bytes_input.cpp` and
+FFmpeg's four libraries, and write each input to a file first). Two
+found, both in three minutes. **The wire:** a frame whose list counted
+past its bytes made Qt's own `QList` reader reserve that count -- 140 GB
+-- an out-of-memory under ASan that stopped the fuzzer there; in a plain
+build the machine refuses the allocation and Qt passes it over, so no
+user saw it. Lists now go through `snurra_read_list`, which refuses a
+count past the bytes left (tile_state.h). **The `.srt` time:** twenty
+digits of hours overflowed the sum in 64 bits, undefined behaviour; each
+field is now six digits at most, past any film. Both are pinned by tests
+in `subtitles_test`, but the plain build behaves the same with or
+without either fix, so their sabotage was checked in the harness: the
+fixes taken out, it reports the overflow and the out-of-memory again;
+with them, nothing. Then over a million runs of the three text parsers
+and 220,000 of playlists and cue sheets found nothing more.
+
 **Sanitizers over 2026-11-21's new code** (the EQ's knobs and joining,
 the library's scan number, the way to and from the decks, the window's
 bar, panel, new lanes, ruler and one picture): the fourteen tests that
