@@ -378,7 +378,11 @@ int main(int argc, char *argv[]) {
 			                });
 		        });
 #else
-		player->resize(1000, 700);
+		/* Room for the waveforms above the decks, their heads and the
+		 * browser (sec 3f, 2026-11-24): nine tenths of the screen's free
+		 * room, never under the 1000 x 700 it was. */
+		const QRect room = QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->availableGeometry() : QRect(0, 0, 1000, 700);
+		player->resize(std::max(1000, room.width() * 9 / 10), std::max(700, room.height() * 9 / 10));
 		player->show();
 #endif
 		return app.exec();

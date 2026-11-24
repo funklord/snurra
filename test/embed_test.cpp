@@ -51,6 +51,7 @@
 #include "snurra/engine.h"
 #include "snurra/embed.h"
 #include "snurra/deck_waves.h"
+#include "snurra/deck_head.h"
 #include "snurra/beats.h"
 #include "snurra/midi.h"
 #include "snurra/tile_state.h"
@@ -113,6 +114,7 @@ private slots:
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_hears_one_track_of_a_decks_player();
 	void the_decks_waveforms_scroll_stacked_above_them();
+	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -2070,6 +2072,55 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	QCOMPARE(where(again, 1), QPoint(1, 0));
 	again.arrange(QString());
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
+}
+
+/*
+ * A deck's head, as Traktor's (project.md sec 3f, step 2): a 4 s WAV whose
+ * kept grid says 120 BPM in A major, on deck A, shows 120.0, its key, and
+ * four seconds left; its play button starts and stops the deck, and its
+ * tempo moved shows in the BPM; an empty deck's head shows none of it.
+ */
+void embed_test::a_decks_head_shows_its_tempo_key_and_time_left() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("head.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav_of(4 * 48000, [](int i) { return (i / 2400) % 2 ? 12000 : 0; }));
+	}
+	snurra_beat_grid grid;
+	grid.period = 24000;
+	grid.first = 0;
+	grid.confidence = 10;
+	grid.rate = 48000;
+	grid.key = 9;
+	snurra_cache_beats(path, -1, grid);
+	snurra_dj dj;
+	dj.resize(1200, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = path;
+	QVERIFY(dj.load(0, media));
+	snurra_deck_head *head = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_deck_head *>();
+	snurra_deck_head *empty = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-b"))->findChild<snurra_deck_head *>();
+	QVERIFY(head && empty);
+	QTRY_COMPARE_WITH_TIMEOUT(head->bpm_text(), QStringLiteral("120.0"), 5000);
+	QCOMPARE(head->key_text(), snurra_key_name(9));
+	QTRY_COMPARE_WITH_TIMEOUT(head->left_text(), QStringLiteral("-0:04"), 5000);
+	QVERIFY(empty->bpm_text().isEmpty() && empty->left_text().isEmpty());
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QToolButton *play = nullptr;
+	for (QToolButton *button : head->findChildren<QToolButton *>())
+		if (button->accessibleName() == QLatin1String("Play or pause")) play = button;
+	QVERIFY(play && play->isEnabled());
+	play->click();
+	QVERIFY(tile->playing());
+	QTRY_VERIFY_WITH_TIMEOUT(head->left_text() == QStringLiteral("-0:03"), 2500);
+	play->click();
+	QVERIFY(!tile->playing());
+	tile->set_tempo(1.1f);
+	QTRY_COMPARE_WITH_TIMEOUT(head->bpm_text(), QStringLiteral("132.0"), 2000);
 }
 
 /*

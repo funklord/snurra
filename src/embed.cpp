@@ -42,6 +42,7 @@
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
 #include "snurra/deck_waves.h"
+#include "snurra/deck_head.h"
 #include "snurra/peaks.h"
 #include "snurra/wire.h"
 #include "snurra/timeline.h"
@@ -197,6 +198,10 @@ public:
 		setMinimumHeight(fontMetrics().height() * 8);
 		column = new QVBoxLayout(this);
 		column->setContentsMargins(2, 2, 2, 2);
+		/* Its head, as Traktor's (sec 3f step 2): what plays, its tempo,
+		 * key and time left, play, cue and sync. */
+		head = new snurra_deck_head(name.isEmpty() ? 0 : name.at(0).toLatin1() - 'A', this);
+		column->addWidget(head);
 		/* Its side of the crossfader: left, right or thru. */
 		side = new QToolButton(this);
 		side->setAccessibleName(QObject::tr("Crossfader side"));
@@ -247,6 +252,7 @@ public:
 	 * process's socket and its index there (snurra_wire::TILE_MIME). */
 	std::function<void(const QString &giver, int index)> on_tile_drop;
 	QVBoxLayout *column;
+	snurra_deck_head *head;
 	QToolButton *side;
 	QToolButton *listen;
 	QMenu *listen_menu = nullptr;   /* a player's tracks, while it holds one */
@@ -644,6 +650,7 @@ public:
 		if (!deck->tile) return;
 		snurra_tile *tile = deck->tile;
 		deck->tile = nullptr;
+		deck->head->set_tile(nullptr);
 		deck->name.clear();
 		tile->disconnect();
 		tile->deck()->stop_reading();
@@ -1473,6 +1480,7 @@ void snurra_dj_private::detach(int deck) {
 	if (!place->tile) return;
 	snurra_tile *tile = place->tile;
 	place->tile = nullptr;
+	place->head->set_tile(nullptr);
 	place->name.clear();
 	tile->disconnect();
 	tile->hide();
@@ -1686,6 +1694,7 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	 * on the title opens it. */
 	tile->set_picture_closed_at_first(true);
 	place->tile = tile;
+	place->head->set_tile(tile);
 	place->name = name;
 	place->empty->hide();
 	/* One player or its decks (sec 3f, 2026-11-24): a player on a deck

@@ -1333,9 +1333,21 @@ fine peaks are kept as the overview's are, a file a resolution
 (`-<columns>` on the name), so the two never overwrite each other.
 Tested in `the_decks_waveforms_scroll_stacked_above_them` (a 4 s WAV
 read as 400 columns and kept so, its row following the deck as it
-plays; asked at the overview's 1024 instead, it fails). Next: the decks'
-own look (step 2) and a mixer between them (step 3), then the windows in
-step (4) and the layouts (5).
+plays; asked at the overview's 1024 instead, it fails). **Step 2 built,
+the same day: a head on each deck** (`snurra_deck_head`), as Traktor's --
+the deck's letter in its waveform's colour, the title and artist from
+the file's tags (else its name), the tempo large as heard (the grid's BPM
+at the deck's tempo), the key as heard, the tempo moved in per cent, the
+time left at that tempo, and cue, play and sync, which are the tile's own
+(`cue`, `set_playing`, `request_sync`). Read from the tile ten times a
+second. The deck view opens at nine tenths of the screen's free room,
+never under the 1000 x 700 it was, so the waveforms above no longer
+squeeze the decks. The tile's own panel stays under the head until its
+gain, EQ and fader move to the mixer (step 3). Tested in
+`a_decks_head_shows_its_tempo_key_and_time_left` (120.0, A major, -0:04;
+played, -0:03; at +10%, 132.0 -- the BPM left unscaled by the tempo, it
+fails). Next: the mixer between the decks (step 3), then the windows (4)
+and the layouts (5).
 
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
