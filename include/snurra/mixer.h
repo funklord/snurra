@@ -100,4 +100,10 @@ private:
 	class QHBoxLayout *m_row;
 };
 
+/* A master section's controls, wired to `engine`, in a box of their own
+ * under `parent` -- the decks' mixer's, or a player window's -- and their
+ * refresh from the engine, a meter's look included. */
+snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *engine);
+void snurra_master_refresh(const snurra_mixer::master_strip &strip, snurra_engine *engine);
+
 #endif

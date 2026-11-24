@@ -1,4 +1,5 @@
 #include "snurra/node.h"
+#include "snurra/mixer.h"
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -321,6 +322,19 @@ snurra_node::snurra_node(QWidget *parent) : QWidget(parent) {
 	decks->setToolTip(tr("This player onto a DJ's decks, each track on its deck"));
 	connect(decks, &QToolButton::clicked, this, &snurra_node::open_decks);
 	bar->addWidget(decks);
+	/* The master section (the holder, 2026-11-25: "In the player we mess
+	 * around mostly with the master section"): the window's engine's
+	 * level, EQ and limiter, with a meter, in a small window of its own
+	 * beside this one, opened and closed here. */
+	QToolButton *master = new QToolButton(m_bar);
+	master->setObjectName(QStringLiteral("snurra-bar-master"));
+	master->setAutoRaise(true);
+	master->setCheckable(true);
+	master->setText(tr("master"));
+	master->setAccessibleName(tr("The master section"));
+	master->setToolTip(tr("The master: level, EQ and limiter of all that is sent out, with a meter"));
+	connect(master, &QToolButton::toggled, this, [this](bool open) { show_master(open); });
+	bar->addWidget(master);
 	QToolButton *minimise = new QToolButton(m_bar);
 	minimise->setAutoRaise(true);
 	minimise->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));
@@ -1655,6 +1669,31 @@ void snurra_node::release(int index, const QPoint &at) {
  * until it says READY, so the switch is heard as nothing. The deck view
  * unfolds what it took across its decks.
  */
+void snurra_node::show_master(bool open) {
+	if (!open) {
+		if (m_master_window) m_master_window->hide();
+		return;
+	}
+	if (!m_master_window) {
+		m_master_window = new QWidget(this, Qt::Tool);
+		m_master_window->setObjectName(QStringLiteral("snurra-master-window"));
+		m_master_window->setWindowTitle(tr("Master"));
+		QVBoxLayout *column = new QVBoxLayout(m_master_window);
+		m_master_strip = snurra_master_strip(m_master_window, m_engine);
+		column->addWidget(m_master_strip.box);
+		QTimer *look = new QTimer(m_master_window);
+		look->setInterval(100);
+		connect(look, &QTimer::timeout, m_master_window, [this] {
+			if (m_master_window->isVisible()) snurra_master_refresh(m_master_strip, m_engine);
+		});
+		look->start();
+		m_master_window->move(mapToGlobal(QPoint(width(), 0)));
+	}
+	snurra_master_refresh(m_master_strip, m_engine);
+	m_master_window->show();
+	m_master_window->raise();
+}
+
 void snurra_node::open_decks() {
 	/* A window following the decks' player holds no tracks of its own to
 	 * give: the decks hold them (follow). */

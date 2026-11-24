@@ -120,6 +120,7 @@ private slots:
 	void a_deck_is_scratched_on_its_waveform();
 	void the_master_shapes_all_that_goes_out();
 	void the_master_section_opens_and_closes();
+	void the_players_master_opens_from_its_bar();
 	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
 	void the_players_waveform_is_fine_and_cheap_maximized();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
@@ -2388,6 +2389,43 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 		qInfo("waveforms, 4 decks at 1900 x 400, %g s across: %.2f ms a frame", span, each);
 		QVERIFY2(each < 16, qPrintable(QStringLiteral("%1 ms a frame at %2 s").arg(each).arg(span)));
 	}
+}
+
+/*
+ * The master in the player (the holder, 2026-11-25: "In the player we
+ * mess around mostly with the master section"): the window's bar has
+ * "master", which opens a small window of its own with the master's
+ * controls, and closes it; a level turned there reaches the engine, read
+ * back when it opens again.
+ */
+void embed_test::the_players_master_opens_from_its_bar() {
+	snurra_node node;
+	node.set_stays_open(true);
+	node.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&node));
+	snurra_tile_state state;
+	state.source = QStringLiteral("tone:440");
+	state.duration_us = 4000000;
+	node.add_tile(state);
+	QToolButton *toggle = node.findChild<QToolButton *>(QStringLiteral("snurra-bar-master"));
+	QVERIFY(toggle);
+	toggle->click();
+	QWidget *window = node.findChild<QWidget *>(QStringLiteral("snurra-master-window"));
+	QVERIFY(window && window->isVisible());
+	QDial *level = nullptr;
+	for (QDial *one : window->findChildren<QDial *>())
+		if (one->accessibleName() == QLatin1String("Master level")) level = one;
+	QVERIFY(level);
+	level->setValue(50);
+	toggle->click();
+	QVERIFY(!window->isVisible());
+	level->blockSignals(true);
+	level->setValue(100);
+	level->blockSignals(false);
+	toggle->click();
+	QVERIFY(window->isVisible());
+	QCOMPARE(level->value(), 50);
+	level->setValue(100);
 }
 
 /*

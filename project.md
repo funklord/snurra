@@ -1621,8 +1621,14 @@ closes a master strip at the right of the channel strips: LEVEL, HI, MID
 and LOW knobs (snurra's own), LIMIT, a meter of the peak sent out from
 -48 dB to 0, and the dB the limiter takes off while it does; each read
 back from the engine. The engine is the process's, so it is the
-player's master as much as the decks'; the player's own panel has no
-master strip yet. Tested in `the_master_shapes_all_that_goes_out`
+player's master as much as the decks'. **And in the player** (the
+same day; the holder: "In the player we mess around mostly with the
+master section"): "master" in the window's bar opens and closes a small
+window of its own beside the player with the same strip -- one builder,
+`snurra_master_strip`, and one refresh, `snurra_master_refresh`, for
+both views; a window rather than a row of the panel, so opening it moves
+none of the lanes (`the_players_master_opens_from_its_bar`; with its
+strip given no engine, it fails). Tested in `the_master_shapes_all_that_goes_out`
 (untouched exact; half the level, half; eight times over held at full by
 the limiter and not without it; the mid killed, silent; the meter's
 peak; with the stage not run, it fails) and
