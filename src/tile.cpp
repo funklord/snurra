@@ -614,15 +614,41 @@ protected:
 			const float scale = 1.0f / qMax(m_loudest, 1e-3f);
 			const int w = qMax(1, width());
 			const int columns = int(m_peaks.size());
+			/* Two outlines, what was played and what is to come, each
+			 * filled once -- a line a pixel, its pen changed at each, was
+			 * the cost; and where a column spans pixels, the edge runs
+			 * from one column's peak to the next, not in steps. */
+			std::vector<QPointF> heard, to_come;
 			for (int x = 0; x < w; ++x) {
-				const int from = int(int64_t(x) * columns / w);
-				const int to = qMax(from + 1, int(int64_t(x + 1) * columns / w));
 				float loudest = -1;
-				for (int c = from; c < to && c < columns; ++c) loudest = qMax(loudest, m_peaks[size_t(c)]);
-				painter.setPen((x + 0.5) / w <= m_fraction ? played : ahead);
+				const double at = (x + 0.5) * columns / w - 0.5;
+				if (double(columns) >= w) {
+					const int from = int(int64_t(x) * columns / w);
+					const int to = qMax(from + 1, int(int64_t(x + 1) * columns / w));
+					for (int c = from; c < to && c < columns; ++c) loudest = qMax(loudest, m_peaks[size_t(c)]);
+				} else {
+					const int c = qBound(0, int(std::floor(at)), columns - 1);
+					const int d = qMin(columns - 1, c + 1);
+					const float t = float(qBound(0.0, at - c, 1.0));
+					const float a = m_peaks[size_t(c)], b = m_peaks[size_t(d)];
+					loudest = a < 0 || b < 0 ? qMax(a, b) : a + (b - a) * t;
+				}
 				const double half = loudest < 0 ? 0.5 : qMin(1.0f, loudest * scale) * (h - 2) / 2.0 + 0.5;
-				painter.drawLine(QPointF(x + 0.5, h / 2.0 - half), QPointF(x + 0.5, h / 2.0 + half));
+				((x + 0.5) / w <= m_fraction ? heard : to_come).push_back(QPointF(x, half));
 			}
+			auto outline = [&painter, h](const std::vector<QPointF> &edge, const QColor &colour) {
+				if (edge.empty()) return;
+				QPolygonF shape;
+				shape.reserve(int(edge.size()) * 4);
+				for (const QPointF &at : edge) shape << QPointF(at.x(), h / 2.0 - at.y()) << QPointF(at.x() + 1, h / 2.0 - at.y());
+				for (auto at = edge.rbegin(); at != edge.rend(); ++at)
+					shape << QPointF(at->x() + 1, h / 2.0 + at->y()) << QPointF(at->x(), h / 2.0 + at->y());
+				painter.setPen(Qt::NoPen);
+				painter.setBrush(colour);
+				painter.drawPolygon(shape);
+			};
+			outline(heard, played);
+			outline(to_come, ahead);
 			painter.setPen(palette().color(QPalette::Text));
 			const int at = int(m_fraction * width());
 			painter.drawLine(at, 0, at, h);
@@ -1919,7 +1945,10 @@ void snurra_tile::set_full_screen(bool full) {
  * this thread -- to the waveform, which a queued call never reaches once it
  * has gone. From `bytes` when given, else from what the state names. */
 void snurra_tile::read_peaks(std::shared_ptr<snurra_bytes> bytes) {
-	constexpr int COLUMNS = 1024;
+	/* As fine as a 4K screen is wide: 1024, stretched across a maximized
+	 * window, drew each column two pixels and more (the holder,
+	 * 2026-11-25, "not granular"). 16 KB a track, kept. */
+	constexpr int COLUMNS = 4096;
 	QPointer<snurra_waveform> waveform = m_waveform;
 	auto piece = [waveform](int first, const std::vector<float> &values) {
 		QMetaObject::invokeMethod(

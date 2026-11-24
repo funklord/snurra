@@ -237,8 +237,17 @@ void snurra_deck_waves::paint_lane(QPainter &painter, int i, const deck &where, 
 			const double to = from + per_pixel / scale;
 			if (int(from) >= int(peaks.size())) break;
 			float loudest = 0;
-			for (int c = int(from); c <= int(to) && c < int(peaks.size()); ++c)
-				if (c >= 0) loudest = std::max(loudest, peaks[size_t(c)]);
+			if (per_pixel / scale >= 1) {
+				for (int c = int(from); c <= int(to) && c < int(peaks.size()); ++c)
+					if (c >= 0) loudest = std::max(loudest, peaks[size_t(c)]);
+			} else {
+				/* Zoomed in past a column a pixel: from one column's peak
+				 * to the next, not in steps (2026-11-25, "not granular"). */
+				const int c = std::max(0, int(std::floor(from)));
+				const int d = std::min(int(peaks.size()) - 1, c + 1);
+				const float t = float(std::clamp(from - c, 0.0, 1.0));
+				loudest = peaks[size_t(c)] + (peaks[size_t(d)] - peaks[size_t(c)]) * t;
+			}
 			const double h = std::max(0.5, std::min(1.0f, loudest) * half);
 			(x < middle ? heard : to_come).push_back(QPointF(x, h));
 		}

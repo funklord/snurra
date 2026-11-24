@@ -119,6 +119,7 @@ private slots:
 	void the_waveforms_layout_is_kept_as_chosen();
 	void a_deck_is_scratched_on_its_waveform();
 	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
+	void the_players_waveform_is_fine_and_cheap_maximized();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
 	void no_control_shows_twice_on_the_decks();
@@ -2310,6 +2311,45 @@ void embed_test::a_decks_head_shows_its_tempo_key_and_time_left() {
 	QVERIFY(!tile->playing());
 	tile->set_tempo(1.1f);
 	QTRY_COMPARE_WITH_TIMEOUT(head->bpm_text(), QStringLiteral("132.0"), 2000);
+}
+
+/*
+ * The player's waveform maximized (the holder, 2026-11-25: "not readable
+ * maximized is the waveform not being granular and still having poor
+ * performance"): a window's tile, its track read at 4096 columns -- as
+ * fine as a 4K screen's pixels, where 1024 were stretched four times --
+ * and drawn 1900 wide, a frame timed.
+ */
+void embed_test::the_players_waveform_is_fine_and_cheap_maximized() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("maximized.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav_of(30 * 48000, [](int i) { return int(12000 * std::sin(i * 0.001) * std::sin(i * 0.05)); }));
+	}
+	snurra_node node;
+	node.set_stays_open(true);
+	snurra_tile_state state;
+	state.source = path;
+	state.duration_us = 30000000;
+	snurra_tile *tile = node.add_tile(state);
+	QWidget *waveform = nullptr;
+	for (QWidget *one : tile->findChildren<QWidget *>())
+		if (one->accessibleName() == QLatin1String("Waveform")) waveform = one;
+	QVERIFY(waveform);
+	const QString kept = qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/peaks/") + snurra_kept_key(path, -1) + QStringLiteral("-4096");
+	QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(kept), 10000);
+	waveform->resize(1900, 200);
+	QImage shot(waveform->size(), QImage::Format_RGB32);
+	waveform->render(&shot);
+	QElapsedTimer took;
+	took.start();
+	constexpr int FRAMES = 20;
+	for (int i = 0; i < FRAMES; ++i) waveform->render(&shot);
+	const double each = double(took.nsecsElapsed()) / 1e6 / FRAMES;
+	qInfo("the player's waveform at 1900 x 200: %.2f ms a frame", each);
+	QVERIFY2(each < 4, qPrintable(QStringLiteral("%1 ms a frame").arg(each)));
 }
 
 /*

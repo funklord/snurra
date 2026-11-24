@@ -1596,7 +1596,19 @@ long screen." **(f) built the same day:** a fourth layout, "Vertical,
 time running up" (`vertical up`), the lane turned the other quarter, what
 is to come above the playhead; a scratch on it pulls forward by dragging
 down, against time as on the others (`the_waveforms_layout_is_kept_as_chosen`;
-with the name not read back, it fails). So: **(e)** the master section is built where it falls,
+with the name not read back, it fails). **(c1) granular, built the same
+day:** the player's waveform -- the tile's, under the picture -- is read
+at 4096 columns, as fine as a 4K screen is wide, where 1024 were
+stretched two pixels and more a column across a maximized window (16 KB
+a track, kept); it is drawn as two filled outlines, played and to come,
+where it drew a line a pixel with the pen changed at each (0.58 ms a
+frame at 1900 wide to 0.14); and on both it and the decks' waveforms,
+where a column spans several pixels the edge runs from one column's peak
+to the next instead of in steps. Measured on the way and ruled out: the
+picture scaled to a maximized window on the UI thread costs 2.9 ms a
+frame (640 x 360 to 1920 x 1080, smooth), so it is not the slowness.
+Tested in `the_players_waveform_is_fine_and_cheap_maximized` (kept at
+4096; under 4 ms a frame; at 1024 it fails). So: **(e)** the master section is built where it falls,
 with the controls a master needs, and opened and closed like the strip's
 EQ; **(c1)** the waveform maximized wants finer detail and less cost --
 the player's tile waveform, whose overview of 1024 columns is stretched
