@@ -783,8 +783,12 @@ snurra_tags snurra_read_tags(const QString &path) {
 	};
 	tags.title = take(format->metadata, "title");
 	tags.artist = take(format->metadata, "artist");
-	/* Ogg and Opus keep theirs on the stream. */
+	/* Ogg and Opus keep theirs on the stream -- the sound's: an MP3's
+	 * cover is a picture stream titled "Album cover", which every such
+	 * file was then called, on a deck and in the library (seen in the
+	 * deck view's heads, 2026-11-24). */
 	for (unsigned i = 0; i < format->nb_streams && (tags.title.isEmpty() || tags.artist.isEmpty()); ++i) {
+		if (format->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) continue;
 		if (tags.title.isEmpty()) tags.title = take(format->streams[i]->metadata, "title");
 		if (tags.artist.isEmpty()) tags.artist = take(format->streams[i]->metadata, "artist");
 	}

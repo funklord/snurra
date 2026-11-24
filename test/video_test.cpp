@@ -93,6 +93,7 @@ private slots:
 	void a_stem_file_is_a_stack_of_its_stems();
 	void a_stem_file_names_its_own_stems();
 	void a_files_waveform_is_kept_until_it_changes();
+	void a_cover_pictures_title_is_not_the_tracks();
 	void colours_are_ffmpegs_own_data();
 	void colours_are_ffmpegs_own();
 	void a_full_screen_button_shows_while_the_pointer_moves();
@@ -1272,6 +1273,38 @@ int run_video_tests(int argc, char **argv) {
 }
 
 #include "video_test.moc"
+
+/*
+ * An MP3's cover is a picture stream, and taggers title it "Album cover";
+ * with no title in the container, snurra_read_tags took the first
+ * stream's, so every such track was called "Album cover" on a deck and in
+ * the library (seen 2026-11-24). Only a sound stream's title counts; one
+ * tagged properly keeps its own.
+ */
+void video_test::a_cover_pictures_title_is_not_the_tracks() {
+	if (m_ffmpeg.isEmpty()) QSKIP("no ffmpeg");
+	auto make = [this](const QString &name, const QStringList &tags) {
+		const QString path = m_dir.filePath(name);
+		QStringList args{ QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"),
+		                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=d=1"),
+		                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("color=c=red:s=16x16:d=1"),
+		                  QStringLiteral("-map"), QStringLiteral("0"), QStringLiteral("-map"), QStringLiteral("1"), QStringLiteral("-frames:v"), QStringLiteral("1"),
+		                  QStringLiteral("-c:v"), QStringLiteral("mjpeg"), QStringLiteral("-disposition:v"), QStringLiteral("attached_pic"),
+		                  QStringLiteral("-metadata:s:v"), QStringLiteral("title=Album cover") };
+		args << tags << path;
+		QProcess ffmpeg;
+		ffmpeg.start(m_ffmpeg, args);
+		return ffmpeg.waitForFinished(30000) && ffmpeg.exitCode() == 0 ? path : QString();
+	};
+	const QString bare = make(QStringLiteral("bare.mp3"), {});
+	QVERIFY(!bare.isEmpty());
+	QCOMPARE(snurra_read_tags(bare).title, QString());
+	const QString tagged = make(QStringLiteral("tagged.mp3"), { QStringLiteral("-metadata"), QStringLiteral("title=Juno Juice"),
+	                                                             QStringLiteral("-metadata"), QStringLiteral("artist=James Saunders") });
+	QVERIFY(!tagged.isEmpty());
+	QCOMPARE(snurra_read_tags(tagged).title, QStringLiteral("Juno Juice"));
+	QCOMPARE(snurra_read_tags(tagged).artist, QStringLiteral("James Saunders"));
+}
 
 /*
  * A file's waveform is kept (peaks.cpp): reading one decodes the whole of
