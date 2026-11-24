@@ -1277,6 +1277,22 @@ pre-listeners can work on the same mix too.")
 - A tap hears its point as the master would hear it, before the room's
   fader and crossfader where it is a deck's -- what a DJ checks on cue.
 
+**The holder's trial, 2026-11-24 -- open** (the first on a real screen):
+"there's a lot of work to do on the layout but we are getting there, the
+decks need to look more like modern DJ software and the idea of decks
+being a player and vice versa isn't being followed. The switch back and
+forth or simultaneous view of both isn't being fully followed. It is
+likely we'll need several layouts in the end for different needs.
+waveforms horizontally side by side or on top of each other or vertical,
+especially with 4ch". So three things are open: **(1)** the deck view's
+look, toward modern DJ software (Traktor, rekordbox, Serato, Mixxx);
+**(2)** the symbiosis above as the person meets it -- moving between the
+window and the decks, and both shown at once on one timeline, kept in
+step; **(3)** several deck layouts for different needs, the waveforms
+side by side, stacked one above another, or vertical, above all with
+four channels. Layouts are slots arranged (below), so (3) is more
+arrangements of the same slots, not other code.
+
 **A layout that matches the hardware in front of you** (the holder,
 2026-11-20: "we must not forget the user who will want to configure
 snurra exactly according to the layout they see in front of them on a HW
