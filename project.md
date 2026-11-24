@@ -1450,6 +1450,27 @@ and stays as it is. Tested in
 moves neither, a drag moves them by the hand, a double-click puts them
 home; with Qt's own press back on either, it fails).
 
+**(c1, c2) built 2026-11-25: the decks' waveforms cheaper, capped, and
+zoomed out to ten minutes.** Measured first: four decks of a three hour
+set's peaks, 1900 x 400, took 20.7 ms a frame at 8 s across -- over a
+60 Hz screen's 16.7 -- drawn a filled rectangle a pixel, the part heard
+at 45 % so every pixel of it blended, and repainted sixty times a
+second whether anything moved or not. Now each part of a lane is one
+filled outline, opaque (the dimmed colour mixed with the ground
+beforehand), read from a pyramid of the peaks -- each level the loudest
+of two below -- so a pixel reads one or two values at any zoom; and the
+view repaints only when a deck has moved, peaks have come or the zoom
+changed. 7.7 ms a frame at 8 s and 3.2 ms at 600 s, at load 23
+(`the_waveforms_draw_cheaply_and_zoom_out_to_the_set`, which asks under
+16 ms; the code before it took 20.7 and could not zoom past 60 s). The
+wheel now zooms from 2 s to 600 s. Stacked rows stop at about seven
+lines of text however tall the window, so a maximized deck view keeps
+its waveforms waveform-shaped and gives the rest of the height to the
+decks and the browser. **Open, asked:** which view's waveforms read badly
+maximized -- the decks' (now capped) or the player's, whose tile shows
+the whole track's overview, 1024 columns stretched to the window's
+width.
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

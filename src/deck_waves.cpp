@@ -18,8 +18,22 @@ snurra_deck_waves::snurra_deck_waves(QWidget *parent) : QWidget(parent) {
 	/* Scrolling: a repaint each frame while shown, as the playheads move. */
 	QTimer *frame = new QTimer(this);
 	frame->setInterval(16);
+	/* Repainted only when something moved -- a deck's place, new peaks,
+	 * a zoom: a still view costs nothing (the holder, 2026-11-25: "they
+	 * still have bad performance"). */
 	connect(frame, &QTimer::timeout, this, [this] {
-		if (isVisible()) update();
+		if (!isVisible()) return;
+		bool moved = m_stale;
+		m_last.resize(m_peaks.size(), -1);
+		for (int i = 0; i < int(m_peaks.size()); ++i) {
+			deck where;
+			if (fill) fill(i, where);
+			const double at = where.loaded ? where.seconds : -1;
+			if (at != m_last[size_t(i)]) moved = true;
+			m_last[size_t(i)] = at;
+		}
+		if (moved) update();
+		m_stale = false;
 	});
 	frame->start();
 	m_layout = layout_named(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/waveforms")).toString());
@@ -31,6 +45,13 @@ void snurra_deck_waves::set_deck_count(int count) {
 	 * stacked, a row a deck; side by side, one row; vertical, a lane
 	 * tall enough to read ahead in. */
 	setMinimumHeight(m_layout == stacked ? std::max(1, count) * 48 : m_layout == side_by_side ? 64 : 240);
+	/* And never so tall it stops reading as a waveform: maximized, rows
+	 * as high as the window made each a wall of colour (the holder,
+	 * 2026-11-25, "don't look very good or readable maximized"). Vertical
+	 * lanes run along the height, which they use. */
+	const int line = fontMetrics().height();
+	setMaximumHeight(m_layout == stacked ? std::max(1, count) * std::max(64, line * 7)
+	                 : m_layout == side_by_side ? std::max(80, line * 8) : QWIDGETSIZE_MAX);
 	updateGeometry();
 	update();
 }
@@ -40,14 +61,22 @@ void snurra_deck_waves::set_peaks(int deck, int first, const std::vector<float> 
 	std::vector<float> &peaks = m_peaks[size_t(deck)];
 	if (peaks.size() < size_t(first) + values.size()) peaks.resize(size_t(first) + values.size(), 0.0f);
 	std::copy(values.begin(), values.end(), peaks.begin() + first);
+	if (m_pyramid.size() < m_peaks.size()) m_pyramid.resize(m_peaks.size());
+	m_pyramid[size_t(deck)].clear();   /* built again when next drawn */
+	m_stale = true;
 }
 
 void snurra_deck_waves::clear_peaks(int deck) {
 	if (deck >= 0 && deck < int(m_peaks.size())) m_peaks[size_t(deck)].clear();
+	if (deck >= 0 && deck < int(m_pyramid.size())) m_pyramid[size_t(deck)].clear();
+	m_stale = true;
 }
 
 void snurra_deck_waves::set_span(double seconds) {
-	m_span = std::clamp(seconds, 2.0, 60.0);
+	/* From two seconds to ten minutes: the tracks that follow in view
+	 * (the holder, 2026-11-25). */
+	m_span = std::clamp(seconds, 2.0, 600.0);
+	m_stale = true;
 	update();
 }
 
@@ -104,27 +133,56 @@ void snurra_deck_waves::paint_lane(QPainter &painter, int i, const deck &where, 
 	const double middle = along / 2.0;
 	const double pixels_a_second = along / m_span;
 	if (where.loaded) {
-		const std::vector<float> &peaks = m_peaks[size_t(i)];
+		/* The level of the pyramid whose entries are no wider than a
+		 * pixel: one or two read for each, at any zoom. */
+		const double per_pixel = COLUMNS_A_SECOND / pixels_a_second;
+		const int level = per_pixel <= 2 ? 0 : int(std::floor(std::log2(per_pixel)));
+		const std::vector<float> &peaks = level_of(i, level);
+		const double scale = std::ldexp(1.0, level);
 		/* Past the playhead the track is heard; ahead of it to come: the
-		 * colour full ahead, dimmer behind. */
-		QColor ahead = colour_of(i);
-		QColor behind = ahead;
-		behind.setAlphaF(0.45f);
+		 * colour full ahead, dimmer behind. Each a batch of lines. */
+		/* Opaque, mixed with the ground beforehand: a colour drawn at 45 %
+		 * was blended at every pixel it covered. */
+		const QColor ahead = colour_of(i);
+		const QColor ground = palette().color(QPalette::Base);
+		const QColor behind = QColor::fromRgbF(0.45f * ahead.redF() + 0.55f * ground.redF(), 0.45f * ahead.greenF() + 0.55f * ground.greenF(),
+		                                       0.45f * ahead.blueF() + 0.55f * ground.blueF());
 		const double centre = across / 2.0;
 		const double half = (across - 4) / 2.0;
+		/* Each part an outline filled in one go -- the rasterizer's spans
+		 * -- rather than a line a pixel: the top edge left to right, then
+		 * the bottom back. */
+		std::vector<QPointF> heard, to_come;
+		heard.reserve(size_t(along) / 2 + 2);
+		to_come.reserve(size_t(along) / 2 + 2);
 		for (int x = 0; x < int(along); ++x) {
 			const double seconds = where.seconds + (x - middle) / pixels_a_second;
 			if (seconds < 0) continue;
-			/* The loudest of the columns this pixel covers. */
-			const double from = seconds * COLUMNS_A_SECOND;
-			const double to = from + COLUMNS_A_SECOND / pixels_a_second;
+			const double from = seconds * COLUMNS_A_SECOND / scale;
+			const double to = from + per_pixel / scale;
 			if (int(from) >= int(peaks.size())) break;
 			float loudest = 0;
 			for (int c = int(from); c <= int(to) && c < int(peaks.size()); ++c)
 				if (c >= 0) loudest = std::max(loudest, peaks[size_t(c)]);
-			const double h = std::min(1.0f, loudest) * half;
-			painter.fillRect(QRectF(x, centre - h, 1, std::max(1.0, 2 * h)), x < middle ? behind : ahead);
+			const double h = std::max(0.5, std::min(1.0f, loudest) * half);
+			(x < middle ? heard : to_come).push_back(QPointF(x, h));
 		}
+		auto outline = [&painter, centre](const std::vector<QPointF> &edge, const QColor &colour) {
+			if (edge.empty()) return;
+			QPolygonF shape;
+			shape.reserve(int(edge.size()) * 4);
+			for (const QPointF &at : edge) {
+				shape << QPointF(at.x(), centre - at.y()) << QPointF(at.x() + 1, centre - at.y());
+			}
+			for (auto at = edge.rbegin(); at != edge.rend(); ++at) {
+				shape << QPointF(at->x() + 1, centre + at->y()) << QPointF(at->x(), centre + at->y());
+			}
+			painter.setPen(Qt::NoPen);
+			painter.setBrush(colour);
+			painter.drawPolygon(shape);
+		};
+		outline(heard, behind);
+		outline(to_come, ahead);
 		/* Beats, and bars of four taller, as the grid places them. */
 		if (where.beat > 0 && where.beat * pixels_a_second >= 4) {
 			const double left = where.seconds - middle / pixels_a_second;
@@ -142,6 +200,30 @@ void snurra_deck_waves::paint_lane(QPainter &painter, int i, const deck &where, 
 	}
 	/* The playhead, across the lane. */
 	painter.fillRect(QRectF(middle - 1, 0, 2, across), text);
+}
+
+const std::vector<float> &snurra_deck_waves::level_of(int deck, int level) {
+	const std::vector<float> &peaks = m_peaks[size_t(deck)];
+	if (level <= 0) return peaks;
+	if (m_pyramid.size() < m_peaks.size()) m_pyramid.resize(m_peaks.size());
+	std::vector<std::vector<float>> &levels = m_pyramid[size_t(deck)];
+	/* Built when asked after new peaks; while a file is still being read,
+	 * a quarter second at most out of date rather than built at each
+	 * piece. */
+	if (levels.empty() || (m_built.isValid() && m_built.elapsed() > 250 && levels.front().size() != (peaks.size() + 1) / 2)) {
+		levels.clear();
+		const std::vector<float> *below = &peaks;
+		while (below->size() > 1) {
+			std::vector<float> up((below->size() + 1) / 2);
+			for (size_t j = 0; j < up.size(); ++j)
+				up[j] = std::max((*below)[2 * j], 2 * j + 1 < below->size() ? (*below)[2 * j + 1] : 0.0f);
+			levels.push_back(std::move(up));
+			below = &levels.back();
+		}
+		m_built.restart();
+	}
+	if (levels.empty()) return peaks;
+	return levels[size_t(std::min(level, int(levels.size()))) - 1];
 }
 
 void snurra_deck_waves::set_layout(layout_t layout) {

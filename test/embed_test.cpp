@@ -117,6 +117,7 @@ private slots:
 	void a_listener_hears_one_track_of_a_decks_player();
 	void the_decks_waveforms_scroll_stacked_above_them();
 	void the_waveforms_layout_is_kept_as_chosen();
+	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
 	void a_tempo_change_keeps_the_pitch_by_default();
@@ -2263,6 +2264,42 @@ void embed_test::a_decks_head_shows_its_tempo_key_and_time_left() {
 	QVERIFY(!tile->playing());
 	tile->set_tempo(1.1f);
 	QTRY_COMPARE_WITH_TIMEOUT(head->bpm_text(), QStringLiteral("132.0"), 2000);
+}
+
+/*
+ * The waveforms' cost and reach (the holder, 2026-11-25: "they still have
+ * bad performance, can't zoom out enough (we have following tracks)"):
+ * four decks of a three hour set's peaks, a hundred columns a second,
+ * drawn a maximized window wide, zoomed in to 8 s and out to 600 s --
+ * ten minutes, the tracks that follow in view. Each frame is timed.
+ */
+void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
+	snurra_deck_waves waves;
+	waves.set_deck_count(4);
+	const int columns = 3 * 3600 * snurra_deck_waves::COLUMNS_A_SECOND;
+	std::vector<float> peaks(static_cast<size_t>(columns));
+	for (int i = 0; i < columns; ++i) peaks[size_t(i)] = float(0.5 + 0.5 * std::sin(i * 0.37));
+	for (int deck = 0; deck < 4; ++deck) waves.set_peaks(deck, 0, peaks);
+	waves.fill = [](int deck, snurra_deck_waves::deck &where) {
+		where.loaded = true;
+		where.seconds = 3600 + deck * 7;
+		where.beat = 0.5;
+		where.playing = true;
+	};
+	waves.resize(1900, 400);
+	QImage shot(waves.size(), QImage::Format_RGB32);
+	for (double span : { 8.0, 600.0 }) {
+		waves.set_span(span);
+		QCOMPARE(waves.span(), span);
+		waves.render(&shot);   /* the first, which may build what the rest reuse */
+		QElapsedTimer took;
+		took.start();
+		constexpr int FRAMES = 20;
+		for (int i = 0; i < FRAMES; ++i) waves.render(&shot);
+		const double each = double(took.nsecsElapsed()) / 1e6 / FRAMES;
+		qInfo("waveforms, 4 decks at 1900 x 400, %g s across: %.2f ms a frame", span, each);
+		QVERIFY2(each < 16, qPrintable(QStringLiteral("%1 ms a frame at %2 s").arg(each).arg(span)));
+	}
 }
 
 /*

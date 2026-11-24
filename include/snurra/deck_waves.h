@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QString>
 #include <QWidget>
+#include <QElapsedTimer>
 
 #include <functional>
 #include <vector>
@@ -75,6 +76,13 @@ private:
 	std::vector<std::vector<float>> m_peaks;
 	double m_span = 8;
 	layout_t m_layout = stacked;
+	/* Each deck's peaks halved again and again, each entry the loudest of
+	 * the two below: what a pixel reads zoomed out (empty until drawn). */
+	std::vector<std::vector<std::vector<float>>> m_pyramid;
+	const std::vector<float> &level_of(int deck, int level);
+	QElapsedTimer m_built;
+	std::vector<double> m_last;   /* each deck's place at the last frame */
+	bool m_stale = true;
 	void paint_lane(class QPainter &painter, int index, const deck &where, double along, double across);
 };
 
