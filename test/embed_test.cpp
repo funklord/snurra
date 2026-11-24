@@ -2942,6 +2942,15 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	QVERIFY(QTest::qWaitForWindowExposed(&node));
 	node.follow(dj.socket_path());
 	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 3, 3000);
+	/* The way back (2026-11-25): the window in the background, the decks'
+	 * "player" brings it forward. */
+	node.showMinimized();
+	QTRY_VERIFY_WITH_TIMEOUT(node.windowState() & Qt::WindowMinimized, 2000);
+	QToolButton *player = dj.findChild<QToolButton *>(QStringLiteral("snurra-player-view"));
+	QVERIFY(player && player->isVisible());
+	QTest::qWait(300);   /* asked to follow at least once */
+	player->click();
+	QTRY_VERIFY_WITH_TIMEOUT(!(node.windowState() & Qt::WindowMinimized), 2000);
 	auto window_tile = [&](const QString &source) -> snurra_tile * {
 		for (snurra_tile *tile : node.findChildren<snurra_tile *>())
 			if (tile->isVisible() && tile->state().source == source) return tile;
@@ -4237,7 +4246,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 7);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire; 6: a nested track's socket; 7: unfold on arrival */
+	QCOMPARE(SNURRA_EMBED_VERSION, 8);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire; 6: a nested track's socket; 7: unfold on arrival; 8: show_player */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

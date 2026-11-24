@@ -1471,6 +1471,22 @@ maximized -- the decks' (now capped) or the player's, whose tile shows
 the whole track's overview, 1024 columns stretched to the window's
 width.
 
+**(d) built 2026-11-25: the way back to the player view.** The switch
+of 2026-11-24 closed the window once the decks took its player, and with
+it the only way back short of a deck's "Into a window", which folds the
+decks. Now the window stays, following the decks' player as it did on
+2026-11-22, and goes to the background (minimized); the decks have a
+"player" button, at the left of the crossfader's row, that brings it
+forward -- a count the decks send in their answer to FOLLOW, raised by
+each press, a following window that sees it rise restoring and raising
+itself -- or, where no window follows (decks opened on their own),
+starts one (`snurra_dj::show_player`, `SNURRA_EMBED_VERSION` 8). Folding
+the decks still ends the window, as before. Tested in
+`a_window_opens_its_player_in_the_decks` (the window stays and holds the
+two tracks; closed instead, it fails) and
+`a_window_follows_the_player_on_the_decks` (minimized, the button brings
+it back; with the count ignored, it fails).
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

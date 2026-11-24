@@ -1615,8 +1615,9 @@ void handover_test::a_socket_it_cannot_make_is_said() {
  * know how to switch to deck mode"): its menu's "Open in the decks", by
  * a real right-click and keys in Xvfb, starts the deck view, which takes
  * the player of two whole and unfolds it -- each track on its own deck --
- * and the window, empty, goes: the switch, one player or its decks, not
- * both (the holder, 2026-11-24).
+ * and the window stays, following it there in the background -- the way
+ * back to the player view (the holder, 2026-11-25: "maybe we should not
+ * close it down when decks are opened? only leave it in the background?").
  */
 void handover_test::a_window_opens_its_player_in_the_decks() {
 	const QString name = start_x_server();
@@ -1654,9 +1655,10 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 		return true;
 	};
 	QTRY_VERIFY_WITH_TIMEOUT(unfolded(), 10000);
-	/* The switch: the window, its player given, goes -- not left open
-	 * following the decks, as it was from 2026-11-22 to 2026-11-24. */
-	QVERIFY2(ended(window, 10000), "the window stayed beside the decks it switched to");
+	/* The window stays, following the decks' player: its two tracks
+	 * shown again (closed 2026-11-24, which lost the way back). */
+	QVERIFY2(window->state() == QProcess::Running, "the window, having given its player, ended");
+	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(window), status_request(), 500).states.size(), 2, 5000);
 
 	/* --follow, kept underneath though no button starts it now: a window
 	 * following the decks' player holds its two tracks. */
@@ -1676,7 +1678,7 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 	waited.restart();
 	while (back.isEmpty() && waited.elapsed() < 10000) {
 		for (const QString &path : sockets())
-			if (path != decks && path != socket_of(follower)
+			if (path != decks && path != socket_of(window) && path != socket_of(follower)
 			    && !path.endsWith(QLatin1String(snurra_wire::DECKS_SUFFIX)) && ask(path, status_request(), 500).states.size() == 2)
 				back = path;
 		QTest::qWait(100);
@@ -1684,6 +1686,7 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 	QVERIFY2(!back.isEmpty(), "the decks' player did not come back into a window whole");
 	QTRY_COMPARE_WITH_TIMEOUT(ask(decks, status_request()).states.size(), 0, 5000);
 	QVERIFY2(ended(follower, 10000), "the window following the decks stayed after they folded");
+	QVERIFY2(ended(window, 10000), "the window the decks were opened from stayed after they folded");
 }
 
 /*

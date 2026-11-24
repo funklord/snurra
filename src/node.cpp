@@ -1594,10 +1594,18 @@ void snurra_node::complete_give(QLocalSocket *socket, const snurra_wire::message
 	commit.fade = CROSSFADE_US;
 	send(socket, commit);
 	if (socket) socket->flush();
-	/* The whole player given to the decks (open_decks): the switch -- one
-	 * player or its decks, not both (the holder, 2026-11-24, setting aside
-	 * 2026-11-22's "leave the window open as a follower"), so this window
-	 * goes as any emptied one does. Following stays for --follow. */
+	/* The whole player given to the decks (open_decks): this window stays,
+	 * following it there, and goes to the background -- the way back to
+	 * the player view, which closing it lost (the holder, 2026-11-25: "No
+	 * idea how to get back to player view, maybe we should not close it
+	 * down when decks are opened? only leave it in the background?"). The
+	 * decks' "player" brings it forward. */
+	if (ready.token == m_decks_token && !ready.path.isEmpty()) {
+		m_decks_token.clear();
+		follow(ready.path);
+		showMinimized();
+		return;
+	}
 	if (ready.token == m_decks_token) m_decks_token.clear();
 	leave_if_empty();
 }
@@ -1709,6 +1717,14 @@ void snurra_node::follow(const QString &decks) {
 
 void snurra_node::followed(const snurra_wire::message &m) {
 	m_follow_misses = 0;
+	/* Asked forward: the decks' "player" pressed since the last answer. */
+	if (m.deck > m_raise_seen) {
+		m_raise_seen = m.deck;
+		setWindowState(windowState() & ~Qt::WindowMinimized);
+		showNormal();
+		raise();
+		activateWindow();
+	}
 	if (m.states.isEmpty() && m_followed.isEmpty() && ++m_follow_empty <= 50) {
 		/* Not yet unfolded: the player just given by open_decks() spreads
 		 * across the decks once its crossfade is over. Five seconds. */

@@ -205,7 +205,8 @@ private:
 	QList<snurra_tile_state> m_follow_base;   /* each tile as it stood after that, to see what the hand changed here */
 	int64_t m_follow_held = -1;            /* paused, the time the lanes were held at */
 	int m_follow_misses = 0;               /* asks gone unanswered in a row */
-	int m_follow_empty = 0;                /* answers with no tracks before any had any */
+	int m_follow_empty = 0;
+	int m_raise_seen = 0;                  /* the decks' "player" presses seen */                /* answers with no tracks before any had any */
 	QString m_decks_token;                 /* the player given by open_decks(), followed once given */
 	void followed(const snurra_wire::message &m);
 	/* One picture to a window (sec 3b). */

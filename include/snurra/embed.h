@@ -42,8 +42,9 @@
  * 4: snurra_player's position_ms, length_ms, state_of and ended().
  * 5: four decks and the wire (the (5) parts of snurra_dj).
  * 6: snurra_dj::plug_track and plugged_track.
- * 7: snurra_dj::set_unfold_on_arrival. */
-#define SNURRA_EMBED_VERSION 7
+ * 7: snurra_dj::set_unfold_on_arrival.
+ * 8: snurra_dj::show_player. */
+#define SNURRA_EMBED_VERSION 8
 
 /* One thing to play. */
 struct snurra_media {
@@ -173,6 +174,9 @@ public:
 	 * with no nesting on screen (sec 3f, 2026-11-24). Off, it stays on its
 	 * deck until unfold() is called: a host driving the decks itself. */
 	void set_unfold_on_arrival(bool on);
+	/* (8) The player view: the window following these decks brought
+	 * forward, or one started where none follows (sec 3f, 2026-11-25). */
+	void show_player();
 	/* (5) And back: the decks of an unfolded player gathered onto deck A
 	 * as one player again, as edited, where it stands. False where no
 	 * player is unfolded. */

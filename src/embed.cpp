@@ -521,6 +521,10 @@ public:
 	QGridLayout *grid = nullptr;
 	snurra_deck_waves *waves = nullptr;
 	snurra_mixer *mixer = nullptr;
+	/* The way back to the player view (the holder, 2026-11-25): a window
+	 * following these decks, asked forward by a count it is sent. */
+	int raise_count = 0;
+	qint64 last_follow_us = 0;
 	bool unfold_on_arrival = true;
 	void fill_wave(int deck, snurra_deck_waves::deck &where);
 	QSlider *crossfader = nullptr;
@@ -772,12 +776,15 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 		take_change(m.states);
 		break;
 	case snurra_wire::FOLLOW: {
+		last_follow_us = snurra_clock_us();
 		/* The player unfolded here, for a window showing it (sec 3f):
 		 * its tracks as they stand -- what a hand has changed on a deck
 		 * now in the track it holds, as keep_moves would write it -- and
 		 * where it is. None unfolded, no tracks. */
 		snurra_wire::message is;
 		is.type = snurra_wire::FOLLOWING;
+		/* "player" presses: a window seeing the count rise comes forward. */
+		is.deck = raise_count;
 		if (score) {
 			std::vector<snurra_tile_state> now = score->states;
 			for (int deck = 0; deck < decks.size() && deck < int(score->on_deck.size()); ++deck) {
@@ -1539,6 +1546,17 @@ bool snurra_dj::unfold(int deck) {
 	return d->unfold(deck);
 }
 
+void snurra_dj::show_player() {
+	if (d->last_follow_us > 0 && snurra_clock_us() - d->last_follow_us < 1500000) {
+		++d->raise_count;
+		return;
+	}
+	if (!d->server) return;
+#ifndef Q_OS_ANDROID
+	QProcess::startDetached(QCoreApplication::applicationFilePath(), { QStringLiteral("--follow"), d->path });
+#endif
+}
+
 void snurra_dj::set_unfold_on_arrival(bool on) {
 	d->unfold_on_arrival = on;
 }
@@ -1660,6 +1678,16 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	});
 	d->name_sides();
 	fader->addStretch(1);
+	/* Back to the player view: the window that follows these decks
+	 * brought forward, or, where none does, one started. */
+	QToolButton *player = new QToolButton(this);
+	player->setObjectName(QStringLiteral("snurra-player-view"));
+	player->setText(tr("player"));
+	player->setAccessibleName(tr("The player view"));
+	player->setToolTip(tr("The player these decks play, in its window: brought forward, or opened"));
+	player->setAutoRaise(true);
+	connect(player, &QToolButton::clicked, this, [this] { show_player(); });
+	fader->insertWidget(0, player);
 	column->addLayout(fader);
 	d->browser = new snurra_library(QString(), this);
 	d->browser->setWindowFlags(Qt::Widget);
