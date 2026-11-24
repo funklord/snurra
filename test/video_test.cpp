@@ -1311,7 +1311,7 @@ void video_test::a_files_waveform_is_kept_until_it_changes() {
 	}
 	const std::vector<float> first = read();
 	QVERIFY2(first[0] > 0.4f && first[9] < 0.01f, qPrintable(QStringLiteral("%1 .. %2").arg(first[0]).arg(first[9])));
-	QVERIFY(QFileInfo::exists(qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/peaks/") + snurra_kept_key(path, -1)));
+	QVERIFY(QFileInfo::exists(qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/peaks/") + snurra_kept_key(path, -1) + QStringLiteral("-10")));
 
 	QVERIFY(write(false));
 	{

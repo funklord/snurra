@@ -72,8 +72,11 @@ namespace {
  * columns as 32-bit floats. Only for a file, or a lasting name, whose
  * stamp says when it has changed.
  */
-QString kept_peaks_path(const QString &source, int audio_track) {
-	return QFileInfo(snurra_kept_file()).absolutePath() + QStringLiteral("/peaks/") + snurra_kept_key(source, audio_track);
+/* One file a resolution: the deck view's scrolling waveform reads the
+ * same track at a hundred columns a second beside the overview's 1024. */
+QString kept_peaks_path(const QString &source, int audio_track, int columns) {
+	return QFileInfo(snurra_kept_file()).absolutePath() + QStringLiteral("/peaks/") + snurra_kept_key(source, audio_track)
+	       + QStringLiteral("-%1").arg(columns);
 }
 
 QByteArray kept_peaks_head(const QString &source, int columns) {
@@ -86,7 +89,7 @@ bool keeps_peaks(const QString &source) {
 
 bool kept_peaks(const QString &source, int audio_track, int columns, std::vector<float> &peaks) {
 	if (!keeps_peaks(source)) return false;
-	QFile file(kept_peaks_path(source, audio_track));
+	QFile file(kept_peaks_path(source, audio_track, columns));
 	if (!file.open(QIODevice::ReadOnly)) return false;
 	if (file.readLine(256) != kept_peaks_head(source, columns)) return false;
 	const QByteArray body = file.readAll();
@@ -98,7 +101,7 @@ bool kept_peaks(const QString &source, int audio_track, int columns, std::vector
 
 void keep_peaks(const QString &source, int audio_track, const std::vector<float> &peaks) {
 	if (!keeps_peaks(source) || peaks.empty()) return;
-	const QString path = kept_peaks_path(source, audio_track);
+	const QString path = kept_peaks_path(source, audio_track, int(peaks.size()));
 	QDir().mkpath(QFileInfo(path).absolutePath());
 	QSaveFile file(path);
 	if (!file.open(QIODevice::WriteOnly)) return;
@@ -112,21 +115,27 @@ snurra_peaks::snurra_peaks(const QString &source, int rate, int columns,
                            std::function<void(int first, const std::vector<float> &values)> piece, int audio_track) {
 	m_thread = std::thread([this, source, rate, columns, piece, audio_track] {
 		std::vector<float> kept;
-		if (kept_peaks(source, audio_track, columns, kept)) {
+		/* A fixed count is known before the file is opened. */
+		if (columns > 0 && kept_peaks(source, audio_track, columns, kept)) {
 			if (!m_stop.load(std::memory_order_relaxed)) piece(0, kept);
 			return;
 		}
 		std::unique_ptr<snurra_source> reader = snurra_open_source(source, rate, 0);
 		if (!reader || reader->length() <= 0) return;
+		const int count = columns > 0 ? columns : int(std::max<int64_t>(1, reader->length() * -columns / std::max(1, rate)));
+		if (columns <= 0 && kept_peaks(source, audio_track, count, kept)) {
+			if (!m_stop.load(std::memory_order_relaxed)) piece(0, kept);
+			return;
+		}
 		if (audio_track >= 0 && reader->choose_audio_track(audio_track)) reader->seek(0);
-		const std::vector<float> peaks = snurra_peaks_of(*reader, reader->length(), columns, [this, &piece](int first, const std::vector<float> &values) {
+		const std::vector<float> peaks = snurra_peaks_of(*reader, reader->length(), count, [this, &piece](int first, const std::vector<float> &values) {
 			if (m_stop.load(std::memory_order_relaxed)) return false;
 			piece(first, values);
 			return !m_stop.load(std::memory_order_relaxed);
 		});
 		/* Kept only whole: a read stopped, or given up waiting, leaves
 		 * columns short, and is not the file's waveform. */
-		if (int(peaks.size()) == columns && !m_stop.load(std::memory_order_relaxed))
+		if (int(peaks.size()) == count && !m_stop.load(std::memory_order_relaxed))
 			keep_peaks(source, audio_track, peaks);
 	});
 }

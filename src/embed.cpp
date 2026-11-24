@@ -41,6 +41,8 @@
 #include "snurra/palette.h"
 #include "snurra/subtitles.h"
 #include "snurra/tile.h"
+#include "snurra/deck_waves.h"
+#include "snurra/peaks.h"
 #include "snurra/wire.h"
 #include "snurra/timeline.h"
 
@@ -254,6 +256,10 @@ public:
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
 	QString name;
+	/* Its scrolling waveform's peaks (snurra_deck_waves), read for the
+	 * track in `fine_of`. */
+	std::unique_ptr<snurra_peaks> fine;
+	QString fine_of;
 
 protected:
 	void dragEnterEvent(QDragEnterEvent *event) override {
@@ -500,6 +506,8 @@ public:
 
 	QList<dj_deck *> decks;   /* A, B and, with four, C and D */
 	QGridLayout *grid = nullptr;
+	snurra_deck_waves *waves = nullptr;
+	void fill_wave(int deck, snurra_deck_waves::deck &where);
 	QSlider *crossfader = nullptr;
 	QLabel *left_side = nullptr, *right_side = nullptr;   /* which decks each end sends */
 	QComboBox *headphones = nullptr;   /* which listener a "listen" moves, with two or more */
@@ -1559,6 +1567,11 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	set_row->addWidget(d->set_window, 0, Qt::AlignTop);
 	d->show_set(false);
 	column->addLayout(set_row);
+	/* The decks' waveforms stacked full width above them, as Traktor's
+	 * (the holder's trial, 2026-11-24). */
+	d->waves = new snurra_deck_waves(this);
+	d->waves->fill = [this](int deck, snurra_deck_waves::deck &where) { d->fill_wave(deck, where); };
+	column->addWidget(d->waves, 2);
 	d->grid = new QGridLayout;
 	column->addLayout(d->grid);
 	set_deck_count(2);
@@ -2126,6 +2139,44 @@ QString snurra_dj::loaded(int deck) const {
 	return deck >= 0 && deck < d->decks.size() ? d->decks[deck]->name : QString();
 }
 
+void snurra_dj_private::fill_wave(int i, snurra_deck_waves::deck &where) {
+	if (i < 0 || i >= decks.size()) return;
+	dj_deck *deck = decks[i];
+	snurra_tile *tile = deck->tile;
+	/* A tune: its own file read finely; a player's mix has no one file,
+	 * and is left to its deck's overview for now. */
+	const QString source = tile && tile->state().player.empty() ? tile->state().sound_source() : QString();
+	if (source != deck->fine_of) {
+		deck->fine.reset();
+		deck->fine_of = source;
+		waves->clear_peaks(i);
+		if (!source.isEmpty() && !snurra_is_url(source)) {
+			QPointer<snurra_deck_waves> to = waves;
+			deck->fine = std::make_unique<snurra_peaks>(
+			        source, tile->deck()->rate(), snurra_peaks::per_second(snurra_deck_waves::COLUMNS_A_SECOND),
+			        [to, i](int first, const std::vector<float> &values) {
+				        QMetaObject::invokeMethod(
+				                to, [to, i, first, values] {
+					                if (to) to->set_peaks(i, first, values);
+				                },
+				                Qt::QueuedConnection);
+			        },
+			        tile->state().audio_track);
+		}
+	}
+	if (!tile || source.isEmpty()) return;
+	snurra_deck *sound = tile->deck();
+	const int rate = std::max(1, sound->rate());
+	where.loaded = true;
+	where.playing = tile->playing();
+	where.seconds = double(sound->position_at(snurra_clock_us())) / rate;
+	const snurra_beat_grid grid = tile->beats();
+	if (grid.valid() && grid.rate > 0) {
+		where.beat = grid.period / grid.rate;
+		where.first = grid.first / grid.rate;
+	}
+}
+
 void snurra_dj::set_deck_count(int count) {
 	count = count >= 4 ? 4 : 2;
 	while (d->decks.size() > count) {
@@ -2210,6 +2261,7 @@ void snurra_dj::set_deck_count(int count) {
 	d->name_sides();
 	d->show_plugs();
 	d->apply_crossfader();
+	if (d->waves) d->waves->set_deck_count(count);
 }
 
 int snurra_dj::deck_count() const {

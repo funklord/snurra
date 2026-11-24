@@ -661,8 +661,9 @@ does the same with a tile's playback:
   kept; the 42 minute set took 27 s), and the library's BPM column shows
   what decks have found -- nothing is analysed for the list
   (`a_beat_found_once_is_kept_and_shown`). **Waveforms are kept too**
-  (2026-11-24), each a file of its own under the cache's `peaks/` -- the
-  file's stamp and column count, then 1024 floats, 4 KB a track -- good
+  (2026-11-24), each a file of its own under the cache's `peaks/`, one a
+  resolution -- the file's stamp and column count, then the floats, 4 KB
+  a track for the overview's 1024 -- good
   while the file's size and time are the same, kept only when read
   whole. Measured on the holder's own use, a three hour `.webm` DJ set
   opened bare: the first open costs 318 s of CPU over three minutes,
@@ -1291,7 +1292,28 @@ window and the decks, and both shown at once on one timeline, kept in
 step; **(3)** several deck layouts for different needs, the waveforms
 side by side, stacked one above another, or vertical, above all with
 four channels. Layouts are slots arranged (below), so (3) is more
-arrangements of the same slots, not other code.
+arrangements of the same slots, not other code. **Asked the same day:**
+the look closest to **Traktor** -- zoomed waveforms stacked full width
+across the top, decks with large BPM, key and time, a mixer of channel
+strips between them; **the look first**, the layouts coming out of it
+(the waveforms a row of slots of their own); and "both at once" means
+**two linked windows** -- the window and the deck view as today, but
+fully in step: an edit in either shows in the other, either can play
+the set. **Step 1 built, 2026-11-24: the waveforms stacked above the
+decks** (`snurra_deck_waves`): a row a deck, full width, each its track
+read at a hundred columns a second and scrolling past a playhead fixed at
+the middle -- eight seconds across, the wheel zooming from two to sixty --
+with its beats and, taller, its bars, in the deck's own colour (A blue,
+B orange, C green, D violet); what is heard dims behind the playhead. A
+row has 48 px at least, so the decks below never squeeze it out. A
+player on a deck has no one file and keeps its overview for now. The
+fine peaks are kept as the overview's are, a file a resolution
+(`-<columns>` on the name), so the two never overwrite each other.
+Tested in `the_decks_waveforms_scroll_stacked_above_them` (a 4 s WAV
+read as 400 columns and kept so, its row following the deck as it
+plays; asked at the overview's 1024 instead, it fails). Next: the decks'
+own look (step 2) and a mixer between them (step 3), then the windows in
+step (4) and the layouts (5).
 
 **A layout that matches the hardware in front of you** (the holder,
 2026-11-20: "we must not forget the user who will want to configure

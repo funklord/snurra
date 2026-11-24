@@ -50,6 +50,8 @@
 #include "snurra/clock.h"
 #include "snurra/engine.h"
 #include "snurra/embed.h"
+#include "snurra/deck_waves.h"
+#include "snurra/beats.h"
 #include "snurra/midi.h"
 #include "snurra/tile_state.h"
 #include "snurra/timeline.h"
@@ -110,6 +112,7 @@ private slots:
 	void the_decks_sit_as_the_person_arranged_them();
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_hears_one_track_of_a_decks_player();
+	void the_decks_waveforms_scroll_stacked_above_them();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -2067,6 +2070,50 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	QCOMPARE(where(again, 1), QPoint(1, 0));
 	again.arrange(QString());
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
+}
+
+/*
+ * The decks' waveforms (project.md sec 3f, the holder's trial of
+ * 2026-11-24, Traktor's look): stacked full width above the decks, a row
+ * a deck. A 4 s WAV on deck A is read at a hundred columns a second --
+ * 400, kept under its own name beside the overview's -- and its row says
+ * where the deck is as it plays; an empty deck's row is empty.
+ */
+void embed_test::the_decks_waveforms_scroll_stacked_above_them() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("four.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav_of(4 * 48000, [](int i) { return (i / 2400) % 2 ? 12000 : 0; }));
+	}
+	snurra_dj dj;
+	dj.resize(1200, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_deck_waves *waves = dj.findChild<snurra_deck_waves *>(QStringLiteral("snurra-deck-waves"));
+	QVERIFY(waves && waves->isVisible());
+	QCOMPARE(waves->deck_count(), 2);
+	QVERIFY(waves->height() >= 2 * 48);
+	snurra_media media;
+	media.path = path;
+	QVERIFY(dj.load(0, media));
+	QTRY_COMPARE_WITH_TIMEOUT(waves->columns(0), 400, 5000);
+	QCOMPARE(waves->columns(1), 0);
+	QVERIFY(QFileInfo::exists(qEnvironmentVariable("SNURRA_CACHE") + QStringLiteral("/peaks/") + snurra_kept_key(path, -1) + QStringLiteral("-400")));
+	snurra_deck_waves::deck where, empty;
+	waves->fill(0, where);
+	waves->fill(1, empty);
+	QVERIFY(where.loaded);
+	QVERIFY(!empty.loaded);
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	tile->set_playing(true);
+	QTest::qWait(600);
+	waves->fill(0, where);
+	QVERIFY2(where.playing && where.seconds > 0.3 && where.seconds < 1.5, qPrintable(QStringLiteral("at %1 s").arg(where.seconds)));
+	dj.set_deck_count(4);
+	QCOMPARE(waves->deck_count(), 4);
 }
 
 /*
