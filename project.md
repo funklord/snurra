@@ -1587,6 +1587,22 @@ button, still names the track the head names. Tested in
 `no_control_shows_twice_on_the_decks` (with mixer mode not set when a
 tile is installed, it fails).
 
+**The holder's answers, 2026-11-25:** "1. where the master section goes
+is irrelevant at this point, just make it contain the controls we need,
+and make it open/close. 2. not readable maximized is the waveform not
+being granular and still having poor performance 3. Yes we should have
+a mode where it runs up, like other players especially if its used on a
+long screen." **(f) built the same day:** a fourth layout, "Vertical,
+time running up" (`vertical up`), the lane turned the other quarter, what
+is to come above the playhead; a scratch on it pulls forward by dragging
+down, against time as on the others (`the_waveforms_layout_is_kept_as_chosen`;
+with the name not read back, it fails). So: **(e)** the master section is built where it falls,
+with the controls a master needs, and opened and closed like the strip's
+EQ; **(c1)** the waveform maximized wants finer detail and less cost --
+the player's tile waveform, whose overview of 1024 columns is stretched
+to the window, as much as the decks'; **(f)** vertical lanes can run up
+as well as down.
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

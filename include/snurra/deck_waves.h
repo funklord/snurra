@@ -61,10 +61,12 @@ public:
 	/* How the decks' lanes are laid out (the holder, 2026-11-24:
 	 * "waveforms horizontally side by side or on top of each other or
 	 * vertical, especially with 4ch"): rows stacked full width, columns
-	 * side by side, or vertical lanes, time running down. A setting
+	 * side by side, or vertical lanes, time running down or up. A setting
 	 * (decks/waveforms, on the waveforms' right-click menu), stacked by
 	 * default. */
-	enum layout_t { stacked, side_by_side, vertical };
+	enum layout_t { stacked, side_by_side, vertical, vertical_up };
+	/* A vertical lane either way. */
+	bool upright() const { return m_layout == vertical || m_layout == vertical_up; }
 	void set_layout(layout_t layout);
 	layout_t layout() const { return m_layout; }
 	/* Chosen by hand and kept; empty for the default. */

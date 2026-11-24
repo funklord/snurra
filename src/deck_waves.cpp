@@ -100,7 +100,7 @@ int snurra_deck_waves::lane_at(QPointF at, double &along) const {
 		return std::clamp(int(at.y() * count / std::max(1, height())), 0, count - 1);
 	}
 	const int deck = std::clamp(int(at.x() * count / std::max(1, width())), 0, count - 1);
-	along = m_layout == vertical ? at.y() : at.x() - double(width()) * deck / count;
+	along = m_layout == vertical ? at.y() : m_layout == vertical_up ? height() - at.y() : at.x() - double(width()) * deck / count;
 	return deck;
 }
 
@@ -135,9 +135,11 @@ void snurra_deck_waves::mouseMoveEvent(QMouseEvent *event) {
 		return;
 	}
 	const int count = std::max(1, int(m_peaks.size()));
-	const double lane_length = m_layout == vertical ? height() : m_layout == stacked ? width() : double(width()) / count;
-	const double along = m_layout == vertical ? event->position().y() : m_layout == stacked ? event->position().x()
-	                                                                                    : event->position().x() - lane_length * m_held;
+	const double lane_length = upright() ? height() : m_layout == stacked ? width() : double(width()) / count;
+	const double along = m_layout == vertical      ? event->position().y()
+	                     : m_layout == vertical_up ? height() - event->position().y()
+	                     : m_layout == stacked     ? event->position().x()
+	                                               : event->position().x() - lane_length * m_held;
 	const double seconds = m_held_seconds + (m_held_from - along) / (lane_length / m_span);
 	if (on_hand) on_hand(m_held, std::max(0.0, seconds));
 	event->accept();
@@ -183,6 +185,14 @@ void snurra_deck_waves::paintEvent(QPaintEvent *) {
 		if (m_layout == vertical) {
 			painter.translate(lane.right() + 1, lane.top());
 			painter.rotate(90);
+			along = lane.height();
+			across = lane.width();
+		} else if (m_layout == vertical_up) {
+			/* The other quarter: time runs up the lane, what is to come
+			 * above the playhead (the holder, 2026-11-25, "like other
+			 * players especially if its used on a long screen"). */
+			painter.translate(lane.left(), lane.bottom() + 1);
+			painter.rotate(-90);
 			along = lane.height();
 			across = lane.width();
 		} else {
@@ -305,7 +315,8 @@ void snurra_deck_waves::contextMenuEvent(QContextMenuEvent *event) {
 	const QList<QPair<QString, QString>> choices{ { tr("Default (stacked)"), QString() },
 		                                      { tr("Stacked"), QStringLiteral("stacked") },
 		                                      { tr("Side by side"), QStringLiteral("side by side") },
-		                                      { tr("Vertical"), QStringLiteral("vertical") } };
+		                                      { tr("Vertical, time running down"), QStringLiteral("vertical") },
+		                                      { tr("Vertical, time running up"), QStringLiteral("vertical up") } };
 	for (const auto &choice : choices) {
 		QAction *action = menu.addAction(choice.first);
 		action->setCheckable(true);
@@ -325,5 +336,6 @@ void snurra_deck_waves::choose_layout(const QString &value) {
 snurra_deck_waves::layout_t snurra_deck_waves::layout_named(const QString &value) {
 	if (value == QLatin1String("side by side")) return side_by_side;
 	if (value == QLatin1String("vertical")) return vertical;
+	if (value == QLatin1String("vertical up")) return vertical_up;
 	return stacked;
 }

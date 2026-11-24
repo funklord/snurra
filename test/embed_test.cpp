@@ -2425,13 +2425,27 @@ void embed_test::the_waveforms_layout_is_kept_as_chosen() {
 		snurra_deck_waves again;
 		QCOMPARE(again.layout(), snurra_deck_waves::vertical);
 	}
+	/* Running up (2026-11-25, "like other players especially if its used
+	 * on a long screen"): kept, and a point's place along its lane
+	 * measured from the bottom. */
+	waves.choose_layout(QStringLiteral("vertical up"));
+	QCOMPARE(waves.layout(), snurra_deck_waves::vertical_up);
+	QCOMPARE(waves.minimumHeight(), 240);
+	{
+		snurra_deck_waves again;
+		QCOMPARE(again.layout(), snurra_deck_waves::vertical_up);
+	}
+	waves.resize(800, 300);
+	double along = -1;
+	QCOMPARE(waves.lane_at(QPointF(10, 290), along), 0);
+	QCOMPARE(along, 10.0);
 	waves.choose_layout(QStringLiteral("side by side"));
 	QCOMPARE(waves.layout(), snurra_deck_waves::side_by_side);
 	waves.choose_layout(QString());
 	QCOMPARE(waves.layout(), snurra_deck_waves::stacked);
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/waveforms")));
 	/* And each lays out and paints without a deck to fill it. */
-	for (const QString &layout : { QStringLiteral("stacked"), QStringLiteral("side by side"), QStringLiteral("vertical") }) {
+	for (const QString &layout : { QStringLiteral("stacked"), QStringLiteral("side by side"), QStringLiteral("vertical"), QStringLiteral("vertical up") }) {
 		waves.choose_layout(layout);
 		waves.resize(800, 300);
 		QImage shot(waves.size(), QImage::Format_RGB32);
