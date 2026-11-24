@@ -17,6 +17,7 @@ snurra_deck::snurra_deck(const start_t &start)
       }) {
 	for (int i = 0; i < BLOCKS; ++i) m_free.push(&m_blocks[i]);
 	m_eq.make(m_rate, snurra_eq::THREE);
+	if (start.history_seconds > 0) m_history.assign(size_t(2 * std::max(1.0, start.history_seconds * m_rate)), 0.0f);
 
 	/*
 	 * Anchored -- a handover's taker, which must sound in step with the
@@ -352,6 +353,26 @@ void snurra_deck::keep_tail(int from) {
 	m_tail_from = from;
 }
 
+/* A frame played, into the history; a jump -- a seek -- begins it again,
+ * so what is held is always one unbroken run of the track. */
+void snurra_deck::keep(int64_t frame, float left, float right) {
+	const int64_t size = int64_t(m_history.size() / 2);
+	if (frame != m_history_end) m_history_first = frame;
+	m_history_end = frame + 1;
+	if (m_history_end - m_history_first > size) m_history_first = m_history_end - size;
+	const size_t at = size_t(frame % size) * 2;
+	m_history[at] = left;
+	m_history[at + 1] = right;
+}
+
+bool snurra_deck::history_frame(int64_t frame, float &left, float &right) const {
+	if (m_history.empty() || frame < m_history_first || frame >= m_history_end) return false;
+	const size_t at = size_t(frame % int64_t(m_history.size() / 2)) * 2;
+	left = m_history[at];
+	right = m_history[at + 1];
+	return true;
+}
+
 bool snurra_deck::next_frame(float &left, float &right) {
 	for (;;) {
 		if (!m_current) {
@@ -381,6 +402,7 @@ bool snurra_deck::next_frame(float &left, float &right) {
 			left = m_current->data[2 * m_offset];
 			right = m_current->data[2 * m_offset + 1];
 			++m_offset;
+			if (!m_history.empty()) keep(here, left, right);
 		}
 		if (m_offset >= m_current->frames) {
 			m_free.push(m_current);

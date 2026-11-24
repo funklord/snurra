@@ -137,6 +137,7 @@ private slots:
 	void a_play_before_any_bytes_begins_at_the_beginning_data() { formats_data(); }
 	void a_play_before_any_bytes_begins_at_the_beginning();
 	void a_deck_started_at_a_time_sounds_its_frame_then();
+	void a_deck_keeps_what_it_played_to_read_back();
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
@@ -335,6 +336,48 @@ void deck_test::a_play_before_any_bytes_begins_at_the_beginning() {
 	blocks.insert(blocks.end(), more.begin(), more.end());
 	const QString fault = check_continuous(blocks, reference, 0);
 	QVERIFY2(fault.isEmpty(), qPrintable(fault));
+}
+
+/*
+ * A scratch's way backwards, step 1 (project.md sec 3f, c3): a deck made
+ * with a second of history keeps what it played. The ramp played for two
+ * seconds, read back from the newest frame to the oldest held, gives each
+ * frame's own index; the second before that is gone; a seek begins the
+ * history again from the new place. A deck made without history keeps
+ * nothing.
+ */
+void deck_test::a_deck_keeps_what_it_played_to_read_back() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	start.playing = true;
+	start.history_seconds = 1;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) >= 2 * RATE; });
+	const int64_t end = deck.history_end();
+	QVERIFY2(end >= 2 * RATE, qPrintable(QString::number(end)));
+	QCOMPARE(end - deck.history_first(), int64_t(RATE));
+	float left = 0, right = 0;
+	for (int64_t frame = end - 1; frame >= deck.history_first(); frame -= 97) {
+		QVERIFY(deck.history_frame(frame, left, right));
+		QVERIFY2(qAbs(double(left) * SNURRA_RAMP_SCALE - double(frame)) < 0.5,
+		         qPrintable(QStringLiteral("frame %1 read back as %2").arg(frame).arg(double(left) * SNURRA_RAMP_SCALE)));
+	}
+	QVERIFY(!deck.history_frame(deck.history_first() - 1, left, right));
+	QVERIFY(!deck.history_frame(end, left, right));
+
+	deck.seek(RATE * 5);
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) >= RATE / 4; });
+	QVERIFY2(deck.history_first() >= RATE * 5, qPrintable(QString::number(deck.history_first())));
+	QVERIFY(!deck.history_frame(end - 1, left, right));
+
+	snurra_deck::start_t plain = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	plain.fallback_length = RATE * 10;
+	plain.playing = true;
+	snurra_deck none(plain);
+	int64_t later = snurra_clock_us();
+	play(none, later, 200, [](const std::vector<rendered_t> &b) { return advanced_by(b) >= RATE / 4; });
+	QVERIFY(!none.history_frame(none.history_end() - 1, left, right));
 }
 
 void deck_test::a_deck_started_at_a_time_sounds_its_frame_then() {

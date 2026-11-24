@@ -1505,7 +1505,18 @@ let go, the deck goes on as it was playing (or stays paused), as
 Traktor's and Serato's do; **(4)** the same on a controller's jog wheel,
 touch and turn. Each step has its test: the ring read backwards gives
 the frames forwards reversed; a target moved at -1x is heard as the
-track reversed; a drag of a beat's width moves the deck a beat.
+track reversed; a drag of a beat's width moves the deck a beat. **Step (1)
+built 2026-11-25:** `start_t::history_seconds` gives a deck a ring of
+the frames it has played, indexed by track frame, written as each is
+played (`keep`) and read back by `history_frame`; a jump -- a seek --
+begins it again, so what it holds is always one unbroken run of the
+track. Fixed when the deck is made, so the callback never allocates; 0
+by default, so a deck never scratched -- every window's -- pays nothing
+(6 s would be some 2.3 MB a deck at 48 kHz). Tested in
+`a_deck_keeps_what_it_played_to_read_back` (two seconds of the ramp,
+the last second read back frame for frame, the one before gone, a seek
+beginning it again, a deck without one keeping nothing; with the write
+taken out, it fails). Next: step (2), the held state the hand drives.
 
 **(e) Where the master section goes -- the holder's, a proposal
 (2026-11-25).** The holder: "we need to decide where the master section

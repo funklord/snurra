@@ -98,6 +98,11 @@ public:
 		bool anchored = false;         /* in step with the anchor's clock: a handover's taker */
 		int64_t lead_us = 0;           /* how far ahead the first block is needed */
 		int audio_track = -1;          /* the sound track to open on; -1 the file's choice */
+		/* Seconds of what was played kept to read back -- a scratch's way
+		 * backwards (project.md sec 3f, c3) -- 0 for none: a deck that is
+		 * never scratched pays nothing. Fixed when the deck is made, so
+		 * the callback never allocates. */
+		double history_seconds = 0;
 		/* Opens the source in place of `source` and `bytes` where set: a
 		 * player's output (timeline.h), which the deck need not know. */
 		std::function<std::unique_ptr<snurra_source>(int rate, std::function<bool()> interrupted)> open;
@@ -105,6 +110,15 @@ public:
 
 	explicit snurra_deck(const start_t &start);
 	~snurra_deck();
+
+	/* A frame it has played, read back from its history: false where it
+	 * was not played within the last history_seconds, or since a jump --
+	 * a seek -- began the history again. From the callback's thread, or
+	 * from another while the callback is not running (a test). */
+	bool history_frame(int64_t frame, float &left, float &right) const;
+	/* The frames held: [first, end). */
+	int64_t history_first() const { return m_history_first; }
+	int64_t history_end() const { return m_history_end; }
 
 	/* ---- any thread but the callback ---- */
 
@@ -310,6 +324,12 @@ private:
 	quint16 m_eq_layout = snurra_eq::THREE;   /* the callback's: the layout m_eq is made for */
 	std::atomic<float> m_tempo{ 1 };
 	std::atomic<bool> m_key_lock{ false };
+	/* The history (start_t::history_seconds): a ring of played frames,
+	 * indexed by track frame modulo its size; [first, end) of them held. */
+	std::vector<float> m_history;
+	int64_t m_history_first = 0;
+	int64_t m_history_end = 0;
+	void keep(int64_t frame, float left, float right);
 	std::atomic<int> m_key_shift{ 0 };
 	std::atomic<int64_t> m_bend_asked{ 0 };
 	std::atomic<uint64_t> m_generation{ 1 };   /* bumped by every seek */
