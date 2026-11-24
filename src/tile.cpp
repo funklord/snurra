@@ -1243,6 +1243,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	/* The level, its icon beside it: three bare sliders read alike. */
 	QHBoxLayout *loud = new QHBoxLayout;
 	QLabel *speaker = new QLabel(m_controls);
+	m_speaker = speaker;
 	const int icon = fontMetrics().height();
 	speaker->setPixmap(style()->standardIcon(QStyle::SP_MediaVolume).pixmap(icon, icon));
 	speaker->setToolTip(tr("Level"));
@@ -1329,6 +1330,7 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	 * up to +6 by 0.5. */
 	QHBoxLayout *bands = new QHBoxLayout;
 	QLabel *eq_name = new QLabel(tr("EQ"), m_controls);
+	m_eq_name = eq_name;
 	snurra_mute(eq_name);
 	m_eq = new snurra_eq_line(m_controls);
 	m_eq->setObjectName(QStringLiteral("snurra-eq"));
@@ -2398,6 +2400,34 @@ bool snurra_tile::live() const {
 int64_t snurra_tile::length_frames() const {
 	const int64_t length = m_deck->length();
 	return length > 0 ? length : us_to_frames(m_state.duration_us, m_deck->rate());
+}
+
+/*
+ * On a deck beside the mixer (the holder, 2026-11-25: "there are quite a
+ * few duplicated controls"): its play, cue and sync are on the deck's
+ * head, its level and EQ on the mixer's strip, so they are shown nowhere
+ * else -- what stays is what only the deck has, the seek, the jumps, the
+ * loop, the tempo and the key. The drawn EQ comes back only when opened
+ * by hand from the strip's EQ button (set_eq_open), as Traktor keeps its
+ * rarely used things hidden until asked for.
+ */
+void snurra_tile::set_on_mixer(bool on) {
+	m_on_mixer = on;
+	for (QWidget *twice : { static_cast<QWidget *>(m_play), static_cast<QWidget *>(m_cue), static_cast<QWidget *>(m_sync),
+	                        static_cast<QWidget *>(m_level), m_speaker, static_cast<QWidget *>(m_beat_label) })
+		if (twice) twice->setVisible(!on);
+	show_eq();
+}
+
+void snurra_tile::set_eq_open(bool open) {
+	m_eq_open = open;
+	show_eq();
+}
+
+void snurra_tile::show_eq() {
+	const bool shown = !m_on_mixer || m_eq_open;
+	if (m_eq) m_eq->setVisible(shown);
+	if (m_eq_name) m_eq_name->setVisible(shown);
 }
 
 void snurra_tile::set_controls(bool out) {

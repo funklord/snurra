@@ -38,6 +38,13 @@ public:
 	std::function<void(int deck, bool on)> on_cue;
 	std::function<bool(int deck)> cued;
 	std::function<bool()> has_headphones;
+	/* A strip's EQ button: the deck's drawn EQ opened, or closed; and
+	 * whether it is open now. */
+	std::function<void(int deck, bool open)> on_eq;
+	std::function<bool(int deck)> eq_opened;
+	/* Told when the mixer shows or hides for want of room, so what it
+	 * holds can show on the decks instead. */
+	std::function<void(bool shown)> on_shown;
 
 	/* An EQ knob runs -100 to 100, 0 dB at its middle; -100 the kill. */
 	static constexpr int KILL_STEP = -100;
@@ -54,6 +61,7 @@ public:
 		QDial *low = nullptr;
 		QSlider *fader = nullptr;
 		QToolButton *cue = nullptr;
+		QToolButton *eq = nullptr;
 		QWidget *box = nullptr;
 	};
 	const strip &strip_of(int deck) const { return m_strips.at(size_t(deck)); }

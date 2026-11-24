@@ -1537,6 +1537,29 @@ exists. One master, two views of it, as the window and the decks are
 two views of one set. Building it needs 3b first: the master EQ applied
 once to the player's sum.
 
+**The holder's third trial, 2026-11-25 -- open:** "good work, couldn't
+figure out how to do scratching at all there are quite a few duplicated
+controls, and if we want that expanded EQ on each channel we should open
+it manually using an EQ? button, just like traktor has a lot of hidden,
+rarely used but useful features. If you don't open too many of them then
+they don't fill up your screen." So: **no control twice on the decks** --
+what the head and the mixer hold, the deck's own panel does not show --
+and **the expanded EQ, the drawn line, opened by hand** from an EQ button
+on the channel's strip; rarely used things hidden until asked for, as
+Traktor's are. And scratching, which needs steps (2) and (3) below. **Built the same
+day:** beside the mixer a deck's tile is in mixer mode
+(`snurra_tile::set_on_mixer`): its play, cue and sync (on the head), its
+level and the drawn EQ (on the strip) and its BPM-and-key readout (on
+the head) are not shown, leaving what only the deck has -- the seek, the
+jumps, the loop, the tempo and the key. Each strip has an EQ button, its
+deck's drawn EQ opened on the deck and closed again
+(`snurra_tile::set_eq_open`). Without room for the mixer -- a phone's
+width -- the mixer tells the decks and the tiles show their own again.
+Left, for the holder to see: the tile's own title row, with its close
+button, still names the track the head names. Tested in
+`no_control_shows_twice_on_the_decks` (with mixer mode not set when a
+tile is installed, it fails).
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

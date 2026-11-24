@@ -105,6 +105,13 @@ public:
 	 * time counts up with nothing to count to, and it cannot be sought. */
 	bool live() const;
 	void set_controls(bool out);
+	/* On a deck beside the mixer: what the deck's head and the mixer's
+	 * strip hold -- play, cue, sync, level, EQ -- not shown here too. */
+	void set_on_mixer(bool on);
+	bool on_mixer() const { return m_on_mixer; }
+	/* The drawn EQ, opened by hand where the mixer has the knobs. */
+	void set_eq_open(bool open);
+	bool eq_open() const { return m_eq_open; }
 	/* (sec 3b) Its own title row -- name, controls' handle, close -- or,
 	 * in a window whose one bar has them, none: named on its waveform
 	 * and dragged by it. Shown by default. */
@@ -412,6 +419,11 @@ private:
 	int chapter_at(qint64 us) const;
 	void show_chapters();
 	class snurra_eq_line *m_eq = nullptr;
+	QWidget *m_eq_name = nullptr;
+	QWidget *m_speaker = nullptr;
+	bool m_on_mixer = false;
+	bool m_eq_open = false;
+	void show_eq();
 	void show_cue();
 	QToolButton *m_back = nullptr;
 	QToolButton *m_forward = nullptr;

@@ -93,6 +93,15 @@ void snurra_mixer::set_deck_count(int count) {
 		one.high = dial(tr("HI"), tr("high"), KILL_STEP, 100);
 		one.mid = dial(tr("MID"), tr("mid"), KILL_STEP, 100);
 		one.low = dial(tr("LOW"), tr("low"), KILL_STEP, 100);
+		/* The drawn EQ -- every band, not three -- opened by hand: rarely
+		 * wanted, so hidden until asked for, as Traktor's (2026-11-25). */
+		one.eq = new QToolButton(one.box);
+		one.eq->setText(tr("EQ"));
+		one.eq->setCheckable(true);
+		one.eq->setAutoRaise(true);
+		one.eq->setAccessibleName(tr("Deck %1 EQ, drawn").arg(letter));
+		one.eq->setToolTip(tr("The deck's EQ drawn as a line, every band: opened on the deck"));
+		column->addWidget(one.eq, 0, Qt::AlignHCenter);
 		/* A DJ fader, vertical and long, as a mixer's channel. */
 		snurra_fader *fader = new snurra_fader(Qt::Vertical, one.box);
 		fader->set_home(100);
@@ -122,6 +131,9 @@ void snurra_mixer::set_deck_count(int count) {
 		});
 		connect(one.cue, &QToolButton::clicked, this, [this, deck](bool on) {
 			if (on_cue) on_cue(deck, on);
+		});
+		connect(one.eq, &QToolButton::clicked, this, [this, deck](bool open) {
+			if (on_eq) on_eq(deck, open);
 		});
 		m_row->addWidget(one.box);
 		m_strips.push_back(one);
@@ -156,6 +168,10 @@ void snurra_mixer::refresh() {
 		one.cue->blockSignals(true);
 		one.cue->setChecked(cued && cued(int(deck)));
 		one.cue->blockSignals(false);
+		one.eq->setEnabled(tile != nullptr);
+		one.eq->blockSignals(true);
+		one.eq->setChecked(eq_opened && eq_opened(int(deck)));
+		one.eq->blockSignals(false);
 		if (!tile) continue;
 		const snurra_tile_state state = tile->state();
 		show(one.gain, int(std::lround(tile->gain_db())));
@@ -174,7 +190,10 @@ bool snurra_mixer::eventFilter(QObject *watched, QEvent *event) {
 	if (watched == parentWidget() && event->type() == QEvent::Resize) {
 		const int needed = int(m_strips.size()) * (fontMetrics().height() * 2 + 4) + 8 + 2 * 300;
 		const bool room = static_cast<QResizeEvent *>(event)->size().width() >= needed;
-		if (room != isVisibleTo(parentWidget())) setVisible(room);
+		if (room != !isHidden()) {
+			setVisible(room);
+			if (on_shown) on_shown(room);
+		}
 	}
 	return QWidget::eventFilter(watched, event);
 }

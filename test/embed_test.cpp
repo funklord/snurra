@@ -120,6 +120,7 @@ private slots:
 	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
+	void no_control_shows_twice_on_the_decks();
 	void a_tempo_change_keeps_the_pitch_by_default();
 	void the_knob_and_the_fader_move_by_the_hand_not_the_press();
 	void a_listener_plugs_into_a_windows_tile();
@@ -2162,6 +2163,50 @@ void embed_test::a_tempo_change_keeps_the_pitch_by_default() {
 }
 
 /*
+ * No control twice on the decks (the holder, 2026-11-25: "there are quite
+ * a few duplicated controls, and if we want that expanded EQ on each
+ * channel we should open it manually using an EQ? button"): beside the
+ * mixer a deck's tile shows none of what the head and the strip hold --
+ * play, cue, sync, level, the drawn EQ -- and keeps its tempo; the strip's
+ * EQ button opens the drawn EQ and closes it again; with no room for the
+ * mixer, a phone's width, the tile's own come back.
+ */
+void embed_test::no_control_shows_twice_on_the_decks() {
+	snurra_dj dj;
+	dj.resize(1400, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = QStringLiteral("tone:440");
+	QVERIFY(dj.load(0, media));
+	QWidget *place = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"));
+	snurra_tile *tile = place->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	auto shown = [&](const QString &name) {
+		for (QWidget *one : tile->findChildren<QWidget *>())
+			if ((one->accessibleName() == name || one->objectName() == name) && one->isVisibleTo(&dj)) return true;
+		return false;
+	};
+	QTRY_VERIFY_WITH_TIMEOUT(tile->on_mixer(), 2000);
+	QVERIFY(!shown(QStringLiteral("Level")));
+	QVERIFY(!shown(QStringLiteral("snurra-eq")));
+	QVERIFY(shown(QStringLiteral("snurra-tempo")));
+	snurra_mixer *mixer = dj.findChild<snurra_mixer *>(QStringLiteral("snurra-mixer"));
+	QToolButton *eq = mixer->strip_of(0).eq;
+	QTRY_VERIFY_WITH_TIMEOUT(eq->isEnabled(), 2000);
+	eq->click();
+	QVERIFY(tile->eq_open());
+	QVERIFY(shown(QStringLiteral("snurra-eq")));
+	eq->click();
+	QVERIFY(!shown(QStringLiteral("snurra-eq")));
+	dj.resize(412, 915);
+	QTRY_VERIFY_WITH_TIMEOUT(mixer->isHidden(), 2000);
+	QVERIFY(!tile->on_mixer());
+	QVERIFY(shown(QStringLiteral("Level")));
+	QVERIFY(shown(QStringLiteral("snurra-eq")));
+}
+
+/*
  * The mixer between the decks (project.md sec 3f, step 3): a strip a
  * deck, in Traktor's order for four -- C A B D, facing their decks. Each
  * control is the deck's tile's own: the low knob at its end kills the low
@@ -3413,6 +3458,9 @@ void embed_test::the_eq_line_draws_its_slopes_and_splits() {
 	QVERIFY(QTest::qWaitForWindowExposed(&dj));
 	snurra_tile *deck = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
 	QVERIFY(deck);
+	/* Beside the mixer the drawn EQ is opened by hand (2026-11-25). */
+	deck->set_eq_open(true);
+	QTest::qWait(50);
 	QWidget *line = deck->findChild<QWidget *>(QStringLiteral("snurra-eq"));
 	QVERIFY(line && line->width() > 100);
 	snurra_eq five;

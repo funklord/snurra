@@ -1649,6 +1649,17 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 		return d->chosen_listener < int(d->listeners.size()) && d->listeners[size_t(d->chosen_listener)]->deck == deck;
 	};
 	d->mixer->has_headphones = [this] { return !d->listeners.empty(); };
+	d->mixer->on_eq = [this](int deck, bool open) {
+		if (deck < d->decks.size() && d->decks[deck]->tile) d->decks[deck]->tile->set_eq_open(open);
+	};
+	d->mixer->eq_opened = [this](int deck) { return deck < d->decks.size() && d->decks[deck]->tile && d->decks[deck]->tile->eq_open(); };
+	/* No control twice (2026-11-25): beside the mixer a deck's tile shows
+	 * none of what the head and the strip hold; without room for the
+	 * mixer, it shows them again. */
+	d->mixer->on_shown = [this](bool shown) {
+		for (dj_deck *deck : d->decks)
+			if (deck->tile) deck->tile->set_on_mixer(shown);
+	};
 	set_deck_count(2);
 	QHBoxLayout *fader = new QHBoxLayout;
 	/* A DJ fader, horizontal and long, its home the middle. */
@@ -1761,6 +1772,7 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	tile->set_picture_closed_at_first(true);
 	place->tile = tile;
 	place->head->set_tile(tile);
+	tile->set_on_mixer(mixer && !mixer->isHidden());
 	place->name = name;
 	place->empty->hide();
 	/* One player or its decks (sec 3f, 2026-11-24): a player on a deck
