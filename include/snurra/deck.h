@@ -120,6 +120,15 @@ public:
 	int64_t history_first() const { return m_history_first; }
 	int64_t history_end() const { return m_history_end; }
 
+	/* ---- a hand on the platter (project.md sec 3f, c3 step 2) ---- */
+	/* Held, the deck plays where the hand moves it, either way, at the
+	 * hand's speed, from its history -- a scratch; let go, it goes on as
+	 * it was from where the hand left it. Any thread but the callback. */
+	void hold(bool on) { m_hand_on.store(on, std::memory_order_release); }
+	bool held_by_hand() const { return m_hand_on.load(std::memory_order_acquire); }
+	/* Where the hand has the record: a track frame. */
+	void set_hand(double frame) { m_hand_frame.store(frame, std::memory_order_relaxed); }
+
 	/* ---- any thread but the callback ---- */
 
 	/* Released, and read by the callback before the seek generation: a
@@ -327,6 +336,14 @@ private:
 	/* The history (start_t::history_seconds): a ring of played frames,
 	 * indexed by track frame modulo its size; [first, end) of them held. */
 	std::vector<float> m_history;
+	/* The hand: asked by the UI, followed by the callback. */
+	std::atomic<bool> m_hand_on{ false };
+	std::atomic<double> m_hand_frame{ 0 };
+	bool m_scratching = false;   /* the callback's: under the hand now */
+	double m_scratch_at = 0;     /* where, a track frame between frames */
+	double m_scratch_speed = 0;  /* frames a frame, eased */
+	bool m_replay = false;       /* let go behind what was played: from the history first */
+	void render_held(float *out, int frames, int64_t present_us);
 	int64_t m_history_first = 0;
 	int64_t m_history_end = 0;
 	void keep(int64_t frame, float left, float right);

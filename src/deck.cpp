@@ -374,6 +374,12 @@ bool snurra_deck::history_frame(int64_t frame, float &left, float &right) const 
 }
 
 bool snurra_deck::next_frame(float &left, float &right) {
+	/* Let go behind the newest frame played: those frames again, from the
+	 * history, until the reader's next is the one wanted. */
+	if (m_replay) {
+		if (m_position < m_history_end && history_frame(m_position, left, right)) return true;
+		m_replay = false;
+	}
 	for (;;) {
 		if (!m_current) {
 			if (m_held) return false;   /* the pending seek's: not until its moment */
@@ -557,7 +563,64 @@ void snurra_isolator::rest() {
 }
 
 
+/*
+ * Under the hand: the position goes where the hand has the record, its
+ * speed eased so the sound glides rather than jumps -- toward the hand
+ * over some 20 ms, at most eight times the track's speed either way --
+ * read between frames from the history, and silent where the record
+ * stands still, as vinyl is. Ahead of what was played, the reader is
+ * asked for more, which keeps it in the history as it comes.
+ */
+void snurra_deck::render_held(float *out, int frames, int64_t present_us) {
+	if (!m_scratching) {
+		m_scratching = true;
+		m_scratch_at = m_speed ? m_stretch.position() : double(m_position);
+		m_scratch_speed = 0;
+		m_speed = false;
+	}
+	const double hand = m_hand_frame.load(std::memory_order_relaxed);
+	const float level = m_level.load(std::memory_order_relaxed) * m_trim_now * m_mix.load(std::memory_order_relaxed);
+	const int64_t first = int64_t(std::floor(m_scratch_at));
+	const double from = m_scratch_at;
+	for (int i = 0; i < frames; ++i) {
+		const double wanted = std::clamp((hand - m_scratch_at) / (0.02 * m_rate), -8.0, 8.0);
+		m_scratch_speed += (wanted - m_scratch_speed) * 0.01;
+		m_scratch_at = std::max(double(m_history_first), m_scratch_at + m_scratch_speed);
+		while (int64_t(std::floor(m_scratch_at)) + 2 > m_history_end) {
+			float left = 0, right = 0;
+			if (!next_frame(left, right)) break;
+			++m_position;
+		}
+		const int64_t frame = int64_t(std::floor(m_scratch_at));
+		float a_left = 0, a_right = 0, b_left = 0, b_right = 0;
+		if (!history_frame(frame, a_left, a_right) || !history_frame(frame + 1, b_left, b_right)) continue;
+		const float t = float(m_scratch_at - double(frame));
+		const float gain = level * float(std::min(1.0, std::abs(m_scratch_speed) * 4));
+		out[2 * i] += gain * (a_left + (b_left - a_left) * t);
+		out[2 * i + 1] += gain * (a_right + (b_right - a_right) * t);
+	}
+	m_published_sequence.fetch_add(1, std::memory_order_acq_rel);
+	m_published_frame.store(first, std::memory_order_relaxed);
+	m_published_us.store(present_us, std::memory_order_relaxed);
+	m_published_advanced.store(frames, std::memory_order_relaxed);
+	m_published_tempo.store(float((m_scratch_at - from) / std::max(1, frames)), std::memory_order_relaxed);
+	m_published_sequence.fetch_add(1, std::memory_order_release);
+}
+
 void snurra_deck::render_add(float *out, int frames, int64_t present_us) {
+	/* A hand on the platter: the scratch, and nothing of the rest. */
+	if (m_hand_on.load(std::memory_order_acquire) && !m_history.empty()) {
+		render_held(out, frames, present_us);
+		return;
+	}
+	if (m_scratching) {
+		/* Let go: on from where the hand left it, the frames between there
+		 * and the newest played replayed from the history. */
+		m_scratching = false;
+		m_position = std::max(m_history_first, int64_t(std::floor(m_scratch_at)));
+		m_replay = m_position < m_history_end;
+		m_speed = false;
+	}
 	const bool playing = m_playing.load(std::memory_order_acquire);   /* first: see set_playing */
 	const uint64_t generation = m_generation.load(std::memory_order_acquire);
 	const int64_t asked_at = m_seek_anchor_us.load(std::memory_order_relaxed);

@@ -1516,7 +1516,22 @@ by default, so a deck never scratched -- every window's -- pays nothing
 `a_deck_keeps_what_it_played_to_read_back` (two seconds of the ramp,
 the last second read back frame for frame, the one before gone, a seek
 beginning it again, a deck without one keeping nothing; with the write
-taken out, it fails). Next: step (2), the held state the hand drives.
+taken out, it fails). **Step (2) built the same day:** `hold(on)` and
+`set_hand(frame)` on the deck, from the UI. Held, the callback takes its
+own branch: the position goes toward the hand, its speed eased over some
+20 ms and at most eight times the track's either way, read between
+frames from the history (linear, as vinyl's pitch moves with it), more
+asked of the reader where the hand runs ahead of what was played, and
+silent where the record stands still. Let go, the deck goes on from
+where the hand left it, the frames between there and the newest played
+replayed from the history first, so the reader's next frame is the one
+wanted -- no gap. A deck with no history cannot be held and plays on.
+Tested in `a_hand_on_the_platter_scratches_and_lets_go` (back a quarter
+second, the frames run backwards to the hand; still, silent; forward
+past where it began; let go, every frame after sounding and each one
+after the last; with the hand ignored, or the replay taken out, it
+fails -- the replay's absence was a one-frame silence the first version
+of the test did not see, since it skipped silent frames).
 
 **(e) Where the master section goes -- the holder's, a proposal
 (2026-11-25).** The holder: "we need to decide where the master section

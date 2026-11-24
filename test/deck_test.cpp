@@ -138,6 +138,7 @@ private slots:
 	void a_play_before_any_bytes_begins_at_the_beginning();
 	void a_deck_started_at_a_time_sounds_its_frame_then();
 	void a_deck_keeps_what_it_played_to_read_back();
+	void a_hand_on_the_platter_scratches_and_lets_go();
 	void a_seek_just_after_a_pause_is_heard_as_nothing();
 	void a_tempo_without_key_lock_reads_between_the_frames();
 	void key_lock_keeps_the_pitch_as_the_tempo_moves();
@@ -378,6 +379,67 @@ void deck_test::a_deck_keeps_what_it_played_to_read_back() {
 	int64_t later = snurra_clock_us();
 	play(none, later, 200, [](const std::vector<rendered_t> &b) { return advanced_by(b) >= RATE / 4; });
 	QVERIFY(!none.history_frame(none.history_end() - 1, left, right));
+}
+
+/*
+ * A scratch, step 2 (project.md sec 3f, c3): the ramp played a second,
+ * then a hand on the platter. Moved a quarter second back, the frames
+ * heard run backwards and come to the hand; moved forward again past
+ * where it began, they run forwards, through frames newly read; let go,
+ * the deck plays on from where the hand left it, frame after frame, no
+ * jump. Still under the hand, it is silent.
+ */
+void deck_test::a_hand_on_the_platter_scratches_and_lets_go() {
+	snurra_deck::start_t start = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	start.fallback_length = RATE * 10;
+	start.playing = true;
+	start.history_seconds = 2;
+	snurra_deck deck(start);
+	int64_t present = snurra_clock_us();
+	play(deck, present, 2000, [](const std::vector<rendered_t> &b) { return advanced_by(b) >= RATE; });
+	const double at = double(deck.history_end());
+	auto heard = [](const std::vector<rendered_t> &blocks) {
+		std::vector<double> frames;
+		for (const rendered_t &block : blocks)
+			for (int i = 0; i < PERIOD; ++i)
+				if (block.samples[2 * size_t(i) + 1] > 1e-3f)   /* sounding: the ramp's right is its gain */
+					frames.push_back(double(block.samples[2 * size_t(i)]) / block.samples[2 * size_t(i) + 1] * SNURRA_RAMP_SCALE);
+		return frames;
+	};
+	deck.hold(true);
+	deck.set_hand(at - RATE / 4);
+	const std::vector<double> back = heard(play(deck, present, 400, [](const std::vector<rendered_t> &b) { return b.size() >= 40; }));
+	QVERIFY2(back.size() > 1000, qPrintable(QString::number(back.size())));
+	QVERIFY2(back.back() < back.front() - RATE / 8, qPrintable(QStringLiteral("from %1 to %2").arg(back.front()).arg(back.back())));
+	QVERIFY2(qAbs(back.back() - (at - RATE / 4)) < RATE / 50, qPrintable(QStringLiteral("at %1, the hand at %2").arg(back.back()).arg(at - RATE / 4)));
+	/* Still: nothing heard. */
+	const std::vector<double> still = heard(play(deck, present, 400, [](const std::vector<rendered_t> &b) { return b.size() >= 20; }));
+	QVERIFY2(still.size() < size_t(PERIOD), qPrintable(QString::number(still.size())));
+	deck.set_hand(at + RATE / 4);
+	const std::vector<double> ahead = heard(play(deck, present, 400, [](const std::vector<rendered_t> &b) { return b.size() >= 60; }));
+	QVERIFY2(ahead.back() > at + RATE / 8, qPrintable(QStringLiteral("forward to %1, from %2").arg(ahead.back()).arg(at)));
+	const double left_at = ahead.back();
+	deck.hold(false);
+	const std::vector<rendered_t> on = play(deck, present, 400, [](const std::vector<rendered_t> &b) { return b.size() >= 10; });
+	/* Every frame from the first sounds: the frames between the hand and
+	 * the newest played come again from the history, not as a gap. */
+	for (int i = 0; i < PERIOD; ++i)
+		QVERIFY2(on.front().samples[2 * size_t(i) + 1] > 1e-3f, qPrintable(QStringLiteral("silent at %1 after letting go").arg(i)));
+	const std::vector<double> after = heard(on);
+	QVERIFY2(after.size() > 1000, qPrintable(QString::number(after.size())));
+	QVERIFY2(qAbs(after.front() - left_at) < 4, qPrintable(QStringLiteral("let go at %1, on from %2").arg(left_at).arg(after.front())));
+	for (size_t i = 1; i < after.size(); ++i)
+		QVERIFY2(qAbs(after[i] - after[i - 1] - 1) < 0.5, qPrintable(QStringLiteral("%1 then %2").arg(after[i - 1]).arg(after[i])));
+
+	/* Without a history there is nothing to hold it by: it plays on. */
+	snurra_deck::start_t plain = start_for(nullptr, QStringLiteral("snurra-test:ramp"));
+	plain.fallback_length = RATE * 10;
+	plain.playing = true;
+	snurra_deck none(plain);
+	int64_t later = snurra_clock_us();
+	none.hold(true);
+	none.set_hand(0);
+	QVERIFY(advanced_by(play(none, later, 200, [](const std::vector<rendered_t> &b) { return b.size() >= 10; })) > 0);
 }
 
 void deck_test::a_deck_started_at_a_time_sounds_its_frame_then() {
