@@ -49,17 +49,33 @@ public:
 
 	std::function<void(int deck, snurra_deck_waves::deck &where)> fill;
 
+	/* How the decks' lanes are laid out (the holder, 2026-11-24:
+	 * "waveforms horizontally side by side or on top of each other or
+	 * vertical, especially with 4ch"): rows stacked full width, columns
+	 * side by side, or vertical lanes, time running down. A setting
+	 * (decks/waveforms, on the waveforms' right-click menu), stacked by
+	 * default. */
+	enum layout_t { stacked, side_by_side, vertical };
+	void set_layout(layout_t layout);
+	layout_t layout() const { return m_layout; }
+	/* Chosen by hand and kept; empty for the default. */
+	void choose_layout(const QString &value);
+	static layout_t layout_named(const QString &value);
+
 	/* The colour a deck is known by, here and on its deck. */
 	static QColor colour_of(int deck);
 
 protected:
 	void paintEvent(QPaintEvent *event) override;
 	void wheelEvent(QWheelEvent *event) override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 	QSize sizeHint() const override;
 
 private:
 	std::vector<std::vector<float>> m_peaks;
 	double m_span = 8;
+	layout_t m_layout = stacked;
+	void paint_lane(class QPainter &painter, int index, const deck &where, double along, double across);
 };
 
 #endif

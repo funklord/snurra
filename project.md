@@ -1369,7 +1369,18 @@ holder's, sec 3f step 3). Tested in `the_mixer_strips_are_each_decks_own`
 as made, it fails). Not yet: FX inserts (snurra has no effects), the
 player's EQ as its master EQ (step 3b), and the tile's panel taken off a
 deck now that the mixer and the head hold its controls. Then the windows
-(4) and the layouts (5).
+(4) and the layouts (5). **Step 5a built, the same day: the waveforms'
+layout** -- stacked rows full width (the default), side by side (a
+column a deck, its playhead at the column's middle), or vertical (a lane
+a deck, time running down it, what is to come below the playhead -- an
+assumption; Serato's vertical view is the neighbour, and which way it
+should run is the holder's to say). Chosen on the waveforms' right-click
+menu and kept as `decks/waveforms`, "Default (stacked)" written as no
+key at all. Each layout is one lane drawn the same way, a vertical lane
+the horizontal one turned a quarter. Tested in
+`the_waveforms_layout_is_kept_as_chosen` (chosen, kept, read back by a
+new view, Default writing nothing; with the kept choice not read back,
+it fails).
 
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single

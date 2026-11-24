@@ -115,6 +115,7 @@ private slots:
 	void a_listener_hears_the_deck_its_plug_is_in();
 	void a_listener_hears_one_track_of_a_decks_player();
 	void the_decks_waveforms_scroll_stacked_above_them();
+	void the_waveforms_layout_is_kept_as_chosen();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
 	void a_listener_plugs_into_a_windows_tile();
@@ -2186,6 +2187,43 @@ void embed_test::a_decks_head_shows_its_tempo_key_and_time_left() {
 	QVERIFY(!tile->playing());
 	tile->set_tempo(1.1f);
 	QTRY_COMPARE_WITH_TIMEOUT(head->bpm_text(), QStringLiteral("132.0"), 2000);
+}
+
+/*
+ * The waveforms' layout (the holder, 2026-11-24: "waveforms horizontally
+ * side by side or on top of each other or vertical"): stacked by default;
+ * vertical chosen, the lanes need a reading's height and the choice is
+ * kept, so the next deck view opens so; Default chosen again writes
+ * nothing -- it follows the build's (a config file records choices).
+ */
+void embed_test::the_waveforms_layout_is_kept_as_chosen() {
+	QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
+	settings.remove(QStringLiteral("decks/waveforms"));
+	auto clean = qScopeGuard([] { QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).remove(QStringLiteral("decks/waveforms")); });
+	snurra_deck_waves waves;
+	waves.set_deck_count(4);
+	QCOMPARE(waves.layout(), snurra_deck_waves::stacked);
+	QCOMPARE(waves.minimumHeight(), 4 * 48);
+	waves.choose_layout(QStringLiteral("vertical"));
+	QCOMPARE(waves.layout(), snurra_deck_waves::vertical);
+	QCOMPARE(waves.minimumHeight(), 240);
+	QCOMPARE(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/waveforms")).toString(), QStringLiteral("vertical"));
+	{
+		snurra_deck_waves again;
+		QCOMPARE(again.layout(), snurra_deck_waves::vertical);
+	}
+	waves.choose_layout(QStringLiteral("side by side"));
+	QCOMPARE(waves.layout(), snurra_deck_waves::side_by_side);
+	waves.choose_layout(QString());
+	QCOMPARE(waves.layout(), snurra_deck_waves::stacked);
+	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/waveforms")));
+	/* And each lays out and paints without a deck to fill it. */
+	for (const QString &layout : { QStringLiteral("stacked"), QStringLiteral("side by side"), QStringLiteral("vertical") }) {
+		waves.choose_layout(layout);
+		waves.resize(800, 300);
+		QImage shot(waves.size(), QImage::Format_RGB32);
+		waves.render(&shot);
+	}
 }
 
 /*
