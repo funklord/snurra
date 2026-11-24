@@ -363,6 +363,7 @@ void beats_test::a_player_sounds_as_its_tiles() {
 	player[1].overlap_us = 500000;
 	player[1].level = 50;
 	player[1].tempo = 2;   /* 1 s out */
+	player[1].key_lock = false;   /* varispeed, every second frame (key lock is on by default) */
 	std::unique_ptr<snurra_source> source = snurra_open_timeline(player, RATE);
 	const int64_t second_starts = 2 * RATE - RATE / 2;
 	QCOMPARE(source->length(), second_starts + RATE);

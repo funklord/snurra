@@ -118,6 +118,7 @@ private slots:
 	void the_waveforms_layout_is_kept_as_chosen();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
+	void a_tempo_change_keeps_the_pitch_by_default();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -1203,7 +1204,7 @@ void embed_test::the_tempo_reaches_16_and_snaps_to_the_middle() {
 	QVERIFY(tempo);
 	QCOMPARE(tempo->maximum(), 160);
 	QCOMPARE(tempo->minimum(), -160);
-	QVERIFY2(!tile->key_lock(), "key lock is on by default");
+	QVERIFY2(tile->key_lock(), "key lock is off by default");
 	tempo->setSliderDown(true);
 	tempo->setValue(4);
 	QCOMPARE(tile->tempo(), 1.0f);
@@ -1876,8 +1877,8 @@ void embed_test::a_mappings_lights_show_the_deck_playing() {
 	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 0x7f, 2000);
 	a->request_playing(false);
 	QTRY_COMPARE_WITH_TIMEOUT(read_lights(), 1, 2000);
-	QCOMPARE(lock, -1);   /* key lock off: its light was sent nothing */
-	a->set_key_lock(true);
+	/* Key lock on by default (2026-11-25): its light shows it from the
+	 * start, no press needed. */
 	QTRY_COMPARE_WITH_TIMEOUT((read_lights(), lock), 0x7f, 2000);
 }
 
@@ -2082,6 +2083,33 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	QCOMPARE(where(again, 1), QPoint(1, 0));
 	again.arrange(QString());
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
+}
+
+/*
+ * Key lock by default (the holder, 2026-11-25: "when speed is changed we
+ * leave the pitch/tone unaltered by default, not needing to press the key
+ * button first"): a new tile's state, and its deck, have it on, so a
+ * tempo moved leaves the key heard where it was; taken off by hand, the
+ * tempo carries the pitch, +20 % three semitones up.
+ */
+void embed_test::a_tempo_change_keeps_the_pitch_by_default() {
+	QVERIFY(snurra_tile_state{}.key_lock);
+	snurra_node node;
+	node.set_stays_open(true);
+	snurra_tile_state state;
+	state.source = QStringLiteral("tone:440");
+	state.duration_us = 4000000;
+	snurra_tile *tile = node.add_tile(state);
+	QVERIFY(tile->key_lock());
+	QVERIFY(tile->deck()->key_lock());
+	snurra_beat_grid grid{ 24000, 0, 10, 48000 };
+	grid.key = 0;   /* C major */
+	tile->set_beats(grid);
+	tile->set_tempo(1.2f);
+	QCOMPARE(tile->key_heard(), 0);
+	tile->set_key_lock(false);
+	QVERIFY(!tile->deck()->key_lock());
+	QCOMPARE(tile->key_heard(), snurra_key_shifted(0, 3));
 }
 
 /*
@@ -3597,6 +3625,9 @@ void embed_test::a_tile_says_its_beat_and_key_as_heard() {
 		if (was.isValid()) settings.setValue(QStringLiteral("loudness/match"), was);
 		tile->set_beats(grid);
 	}
+	/* Without key lock -- on by default since 2026-11-25 -- the tempo
+	 * carries the key. */
+	tile->set_key_lock(false);
 	tile->set_tempo(1.06f);
 	QCOMPARE(said->text(), QStringLiteral("127.2 BPM 3A"));
 	QCOMPARE(said->toolTip(), QStringLiteral("Key 3A Bbm as heard"));
@@ -4082,7 +4113,11 @@ void embed_test::sync_matches_a_beat_to_another() {
 	if (apart > beat_ms / 2) apart -= beat_ms;
 	if (apart < -beat_ms / 2) apart += beat_ms;
 	qInfo("sync: tempo %.5f, beats %.2f ms apart", follower->tempo(), apart);
-	QVERIFY2(std::abs(apart) < 1, qPrintable(QStringLiteral("the beats %1 ms apart").arg(apart)));
+	/* Within 2 ms: the follower is off tempo 1 with key lock on (the
+	 * default since 2026-11-25), so it is read through WSOLA, which moves
+	 * in its own grains -- 1.2 ms measured where varispeed gave under 1.
+	 * Two beats are heard as a flam from about 5 ms. */
+	QVERIFY2(std::abs(apart) < 2, qPrintable(QStringLiteral("the beats %1 ms apart").arg(apart)));
 }
 
 /*

@@ -56,7 +56,10 @@ struct snurra_tile_state {
 	/* Track frames a frame out, and whether the pitch stays as it moves
 	 * (key lock): the deck's (sec 4). */
 	float tempo = 1;
-	bool key_lock = false;
+	/* On by default (the holder, 2026-11-25: "when speed is changed we
+	 * leave the pitch/tone unaltered by default, not needing to press the
+	 * key button first"): a tempo change keeps the pitch. */
+	bool key_lock = true;
 
 	/* Which of the file's sound tracks plays, as source.h numbers them: a
 	 * stem's lane (project.md sec 3e), or a film's language; -1 the file's

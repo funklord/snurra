@@ -176,7 +176,8 @@ private:
 		/* As a deck: straight from the track at tempo 1 with no key lock
 		 * or shift, through the stretch only otherwise -- whose cubic
 		 * wants frames past a track's last, and so would drop them. */
-		const bool straight = track.tempo == 1 && !one.key_lock && one.pitch == 1;
+		/* Key lock at the track's own tempo is the track as it is. */
+		const bool straight = track.tempo == 1 && one.pitch == 1;
 		const double fade_in = double(m_in[i]), fade_out = double(m_out[i]);
 		for (int64_t time = from; time < to; ++time, out += 2) {
 			float left = 0, right = 0;

@@ -1382,6 +1382,52 @@ the horizontal one turned a quarter. Tested in
 new view, Default writing nothing; with the kept choice not read back,
 it fails).
 
+**The holder's second trial, 2026-11-25 -- open:** "Most of the things
+look great, the fact you put the waveforms on top of the video was a
+great idea. The waveforms don't look very good or readable maximized and
+they still have bad performance, can't zoom out enough (we have
+following tracks), and can't scratch like on other software. Do not use
+standard knobs, they are broken, we decide on a set of widgets and their
+config we use throughout the software, use the ones we fixed before. We
+also need DJ-faders and more work on which ones should be large and
+which ones small, which ones horizontal and which ones vertical. Oh and
+we want pitch shifting speed by default, when speed is changed we leave
+the pitch/tone unaltered by default, not needing to press the key button
+first. No idea how to get back to player view, maybe we should not close
+it down when decks are opened? only leave it in the background? There
+are master EQs on each channel now, we need to decide where the master
+section goes. Which is likely to duplicate a lot of what each channel
+already has but better, maybe compressor/limiter, FX etc also... In the
+player we mess around mostly with the master section, in the decks
+mostly with the channels, but master section still needs to exist."
+
+So, each its own piece: **(a)** one set of controls for the whole
+program -- `snurra_knob` (held and moved up or down, 2026-11-18) for
+every knob, never Qt's stock dial, and a DJ fader -- with a rule for
+which is large or small, horizontal or vertical; **(b)** key lock on by
+default, a tempo change leaving the pitch; **(c)** the waveforms:
+readable at any size, cheaper to draw, zoomed out far enough to see the
+tracks that follow, and scratched by hand; **(d)** the way back to the
+player: the window kept in the background, not closed, when the decks
+open; **(e)** where the master section goes -- in the player most of
+what is touched, in the decks the channels, the master there too.
+
+**(b) built 2026-11-25: key lock on by default.** A new track's state
+has it on (`snurra_tile_state::key_lock`), so a tempo moved keeps the
+pitch with no press of the key button. Key lock alone, at the track's own
+tempo, changes nothing and must cost nothing: the deck, the stretcher
+and a player's timeline read such a track straight, as before, so an
+untouched deck stays exact to the frame -- the handover, train and stack
+tests, which count frames, said so when it did not (a taker jumping
+frame 39540 to 39542). A bend at tempo 1 -- sync's nudge -- is varispeed,
+a hand on a platter. Off tempo 1 a key-locked deck is read through WSOLA,
+whose grains make sync land within about 1.2 ms where varispeed landed
+under 1 (`sync_matches_a_beat_to_another` now asks 2 ms; a flam is heard
+from about 5). Tests about varispeed itself turn key lock off by name.
+Tested in `a_tempo_change_keeps_the_pitch_by_default` (on in a new state
+and its deck, the key as heard unmoved at +20 %, three semitones up with
+it off; with the old default, it fails).
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

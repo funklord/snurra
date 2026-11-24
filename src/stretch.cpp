@@ -72,6 +72,10 @@ bool snurra_stretch::wsola(float &left, float &right, double tempo, double &from
 }
 
 bool snurra_stretch::next(float &left, float &right, double tempo, bool key_lock, double pitch) {
+	/* At the track's own tempo there is no tempo to lock the pitch
+	 * against: read it straight, not through WSOLA (key lock is on by
+	 * default since 2026-11-25). */
+	if (std::abs(tempo - 1.0) < 1e-9) key_lock = false;
 	const double heard = key_lock ? pitch : tempo * pitch;
 	const mode_t mode = std::abs(heard - (key_lock ? 1.0 : tempo)) < 1e-9 ? (key_lock ? WSOLA : VARISPEED) : SHIFTED;
 	if (mode != m_mode) {
