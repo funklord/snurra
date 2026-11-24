@@ -1,6 +1,7 @@
 #include "snurra/deck_waves.h"
 
 #include <QContextMenuEvent>
+#include <QMouseEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QSettings>
@@ -36,6 +37,7 @@ snurra_deck_waves::snurra_deck_waves(QWidget *parent) : QWidget(parent) {
 		m_stale = false;
 	});
 	frame->start();
+	setCursor(Qt::OpenHandCursor);
 	m_layout = layout_named(QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/waveforms")).toString());
 }
 
@@ -88,6 +90,69 @@ QColor snurra_deck_waves::colour_of(int deck) {
 
 QSize snurra_deck_waves::sizeHint() const {
 	return QSize(600, std::max(1, int(m_peaks.size())) * 64);
+}
+
+int snurra_deck_waves::lane_at(QPointF at, double &along) const {
+	const int count = int(m_peaks.size());
+	if (count == 0 || !rect().contains(at.toPoint())) return -1;
+	if (m_layout == stacked) {
+		along = at.x();
+		return std::clamp(int(at.y() * count / std::max(1, height())), 0, count - 1);
+	}
+	const int deck = std::clamp(int(at.x() * count / std::max(1, width())), 0, count - 1);
+	along = m_layout == vertical ? at.y() : at.x() - double(width()) * deck / count;
+	return deck;
+}
+
+/*
+ * A scratch by hand: pressed on a deck's lane, the hand is on its
+ * platter; dragged, the record moves under the playhead with the hand --
+ * along a row, left pulls it forward as playing does; down a vertical
+ * lane, up does -- the drag's pixels turned to seconds by the zoom; let
+ * go, it plays on. Traktor's and Serato's waveforms scratch so.
+ */
+void snurra_deck_waves::mousePressEvent(QMouseEvent *event) {
+	double along = 0;
+	const int deck = event->button() == Qt::LeftButton ? lane_at(event->position(), along) : -1;
+	snurra_deck_waves::deck where;
+	if (deck >= 0 && fill) fill(deck, where);
+	if (deck < 0 || !where.loaded) {
+		QWidget::mousePressEvent(event);
+		return;
+	}
+	m_held = deck;
+	m_held_from = along;
+	m_held_seconds = where.seconds;
+	setCursor(Qt::ClosedHandCursor);
+	if (on_hold) on_hold(deck, true);
+	if (on_hand) on_hand(deck, where.seconds);
+	event->accept();
+}
+
+void snurra_deck_waves::mouseMoveEvent(QMouseEvent *event) {
+	if (m_held < 0) {
+		QWidget::mouseMoveEvent(event);
+		return;
+	}
+	const int count = std::max(1, int(m_peaks.size()));
+	const double lane_length = m_layout == vertical ? height() : m_layout == stacked ? width() : double(width()) / count;
+	const double along = m_layout == vertical ? event->position().y() : m_layout == stacked ? event->position().x()
+	                                                                                    : event->position().x() - lane_length * m_held;
+	const double seconds = m_held_seconds + (m_held_from - along) / (lane_length / m_span);
+	if (on_hand) on_hand(m_held, std::max(0.0, seconds));
+	event->accept();
+}
+
+void snurra_deck_waves::mouseReleaseEvent(QMouseEvent *event) {
+	if (m_held < 0) {
+		QWidget::mouseReleaseEvent(event);
+		return;
+	}
+	const int deck = m_held;
+	m_held = -1;
+	setCursor(Qt::OpenHandCursor);
+	if (on_hold) on_hold(deck, false);
+	event->accept();
 }
 
 void snurra_deck_waves::wheelEvent(QWheelEvent *event) {

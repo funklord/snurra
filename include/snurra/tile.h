@@ -72,6 +72,10 @@ public:
 	 * stands, its level, its track -- and a player in it, opened as its
 	 * source (project.md sec 3f). */
 	static snurra_deck::start_t start_for(const snurra_tile_state &state, int rate);
+	/* Seconds of what each new tile's deck has played kept for a scratch
+	 * (snurra_deck's history): set by the deck view, whose decks are
+	 * scratched; 0, the default, for a window's, which are not. */
+	static void set_scratch_seconds(double seconds);
 	/* An embedded tile's deck retired at `at_us` on the shared clock, not
 	 * when the tile goes: a deck handed over sounds on through its fade. */
 	void retire_deck_at(int64_t at_us);

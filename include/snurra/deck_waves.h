@@ -49,6 +49,14 @@ public:
 	double span() const { return m_span; }
 
 	std::function<void(int deck, snurra_deck_waves::deck &where)> fill;
+	/* A scratch (project.md sec 3f, c3 step 3): a hand put on a deck's
+	 * lane, moved, and taken off -- `seconds` where the hand has the
+	 * record, in the track. */
+	std::function<void(int deck, bool on)> on_hold;
+	std::function<void(int deck, double seconds)> on_hand;
+	/* The deck whose lane is at `at`, and how far along the lane `at` is;
+	 * -1 for none. */
+	int lane_at(QPointF at, double &along) const;
 
 	/* How the decks' lanes are laid out (the holder, 2026-11-24:
 	 * "waveforms horizontally side by side or on top of each other or
@@ -69,6 +77,9 @@ public:
 protected:
 	void paintEvent(QPaintEvent *event) override;
 	void wheelEvent(QWheelEvent *event) override;
+	void mousePressEvent(QMouseEvent *event) override;
+	void mouseMoveEvent(QMouseEvent *event) override;
+	void mouseReleaseEvent(QMouseEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 	QSize sizeHint() const override;
 
@@ -83,6 +94,9 @@ private:
 	QElapsedTimer m_built;
 	std::vector<double> m_last;   /* each deck's place at the last frame */
 	bool m_stale = true;
+	int m_held = -1;              /* the deck under the hand */
+	double m_held_from = 0;       /* where along its lane the hand went down */
+	double m_held_seconds = 0;    /* and where its record was then */
 	void paint_lane(class QPainter &painter, int index, const deck &where, double along, double across);
 };
 

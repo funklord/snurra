@@ -1531,7 +1531,19 @@ second, the frames run backwards to the hand; still, silent; forward
 past where it began; let go, every frame after sounding and each one
 after the last; with the hand ignored, or the replay taken out, it
 fails -- the replay's absence was a one-frame silence the first version
-of the test did not see, since it skipped silent frames).
+of the test did not see, since it skipped silent frames). **Step (3) built
+the same day: scratching by hand.** On the decks' waveforms, pressed on a
+deck's lane, the hand is on that deck's platter; dragged, the record
+moves under the fixed playhead with the hand -- along a row left pulls
+it forward, as playing does; down a vertical lane, up does -- the drag's
+pixels turned to seconds by the zoom; let go, it plays on. The cursor is
+an open hand over the waveforms, closed while holding. The deck view
+gives its decks six seconds of history to scratch through
+(`snurra_tile::set_scratch_seconds`, some 2.3 MB a deck); a window's
+tiles get none. Tested in `a_deck_is_scratched_on_its_waveform` (a WAV
+playing two seconds in, pressed and dragged a quarter of the lane right,
+held near its start; let go, playing on; with the decks given no history
+to hold by, it fails). Not yet: (4), a controller's jog wheel.
 
 **(e) Where the master section goes -- the holder's, a proposal
 (2026-11-25).** The holder: "we need to decide where the master section

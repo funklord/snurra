@@ -117,6 +117,7 @@ private slots:
 	void a_listener_hears_one_track_of_a_decks_player();
 	void the_decks_waveforms_scroll_stacked_above_them();
 	void the_waveforms_layout_is_kept_as_chosen();
+	void a_deck_is_scratched_on_its_waveform();
 	void the_waveforms_draw_cheaply_and_zoom_out_to_the_set();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
@@ -2345,6 +2346,60 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 		qInfo("waveforms, 4 decks at 1900 x 400, %g s across: %.2f ms a frame", span, each);
 		QVERIFY2(each < 16, qPrintable(QStringLiteral("%1 ms a frame at %2 s").arg(each).arg(span)));
 	}
+}
+
+/*
+ * A scratch by hand (project.md sec 3f, c3 step 3; the holder, 2026-11-25:
+ * "couldn't figure out how to do scratching at all"): a 4 s WAV on deck A,
+ * playing, some two seconds in. Pressed on its lane in the waveforms, the
+ * deck is held; dragged right a quarter of the lane -- two seconds at
+ * eight across -- the record goes back with the hand; let go, it plays on
+ * from there. The decks keep a history to scratch through.
+ */
+void embed_test::a_deck_is_scratched_on_its_waveform() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("scratch.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav_of(4 * 48000, [](int i) { return (i / 2400) % 2 ? 12000 : 0; }));
+	}
+	snurra_dj dj;
+	dj.resize(1200, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	snurra_media media;
+	media.path = path;
+	QVERIFY(dj.load(0, media));
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	tile->set_playing(true);
+	QTest::qWait(2000);
+	snurra_deck_waves *waves = dj.findChild<snurra_deck_waves *>(QStringLiteral("snurra-deck-waves"));
+	QVERIFY(waves);
+	const int rate = tile->deck()->rate();
+	const double before = double(tile->deck()->position_at(snurra_clock_us())) / rate;
+	QVERIFY2(before > 1.5, qPrintable(QString::number(before)));
+	auto mouse = [waves](QEvent::Type type, QPoint at, Qt::MouseButtons held) {
+		QMouseEvent event(type, QPointF(at), waves->mapToGlobal(QPointF(at)), Qt::LeftButton, held, Qt::NoModifier);
+		QApplication::sendEvent(waves, &event);
+	};
+	const int y = waves->height() / 4;   /* deck A's row of two */
+	const int x = waves->width() / 2;
+	mouse(QEvent::MouseButtonPress, QPoint(x, y), Qt::LeftButton);
+	QVERIFY(tile->deck()->held_by_hand());
+	for (int step = 1; step <= 10; ++step) {
+		mouse(QEvent::MouseMove, QPoint(x + waves->width() / 4 * step / 10, y), Qt::LeftButton);
+		QTest::qWait(30);
+	}
+	QTest::qWait(400);
+	const double back = double(tile->deck()->position_at(snurra_clock_us())) / rate;
+	QVERIFY2(back < before - 1.5, qPrintable(QStringLiteral("held at %1, from %2").arg(back).arg(before)));
+	mouse(QEvent::MouseButtonRelease, QPoint(x + waves->width() / 4, y), Qt::NoButton);
+	QVERIFY(!tile->deck()->held_by_hand());
+	QTest::qWait(500);
+	const double on = double(tile->deck()->position_at(snurra_clock_us())) / rate;
+	QVERIFY2(on > back + 0.3, qPrintable(QStringLiteral("let go at %1, then %2").arg(back).arg(on)));
 }
 
 /*

@@ -1597,6 +1597,9 @@ QString snurra_dj::socket_path() const {
 
 snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snurra_dj_private>()) {
 	d->q = this;
+	/* Decks are scratched: six seconds of each kept to scratch back
+	 * through (some 2.3 MB a deck at 48 kHz). */
+	snurra_tile::set_scratch_seconds(6);
 	QVBoxLayout *column = new QVBoxLayout(this);
 	d->set_view = new snurra_dj_set_view(this);
 	d->set_view->fill = [this](std::vector<snurra_dj_set_view::track> &tracks, int64_t &now) {
@@ -1637,6 +1640,16 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	 * (the holder's trial, 2026-11-24). */
 	d->waves = new snurra_deck_waves(this);
 	d->waves->fill = [this](int deck, snurra_deck_waves::deck &where) { d->fill_wave(deck, where); };
+	/* Scratched by hand on its lane (sec 3f, c3): the deck held, the
+	 * record where the hand has it. */
+	d->waves->on_hold = [this](int deck, bool on) {
+		if (deck < d->decks.size() && d->decks[deck]->tile) d->decks[deck]->tile->deck()->hold(on);
+	};
+	d->waves->on_hand = [this](int deck, double seconds) {
+		if (deck >= d->decks.size() || !d->decks[deck]->tile) return;
+		snurra_deck *sound = d->decks[deck]->tile->deck();
+		sound->set_hand(seconds * sound->rate());
+	};
 	column->addWidget(d->waves, 2);
 	d->grid = new QGridLayout;
 	column->addLayout(d->grid);

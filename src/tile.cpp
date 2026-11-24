@@ -1956,8 +1956,17 @@ snurra_tile::~snurra_tile() {
 	if (m_owner) m_owner->retire(m_deck);
 }
 
+namespace {
+double scratch_seconds = 0;
+}
+
+void snurra_tile::set_scratch_seconds(double seconds) {
+	scratch_seconds = std::max(0.0, seconds);
+}
+
 snurra_deck::start_t snurra_tile::start_for(const snurra_tile_state &state, int rate) {
 	snurra_deck::start_t start;
+	start.history_seconds = scratch_seconds;
 	start.source = state.sound_source();
 	start.rate = rate;
 	start.fallback_length = snurra_us_to_frames(state.duration_us, rate);
