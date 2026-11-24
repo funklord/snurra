@@ -52,6 +52,7 @@
 #include "snurra/embed.h"
 #include "snurra/deck_waves.h"
 #include "snurra/deck_head.h"
+#include "snurra/mixer.h"
 #include "snurra/beats.h"
 #include "snurra/midi.h"
 #include "snurra/tile_state.h"
@@ -115,6 +116,7 @@ private slots:
 	void a_listener_hears_one_track_of_a_decks_player();
 	void the_decks_waveforms_scroll_stacked_above_them();
 	void a_decks_head_shows_its_tempo_key_and_time_left();
+	void the_mixer_strips_are_each_decks_own();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -2047,6 +2049,13 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 		if (!grid) return QPoint(-1, -1);
 		int row = -1, column = -1, rows = 0, columns = 0;
 		grid->getItemPosition(grid->indexOf(place), &row, &column, &rows, &columns);
+		/* Where the person put it: the mixer's column between the decks
+		 * (sec 3f step 3) is not one of theirs. */
+		if (QWidget *mixer = dj.findChild<QWidget *>(QStringLiteral("snurra-mixer"))) {
+			int mixer_row = -1, mixer_column = -1;
+			grid->getItemPosition(grid->indexOf(mixer), &mixer_row, &mixer_column, &rows, &columns);
+			if (mixer_column >= 0 && column > mixer_column) --column;
+		}
 		return QPoint(column, row);
 	};
 	{
@@ -2072,6 +2081,62 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	QCOMPARE(where(again, 1), QPoint(1, 0));
 	again.arrange(QString());
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
+}
+
+/*
+ * The mixer between the decks (project.md sec 3f, step 3): a strip a
+ * deck, in Traktor's order for four -- C A B D, facing their decks. Each
+ * control is the deck's tile's own: the low knob at its end kills the low
+ * part, the mid at its middle is 0 dB, the high fully up +6 dB, the gain
+ * +6 dB doubles the deck's trim, the fader is its level; an EQ moved on
+ * the tile shows on the knob; with no headphones the cue cannot be
+ * pressed.
+ */
+void embed_test::the_mixer_strips_are_each_decks_own() {
+	QTemporaryDir dir;
+	const QString path = dir.filePath(QStringLiteral("strip.wav"));
+	{
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(make_wav_of(4 * 48000, [](int i) { return (i / 2400) % 2 ? 12000 : 0; }));
+	}
+	snurra_dj dj;
+	dj.resize(1400, 900);
+	dj.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&dj));
+	dj.set_deck_count(4);
+	snurra_mixer *mixer = dj.findChild<snurra_mixer *>(QStringLiteral("snurra-mixer"));
+	QVERIFY(mixer && mixer->isVisible());
+	QCOMPARE(mixer->deck_count(), 4);
+	QCOMPARE(mixer->place_of(2), 0);
+	QCOMPARE(mixer->place_of(0), 1);
+	QCOMPARE(mixer->place_of(1), 2);
+	QCOMPARE(mixer->place_of(3), 3);
+	snurra_media media;
+	media.path = path;
+	QVERIFY(dj.load(0, media));
+	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
+	QVERIFY(tile);
+	const snurra_mixer::strip &a = mixer->strip_of(0);
+	QTRY_VERIFY_WITH_TIMEOUT(a.low->isEnabled(), 2000);
+	QTest::qWait(300);   /* the level match settled */
+	a.low->setValue(snurra_mixer::KILL_STEP);
+	a.mid->setValue(0);
+	a.high->setValue(100);
+	QCOMPARE(tile->state().eq.part[0], SNURRA_EQ_KILL);
+	QCOMPARE(tile->state().eq.part[1], 0.0f);
+	QCOMPARE(tile->state().eq.part[2], 6.0f);
+	const float before = tile->deck()->trim();
+	a.gain->setValue(6);
+	QCOMPARE(tile->gain_db(), 6.0f);
+	QVERIFY2(qAbs(tile->deck()->trim() / before - 1.995f) < 0.01f, qPrintable(QString::number(tile->deck()->trim() / before)));
+	a.fader->setValue(40);
+	QCOMPARE(tile->level(), 40);
+	tile->set_eq(-6, 0, 0);
+	QTRY_VERIFY_WITH_TIMEOUT(a.low->value() < 0 && a.low->value() > snurra_mixer::KILL_STEP, 1000);
+	QCOMPARE(a.high->value(), 0);
+	QVERIFY(!a.cue->isEnabled());
+	QVERIFY(!mixer->strip_of(3).fader->isEnabled());
 }
 
 /*

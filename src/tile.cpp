@@ -1514,9 +1514,15 @@ bool snurra_tile::player_track_at(int track, int64_t frame, double &track_frame,
 	return true;
 }
 
+void snurra_tile::set_gain_db(float db) {
+	m_gain_db = std::clamp(db, -12.0f, 12.0f);
+	m_deck->set_trim(m_match_trim * std::pow(10.0f, m_gain_db / 20));
+}
+
 void snurra_tile::set_beats(const snurra_beat_grid &grid) {
 	m_grid = grid;
-	m_deck->set_trim(loudness_matched() ? snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE) : 1.0f);
+	m_match_trim = loudness_matched() ? snurra_loudness_gain(grid, SNURRA_LOUDNESS_REFERENCE) : 1.0f;
+	m_deck->set_trim(m_match_trim * std::pow(10.0f, m_gain_db / 20));
 	show_beat();
 	if (m_sync) m_sync->setEnabled(grid.valid() && (m_grouped || m_sync_available));
 	if (m_key_sync) m_key_sync->setEnabled(grid.key >= 0 && (m_grouped || m_sync_available));

@@ -43,6 +43,7 @@
 #include "snurra/tile.h"
 #include "snurra/deck_waves.h"
 #include "snurra/deck_head.h"
+#include "snurra/mixer.h"
 #include "snurra/peaks.h"
 #include "snurra/wire.h"
 #include "snurra/timeline.h"
@@ -518,6 +519,7 @@ public:
 	QList<dj_deck *> decks;   /* A, B and, with four, C and D */
 	QGridLayout *grid = nullptr;
 	snurra_deck_waves *waves = nullptr;
+	snurra_mixer *mixer = nullptr;
 	bool unfold_on_arrival = true;
 	void fill_wave(int deck, snurra_deck_waves::deck &where);
 	QSlider *crossfader = nullptr;
@@ -599,6 +601,14 @@ public:
 	 */
 	void place_decks() {
 		for (dj_deck *deck : decks) grid->removeWidget(deck);
+		if (mixer) grid->removeWidget(mixer);
+		/* Where each goes, then the mixer between the left decks and the
+		 * right, as Traktor's: the decks right of centre one over. */
+		struct at_t {
+			dj_deck *deck;
+			int row, column;
+		};
+		QList<at_t> at;
 		const QString chosen = QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).value(QStringLiteral("decks/arrangement")).toString();
 		QList<QStringList> rows;
 		for (const QString &row : chosen.split(QLatin1Char('/'), Qt::SkipEmptyParts)) rows << row.split(QLatin1Char(' '), Qt::SkipEmptyParts);
@@ -609,7 +619,7 @@ public:
 			for (const QString &letter : row) {
 				const int i = letter.isEmpty() ? -1 : letter.at(0).toUpper().unicode() - 'A';
 				if (i < 0 || i >= decks.size() || placed[i]) continue;
-				grid->addWidget(decks[i], row_at, column++);
+				at << at_t{ decks[i], row_at, column++ };
 				placed[i] = true;
 			}
 			columns_used = std::max(columns_used, column);
@@ -620,7 +630,7 @@ public:
 		int column = 0;
 		for (int i = 0; i < decks.size(); ++i) {
 			if (placed[i]) continue;
-			grid->addWidget(decks[i], row_at, column);
+			at << at_t{ decks[i], row_at, column };
 			columns_used = std::max(columns_used, column + 1);
 			if (++column == 2) {
 				column = 0;
@@ -628,11 +638,26 @@ public:
 			}
 		}
 		const int rows_used = row_at + (column > 0 ? 1 : 0);
+		const int middle = mixer ? (columns_used + 1) / 2 : columns_used;
+		for (const at_t &one : at) grid->addWidget(one.deck, one.row, one.column >= middle ? one.column + 1 : one.column);
+		if (mixer) {
+			grid->addWidget(mixer, 0, middle, std::max(1, rows_used), 1);
+			std::vector<int> order;
+			for (int row = rows_used - 1; row >= 0; --row)
+				for (const at_t &one : at)
+					if (one.row == row && one.column < middle) order.push_back(decks.indexOf(one.deck));
+			for (int row = 0; row < rows_used; ++row)
+				for (const at_t &one : at)
+					if (one.row == row && one.column >= middle) order.push_back(decks.indexOf(one.deck));
+			mixer->set_order(order);
+		}
 		for (int row = 0; row < 4; ++row) grid->setRowStretch(row, row < rows_used ? 1 : 0);
 		/* And the columns alike: unstretched, a loaded deck's tile gave way
 		 * to an empty deck's text, and on a phone deck A had a quarter of
-		 * the width, its EQ cut off after "lo". */
-		for (int column = 0; column < 4; ++column) grid->setColumnStretch(column, column < columns_used ? 1 : 0);
+		 * the width, its EQ cut off after "lo". The mixer's column takes
+		 * what it needs and no more. */
+		for (int column = 0; column < 5; ++column)
+			grid->setColumnStretch(column, mixer && column == middle ? 0 : column < columns_used + (mixer ? 1 : 0) ? 1 : 0);
 	}
 	/* What a deck syncs to: another deck playing, else another loaded. */
 	snurra_tile *other_than(int deck) const {
@@ -1596,6 +1621,15 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	column->addWidget(d->waves, 2);
 	d->grid = new QGridLayout;
 	column->addLayout(d->grid);
+	/* The mixer between the decks (sec 3f step 3): each strip the deck's
+	 * tile's own gain, EQ and fader, its cue the chosen headphones. */
+	d->mixer = new snurra_mixer(this);
+	d->mixer->tile_of = [this](int deck) -> snurra_tile * { return deck < d->decks.size() ? d->decks[deck]->tile.data() : nullptr; };
+	d->mixer->on_cue = [this](int deck, bool on) { d->plug(d->chosen_listener, on ? deck : -1); };
+	d->mixer->cued = [this](int deck) {
+		return d->chosen_listener < int(d->listeners.size()) && d->listeners[size_t(d->chosen_listener)]->deck == deck;
+	};
+	d->mixer->has_headphones = [this] { return !d->listeners.empty(); };
 	set_deck_count(2);
 	QHBoxLayout *fader = new QHBoxLayout;
 	d->crossfader = new QSlider(Qt::Horizontal, this);
@@ -2298,6 +2332,10 @@ void snurra_dj::set_deck_count(int count) {
 	d->show_plugs();
 	d->apply_crossfader();
 	if (d->waves) d->waves->set_deck_count(count);
+	if (d->mixer) {
+		d->mixer->set_deck_count(count);
+		d->place_decks();
+	}
 }
 
 int snurra_dj::deck_count() const {

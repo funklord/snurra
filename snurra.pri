@@ -47,6 +47,7 @@ SOURCES += \
     $$SNURRA_ROOT/src/peaks.cpp \
     $$SNURRA_ROOT/src/deck_waves.cpp \
     $$SNURRA_ROOT/src/deck_head.cpp \
+    $$SNURRA_ROOT/src/mixer.cpp \
     $$SNURRA_ROOT/src/snap.cpp \
     $$SNURRA_ROOT/src/source.cpp \
     $$SNURRA_ROOT/src/stretch.cpp \
@@ -75,6 +76,7 @@ HEADERS += \
     $$SNURRA_ROOT/include/snurra/peaks.h \
     $$SNURRA_ROOT/include/snurra/deck_waves.h \
     $$SNURRA_ROOT/include/snurra/deck_head.h \
+    $$SNURRA_ROOT/include/snurra/mixer.h \
     $$SNURRA_ROOT/include/snurra/snap.h \
     $$SNURRA_ROOT/include/snurra/source.h \
     $$SNURRA_ROOT/include/snurra/spsc.h \

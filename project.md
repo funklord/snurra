@@ -1346,8 +1346,30 @@ squeeze the decks. The tile's own panel stays under the head until its
 gain, EQ and fader move to the mixer (step 3). Tested in
 `a_decks_head_shows_its_tempo_key_and_time_left` (120.0, A major, -0:04;
 played, -0:03; at +10%, 132.0 -- the BPM left unscaled by the tempo, it
-fails). Next: the mixer between the decks (step 3), then the windows (4)
-and the layouts (5).
+fails). **Step 3a built, the same day: the mixer between the decks**
+(`snurra_mixer`), in its own column at the centre of whatever arrangement
+the person chose, the decks right of centre one column over; its strips
+face their decks, the left column's from the bottom up and then the
+right's from the top down -- Traktor's C A B D for four. A strip: the
+deck's letter in its colour, GAIN (-12 to +12 dB, by hand, on top of the
+level match's trim -- `snurra_tile::set_gain_db`, which settles the open
+"hand gain" in the holder's words: "for each channel on the mixer we also
+have gain"), HI, MID and LOW knobs as a DJ mixer's -- 0 dB at twelve
+o'clock, the left half down to -24 dB and the kill at its end, the right
+up to +6 -- which are the tile's three EQ parts, a fader that is the
+tile's level, and CUE, the chosen headphones' plug, pressable only while
+there are headphones. Each control is the tile's own, read back ten times
+a second, so a change made on the tile's panel, a controller or the
+automation shows here. Where the view is too narrow for the strips and
+two decks of 300 px -- a phone upright -- it hides, margins and all, and
+the tiles keep the same controls (what the phone's view cuts is still the
+holder's, sec 3f step 3). Tested in `the_mixer_strips_are_each_decks_own`
+(the order, each control reaching its tile, the gain doubling the trim at
++6 dB, the read-back; with the gain kept off the trim, or the order left
+as made, it fails). Not yet: FX inserts (snurra has no effects), the
+player's EQ as its master EQ (step 3b), and the tile's panel taken off a
+deck now that the mixer and the head hold its controls. Then the windows
+(4) and the layouts (5).
 
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single

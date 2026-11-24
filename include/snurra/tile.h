@@ -121,6 +121,11 @@ public:
 	void seek_by(qint64 delta_us);
 	int level() const { return m_state.level; }
 	void set_level(int level);
+	/* A channel's gain, as a DJ mixer's (the holder, 2026-11-24: "for
+	 * each channel on the mixer we also have gain"), in dB, -12 to +12:
+	 * by hand, on top of the level match's trim, before the fader. */
+	void set_gain_db(float db);
+	float gain_db() const { return m_gain_db; }
 	void toggle_mute();
 
 	/* Jumps (project.md sec 4): back or forward by the track's step --
@@ -431,6 +436,8 @@ private:
 	QPointer<snurra_engine> m_owner;
 	bool m_grouped = false;
 	bool m_sync_available = false;   /* offered outside a group */
+	float m_gain_db = 0;
+	float m_match_trim = 1;   /* the level match's part of the deck's trim */
 	bool m_picture_closed_at_first = false;
 	bool m_failed_said = false;
 	bool m_settled = false;   /* constructed, readers started: a failure can be judged */
