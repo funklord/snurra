@@ -3323,13 +3323,28 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	QTRY_COMPARE_WITH_TIMEOUT(node.tile_count(), 3, 3000);
 	/* The way back (2026-11-25): the window in the background, the decks'
 	 * "player" brings it forward. */
+	/* Quiet while nothing of it is seen (the holder, 2026-11-25: "stop
+	 * redrawing the player if it's behind the decks window or
+	 * minimized"): its tiles draw nothing minimized, and again when
+	 * brought back. */
+	snurra_tile *shown = node.findChild<snurra_tile *>();
+	QVERIFY(shown && !shown->quiet());
 	node.showMinimized();
 	QTRY_VERIFY_WITH_TIMEOUT(node.windowState() & Qt::WindowMinimized, 2000);
+	QTRY_VERIFY_WITH_TIMEOUT(shown->quiet(), 2000);
 	QToolButton *player = dj.findChild<QToolButton *>(QStringLiteral("snurra-player-view"));
 	QVERIFY(player && player->isVisible());
 	QTest::qWait(300);   /* asked to follow at least once */
 	player->click();
 	QTRY_VERIFY_WITH_TIMEOUT(!(node.windowState() & Qt::WindowMinimized), 2000);
+	QTRY_VERIFY_WITH_TIMEOUT(!shown->quiet(), 2000);
+	/* Behind the decks: they in front, wholly over it. */
+	node.setGeometry(QRect(dj.geometry().topLeft() + QPoint(40, 40), QSize(300, 200)));
+	dj.activateWindow();
+	QTRY_VERIFY_WITH_TIMEOUT(dj.isActiveWindow(), 2000);
+	QTRY_VERIFY_WITH_TIMEOUT(shown->quiet(), 3000);
+	node.activateWindow();
+	QTRY_VERIFY_WITH_TIMEOUT(!shown->quiet(), 3000);
 	auto window_tile = [&](const QString &source) -> snurra_tile * {
 		for (snurra_tile *tile : node.findChildren<snurra_tile *>())
 			if (tile->isVisible() && tile->state().source == source) return tile;

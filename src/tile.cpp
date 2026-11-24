@@ -1848,8 +1848,22 @@ void snurra_tile::hold_screen_awake(bool want) {
 #endif
 }
 
+void snurra_tile::set_quiet(bool quiet) {
+	m_quiet = quiet;
+	/* No timer for pictures where there is no picture. */
+	if (quiet) {
+		if (m_frames) m_frames->stop();
+		return;
+	}
+	if (m_frames && (video_open() || m_full)) {
+		m_frames->start();
+		show_video_frame();
+	}
+	tick();
+}
+
 void snurra_tile::show_video_frame() {
-	if (!m_video) return;
+	if (!m_video || m_quiet) return;
 	/* Each ten seconds while a picture plays where it can be seen. */
 	constexpr qint64 AWAKE_MS = 10000;
 	if (m_state.playing && (m_full || video_open()) && (!m_awake.isValid() || m_awake.elapsed() >= AWAKE_MS)) {
@@ -2635,6 +2649,8 @@ void snurra_tile::tick() {
 	m_state.position_us = now;
 	m_state.sampled_at_us = snurra_clock_us();
 	hold_screen_awake(m_state.playing && (m_full || video_open()));
+	/* Nothing of it seen: the rest only draws. */
+	if (m_quiet) return;
 	/* Live, the time is only where it is, as mplayer shows a radio's, and
 	 * the position has no end to be a fraction of. */
 	const bool is_live = live();

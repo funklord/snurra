@@ -1694,6 +1694,22 @@ void snurra_node::release(int index, const QPoint &at) {
  * closed from the bar -- and, by its own button, a window of its own
  * instead, which closed puts it back as the drawer.
  */
+/* Nothing of the window to see -- minimized, not exposed, or behind the
+ * decks it follows: its tiles draw nothing and pull no pictures, their
+ * clocks and logic going on, so they are right the moment they are seen. */
+void snurra_node::update_quiet() {
+	const bool hidden = (windowState() & Qt::WindowMinimized) || !isVisible()
+	                    || (windowHandle() && !windowHandle()->isExposed()) || m_behind_decks;
+	if (hidden == m_quiet) return;
+	m_quiet = hidden;
+	for (snurra_tile *tile : m_tiles) tile->set_quiet(hidden);
+}
+
+void snurra_node::changeEvent(QEvent *event) {
+	QWidget::changeEvent(event);
+	if (event->type() == QEvent::WindowStateChange) update_quiet();
+}
+
 void snurra_node::show_master(bool open) {
 	m_master_open = open;
 	if (!m_master_drawer) {
@@ -1926,7 +1942,11 @@ void snurra_node::followed(const snurra_wire::message &m) {
 	 * them by more than a fifth of a second -- a waveform redrawn ten
 	 * times a second for nothing is not in step, it is busy. */
 	const int rate = m_engine->rate();
-	const bool playing = m.index != 0;
+	const bool playing = (m.index & 1) != 0;
+	/* Behind the decks it follows -- they in front, wholly over it -- or
+	 * minimized: nothing of it to see, so nothing drawn. */
+	m_behind_decks = (m.index & 2) != 0 && m.frame.isValid() && m.frame.contains(frameGeometry());
+	update_quiet();
 	const qint64 now = snurra_clock_us();
 	const int64_t time = snurra_us_to_frames(std::max<qint64>(0, m.time + (playing ? now - m.started : 0)), rate);
 	snurra_tile *sounding = nullptr;

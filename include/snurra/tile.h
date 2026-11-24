@@ -112,6 +112,10 @@ public:
 	/* On a deck beside the mixer: what the deck's head and the mixer's
 	 * strip hold -- play, cue, sync, level, EQ -- not shown here too. */
 	void set_on_mixer(bool on);
+	/* Nothing of it can be seen -- its window minimized or behind another:
+	 * it draws nothing and pulls no pictures, its logic going on. */
+	void set_quiet(bool quiet);
+	bool quiet() const { return m_quiet; }
 	bool on_mixer() const { return m_on_mixer; }
 	/* The drawn EQ, opened by hand where the mixer has the knobs. */
 	void set_eq_open(bool open);
@@ -426,6 +430,7 @@ private:
 	QWidget *m_eq_name = nullptr;
 	QWidget *m_speaker = nullptr;
 	bool m_on_mixer = false;
+	bool m_quiet = false;
 	bool m_eq_open = false;
 	void show_eq();
 	void show_cue();

@@ -119,6 +119,7 @@ public:
 	void set_loop(int times) { m_loops_left = times <= 0 ? -1 : times - 1; }
 
 protected:
+	void changeEvent(QEvent *event) override;
 	/* A tile dragged here from another snurra joins this one (Wayland's
 	 * gesture, sec 3b), and the bare frame moves the window. */
 	void dragEnterEvent(QDragEnterEvent *event) override;
@@ -313,6 +314,10 @@ private:
 	bool m_master_apart = false;
 	void show_master(bool open);
 	void place_master();
+	/* Quiet while nothing of it is seen (update_quiet). */
+	bool m_quiet = false;
+	bool m_behind_decks = false;
+	void update_quiet();
 	/* A train's next tile, started for the tile before it: when, so a
 	 * stop before then can take it back. */
 	struct following {

@@ -1671,7 +1671,22 @@ its width**, the same controls laid as a row, and the drawer's own
 back as the drawer -- the shape a player grows by, downward or apart.
 The window's see-through shape takes the drawer in. Tested in the same
 test (the drawer in the window, apart in its own, back on closing; with
-the closing not heard, it fails). Tested in `the_master_shapes_all_that_goes_out`
+the closing not heard, it fails). **A player not seen draws
+nothing** (the holder, the same evening: "The player window and the DJ
+decks can coexist simultaneously, but unlikely to be used simultaneously
+so stop redrawing the player if it's behind the decks window or
+minimized"): a window is quiet while minimized, not exposed, or behind
+the decks it follows -- the decks say in their answer to FOLLOW where
+their window is and whether it is in front, and one wholly over the
+follower hides it, since X11 does not tell Qt reliably that a window is
+covered. Quiet, its tiles pull no pictures and draw no playhead, time or
+slider (`snurra_tile::set_quiet`); their clocks and logic go on, so they
+are right the moment they are seen again. Tested in
+`a_window_follows_the_player_on_the_decks` (quiet minimized, not when
+brought back, quiet behind the active decks; with being behind ignored,
+it fails). Found on the way: a tile with no picture has no frame timer,
+which the first version stopped regardless -- a crash in the follower
+test before it was guarded. Tested in `the_master_shapes_all_that_goes_out`
 (untouched exact; half the level, half; eight times over held at full by
 the limiter and not without it; the mid killed, silent; the meter's
 peak; with the stage not run, it fails) and

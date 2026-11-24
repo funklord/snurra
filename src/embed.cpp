@@ -843,6 +843,12 @@ void snurra_dj_private::handle(QLocalSocket *socket, const snurra_wire::message 
 			is.started = at;
 			is.index = score->playing ? 1 : 0;
 		}
+		/* Where these decks are on screen, and whether in front: a window
+		 * following them behind it draws nothing (the holder, 2026-11-25:
+		 * "stop redrawing the player if it's behind the decks window or
+		 * minimized"). */
+		is.frame = q->window()->frameGeometry();
+		if (q->window()->isActiveWindow()) is.index |= 2;
 		send(socket, is);
 		break;
 	}
