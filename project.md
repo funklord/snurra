@@ -1428,6 +1428,28 @@ Tested in `a_tempo_change_keeps_the_pitch_by_default` (on in a new state
 and its deck, the key as heard unmoved at +20 %, three semitones up with
 it off; with the old default, it fails).
 
+**(a) built 2026-11-25: one set of controls** (`controls.h`), used
+wherever snurra has a knob or a fader. `snurra_knob` -- the knob settled
+2026-11-18, held and moved up or down, out of `tile.cpp` where only the
+key shift had it, so the mixer's knobs are no longer Qt's stock dial --
+turns its whole range in twelve lines of text however many steps it has
+(the key shift's 24 a step every half line, as before; an EQ knob's 200
+no farther). `snurra_fader` is a DJ fader: a groove, a flat cap with a
+line across it, ticks, its home tick long; held, it moves by as much as
+the hand from where it was, never to where the press landed. Both go
+home on a double-click. **Which is which, by how a DJ's hand uses it:**
+a knob for what is turned a little and often -- gain, the EQ's parts, a
+key shift, a master level -- small; a fader for what is thrown far and
+watched -- long, vertical for a channel's fader (home: full), horizontal
+for the crossfader (home: the middle). In a window's compact panel the
+level and the tempo are faders too, compact (a line and a half thick),
+horizontal as the panel runs. Not yet: a tempo fader on the deck itself,
+vertical and long, as Traktor's (step 2b). The seek bar is not a fader
+and stays as it is. Tested in
+`the_knob_and_the_fader_move_by_the_hand_not_the_press` (a press alone
+moves neither, a drag moves them by the hand, a double-click puts them
+home; with Qt's own press back on either, it fails).
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running

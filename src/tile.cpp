@@ -1,4 +1,5 @@
 #include "snurra/tile.h"
+#include "snurra/controls.h"
 #include "snurra/source.h"
 
 #include <QCoreApplication>
@@ -48,58 +49,6 @@
 #include "snurra/subtitles.h"
 #include "snurra/palette.h"
 #include "snurra/video.h"
-
-/*
- * A knob as a mixer's is turned on a screen: held -- the left button, or
- * a finger, which Qt hands on as the left button -- and moved up to turn
- * it up, down to turn it down, a step every half line of text, wherever
- * on it the press began; the wheel and the keys as a dial's. QDial's own
- * follows the pointer's angle round its centre, which at two lines across
- * leaves a few pixels between one end and the other, jumps to wherever
- * the press landed, and has no gesture a finger can make on a phone (the
- * holder, 2026-11-18: "a knob should be held L mouse button or touch and
- * then up/down"). Drawn as a dial still.
- */
-class snurra_knob : public QDial {
-public:
-	using QDial::QDial;
-
-protected:
-	void mousePressEvent(QMouseEvent *event) override {
-		if (event->button() != Qt::LeftButton) {
-			event->ignore();
-			return;
-		}
-		m_held = true;
-		m_from = value();
-		m_from_y = event->position().y();
-		setSliderDown(true);
-		event->accept();
-	}
-	void mouseMoveEvent(QMouseEvent *event) override {
-		if (!m_held) {
-			event->ignore();
-			return;
-		}
-		const double step = std::max(4, fontMetrics().height() / 2);
-		setSliderPosition(m_from + int(std::lround((m_from_y - event->position().y()) / step)));
-		event->accept();
-	}
-	void mouseReleaseEvent(QMouseEvent *event) override {
-		if (!m_held) {
-			event->ignore();
-			return;
-		}
-		m_held = false;
-		setSliderDown(false);
-		event->accept();
-	}
-
-private:
-	bool m_held = false;
-	int m_from = 0;
-	double m_from_y = 0;
-};
 
 /*
  * The EQ as one line (the holder, 2026-11-18: "a line where segments of it
@@ -1283,7 +1232,11 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	m_loop->setToolTip(tr("Loop the jump's step from the beat just played; again, play on"));
 	where->addWidget(m_loop);
 	strip->addLayout(where);
-	m_level = new QSlider(Qt::Horizontal, m_controls);
+	/* The controls everywhere are snurra's own (controls.h). */
+	snurra_fader *level = new snurra_fader(Qt::Horizontal, m_controls);
+	level->set_compact(true);
+	level->set_home(100);
+	m_level = level;
 	m_level->setAccessibleName(tr("Level"));
 	m_level->setRange(0, 100);
 	m_level->setValue(state.level);
@@ -1309,7 +1262,9 @@ snurra_tile::snurra_tile(const snurra_tile_state &state, snurra_deck *deck, QWid
 	 * turntable, the pitch moves with the tempo; on, it stays (sec 4).
 	 * Dragged, it snaps to the middle; a double-click puts it back. */
 	QHBoxLayout *speed = new QHBoxLayout;
-	m_tempo = new QSlider(Qt::Horizontal, m_controls);
+	snurra_fader *tempo = new snurra_fader(Qt::Horizontal, m_controls);
+	tempo->set_compact(true);
+	m_tempo = tempo;
 	m_tempo->setObjectName(QStringLiteral("snurra-tempo"));
 	m_tempo->setAccessibleName(tr("Tempo"));
 	m_tempo->setToolTip(tr("Tempo; a double-click puts it back"));

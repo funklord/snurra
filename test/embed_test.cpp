@@ -53,6 +53,7 @@
 #include "snurra/deck_waves.h"
 #include "snurra/deck_head.h"
 #include "snurra/mixer.h"
+#include "snurra/controls.h"
 #include "snurra/beats.h"
 #include "snurra/midi.h"
 #include "snurra/tile_state.h"
@@ -119,6 +120,7 @@ private slots:
 	void a_decks_head_shows_its_tempo_key_and_time_left();
 	void the_mixer_strips_are_each_decks_own();
 	void a_tempo_change_keeps_the_pitch_by_default();
+	void the_knob_and_the_fader_move_by_the_hand_not_the_press();
 	void a_listener_plugs_into_a_windows_tile();
 	void the_decks_show_the_player_they_play();
 	void a_window_follows_the_player_on_the_decks();
@@ -2083,6 +2085,52 @@ void embed_test::the_decks_sit_as_the_person_arranged_them() {
 	QCOMPARE(where(again, 1), QPoint(1, 0));
 	again.arrange(QString());
 	QVERIFY(!QSettings(QStringLiteral("snurra"), QStringLiteral("snurra")).contains(QStringLiteral("decks/arrangement")));
+}
+
+/*
+ * snurra's own controls (controls.h; the holder, 2026-11-25: "Do not use
+ * standard knobs, they are broken ... use the ones we fixed before. We
+ * also need DJ-faders"). A knob: a press alone moves nothing -- Qt's dial
+ * jumped to where it landed -- and held and moved up half its throw (six
+ * lines), it turns half its range; a double-click puts it home. A fader:
+ * pressed far from its cap it stays, dragged it moves by as much as the
+ * hand, never to where the press landed, and a double-click puts it home.
+ */
+void embed_test::the_knob_and_the_fader_move_by_the_hand_not_the_press() {
+	auto mouse = [](QWidget *on, QEvent::Type type, QPoint at, Qt::MouseButtons held) {
+		QMouseEvent event(type, QPointF(at), on->mapToGlobal(QPointF(at)), Qt::LeftButton, held, Qt::NoModifier);
+		QApplication::sendEvent(on, &event);
+	};
+	snurra_knob knob;
+	knob.setRange(-100, 100);
+	knob.set_home(0);
+	knob.resize(40, 40);
+	knob.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&knob));
+	const int line = knob.fontMetrics().height();
+	mouse(&knob, QEvent::MouseButtonPress, QPoint(2, 38), Qt::LeftButton);
+	QCOMPARE(knob.value(), 0);
+	mouse(&knob, QEvent::MouseMove, QPoint(2, 38 - 6 * line), Qt::LeftButton);
+	mouse(&knob, QEvent::MouseButtonRelease, QPoint(2, 38 - 6 * line), Qt::NoButton);
+	QVERIFY2(qAbs(knob.value() - 100) <= 2, qPrintable(QString::number(knob.value())));
+	mouse(&knob, QEvent::MouseButtonDblClick, QPoint(20, 20), Qt::LeftButton);
+	QCOMPARE(knob.value(), 0);
+
+	snurra_fader fader(Qt::Vertical);
+	fader.setRange(0, 100);
+	fader.set_home(100);
+	fader.setValue(50);
+	fader.resize(3 * line, 20 * line);
+	fader.show();
+	QVERIFY(QTest::qWaitForWindowExposed(&fader));
+	mouse(&fader, QEvent::MouseButtonPress, QPoint(line, 2), Qt::LeftButton);   /* at the top, far from the cap */
+	QCOMPARE(fader.value(), 50);
+	const int quarter = (fader.height() - line) / 4;
+	mouse(&fader, QEvent::MouseMove, QPoint(line, 2 + quarter), Qt::LeftButton);   /* down a quarter of its travel */
+	mouse(&fader, QEvent::MouseButtonRelease, QPoint(line, 2 + quarter), Qt::NoButton);
+	QVERIFY2(qAbs(fader.value() - 25) <= 1, qPrintable(QString::number(fader.value())));
+	mouse(&fader, QEvent::MouseButtonDblClick, QPoint(line, 2), Qt::LeftButton);
+	QCOMPARE(fader.value(), 100);
 }
 
 /*

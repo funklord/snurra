@@ -1,4 +1,5 @@
 #include "snurra/mixer.h"
+#include "snurra/controls.h"
 
 #include "snurra/deck_waves.h"
 #include "snurra/eq.h"
@@ -77,8 +78,11 @@ void snurra_mixer::set_deck_count(int count) {
 			text->setFont(small);
 			text->setAlignment(Qt::AlignHCenter);
 			column->addWidget(text);
-			QDial *knob = new QDial(one.box);
+			/* snurra's knob, held and moved up or down, never Qt's stock
+			 * dial (the holder, 2026-11-25); a double-click to 0. */
+			snurra_knob *knob = new snurra_knob(one.box);
 			knob->setRange(from, to);
+			knob->set_home(0);
 			knob->setFixedSize(size, size);
 			knob->setNotchesVisible(true);
 			knob->setAccessibleName(tr("Deck %1 %2").arg(letter, accessible));
@@ -89,7 +93,10 @@ void snurra_mixer::set_deck_count(int count) {
 		one.high = dial(tr("HI"), tr("high"), KILL_STEP, 100);
 		one.mid = dial(tr("MID"), tr("mid"), KILL_STEP, 100);
 		one.low = dial(tr("LOW"), tr("low"), KILL_STEP, 100);
-		one.fader = new QSlider(Qt::Vertical, one.box);
+		/* A DJ fader, vertical and long, as a mixer's channel. */
+		snurra_fader *fader = new snurra_fader(Qt::Vertical, one.box);
+		fader->set_home(100);
+		one.fader = fader;
 		one.fader->setRange(0, 100);
 		one.fader->setAccessibleName(tr("Deck %1 fader").arg(letter));
 		one.fader->setMinimumHeight(size * 2);

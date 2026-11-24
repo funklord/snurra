@@ -44,6 +44,7 @@
 #include "snurra/deck_waves.h"
 #include "snurra/deck_head.h"
 #include "snurra/mixer.h"
+#include "snurra/controls.h"
 #include "snurra/peaks.h"
 #include "snurra/wire.h"
 #include "snurra/timeline.h"
@@ -1632,7 +1633,10 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 	d->mixer->has_headphones = [this] { return !d->listeners.empty(); };
 	set_deck_count(2);
 	QHBoxLayout *fader = new QHBoxLayout;
-	d->crossfader = new QSlider(Qt::Horizontal, this);
+	/* A DJ fader, horizontal and long, its home the middle. */
+	snurra_fader *crossfader = new snurra_fader(Qt::Horizontal, this);
+	crossfader->set_home(0);
+	d->crossfader = crossfader;
 	d->crossfader->setObjectName(QStringLiteral("snurra-crossfader"));
 	d->crossfader->setAccessibleName(tr("Crossfader"));
 	d->crossfader->setRange(-100, 100);
