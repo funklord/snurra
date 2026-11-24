@@ -20,6 +20,8 @@ include(app/fuzznet.pri)
 isEmpty(QTKIT_DIR): QTKIT_DIR = $$PWD/qtkit
 include($$QTKIT_DIR/qtkit.pri)
 SOURCES += src/main.cpp
+# The window's icon, compiled in for a snurra not installed (main.cpp).
+RESOURCES += packaging/icon.qrc
 # The version, from VERSION, the one place it lives: what --version says.
 SNURRA_VERSION_TEXT = $$cat($$PWD/VERSION)
 DEFINES += SNURRA_VERSION_TEXT=\\\"$$SNURRA_VERSION_TEXT\\\"

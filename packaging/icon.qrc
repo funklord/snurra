@@ -1,0 +1,14 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+<!-- The window's icon, compiled in: an uninstalled snurra has no icon
+     theme entry to find (main.cpp). The same PNGs make install puts in
+     hicolor. -->
+<qresource prefix="/icon">
+	<file alias="16.png">icon/16.png</file>
+	<file alias="22.png">icon/22.png</file>
+	<file alias="32.png">icon/32.png</file>
+	<file alias="48.png">icon/48.png</file>
+	<file alias="64.png">icon/64.png</file>
+	<file alias="128.png">icon/128.png</file>
+</qresource>
+</RCC>

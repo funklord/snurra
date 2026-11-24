@@ -60,6 +60,7 @@ private slots:
 	void a_tile_plays_a_player_and_the_wire_carries_it();
 	void tiles_go_onto_decks_and_back_out_in_step();
 	void a_window_opens_its_player_in_the_decks();
+	void a_player_not_installed_has_its_icon();
 	void a_socket_it_cannot_make_is_said();
 	void a_dark_tde_desktop_gets_a_dark_player();
 	void started_with_nothing_it_plays_nothing();
@@ -1608,6 +1609,42 @@ void handover_test::a_socket_it_cannot_make_is_said() {
 	QCOMPARE(process.exitCode(), 1);
 	const QString said = QString::fromLocal8Bit(process.readAllStandardError());
 	QVERIFY2(said.contains(QStringLiteral("snurra: cannot listen at ") + deep), qPrintable(said));
+}
+
+/*
+ * Its own icon though not installed (claude-guidelines' inbox message
+ * 20261124T2111Z): the window icon fell back to the theme's
+ * "multimedia-audio-player", which neither hicolor nor TDE's crystalsvg
+ * has, so a snurra run from its build had none. Now the PNGs are compiled
+ * in: with no icon theme to find anything in, the window still carries
+ * them, every size, in _NET_WM_ICON, read with xprop.
+ */
+void handover_test::a_player_not_installed_has_its_icon() {
+	const QString name = start_x_server();
+	if (name.isEmpty()) QSKIP("no Xvfb, no xdotool, or no free display number");
+	if (QStandardPaths::findExecutable(QStringLiteral("xprop")).isEmpty()) QSKIP("no xprop");
+	QProcessEnvironment x11;
+	x11.insert(QStringLiteral("DISPLAY"), name);
+	x11.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("xcb"));
+	/* Nowhere to find an installed icon. */
+	x11.insert(QStringLiteral("XDG_DATA_DIRS"), m_dir->path());
+	x11.insert(QStringLiteral("XDG_DATA_HOME"), m_dir->path());
+	QProcess *window = start({ QStringLiteral("tone:440") }, QStringLiteral("null"), x11);
+	QVERIFY(window->waitForStarted() && wait_for_socket(socket_of(window)));
+	QString ids;
+	QTRY_VERIFY_WITH_TIMEOUT(!(ids = xdotool(name, { QStringLiteral("search"), QStringLiteral("--onlyvisible"), QStringLiteral("--pid"), QString::number(window->processId()) })).isEmpty(), 5000);
+	QString icons;
+	for (const QString &id : ids.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+		QProcess xprop;
+		QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+		env.insert(QStringLiteral("DISPLAY"), name);
+		xprop.setProcessEnvironment(env);
+		xprop.start(QStringLiteral("xprop"), { QStringLiteral("-id"), id, QStringLiteral("_NET_WM_ICON") });
+		QVERIFY(xprop.waitForFinished(5000));
+		icons += QString::fromLocal8Bit(xprop.readAllStandardOutput());
+	}
+	for (int size : {16, 22, 32, 48, 64, 128})
+		QVERIFY2(icons.contains(QStringLiteral("Icon (%1 x %1)").arg(size)), qPrintable(icons.left(300)));
 }
 
 /*

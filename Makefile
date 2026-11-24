@@ -6,8 +6,8 @@
 #                   a real fuzznetd built from the vendored fuzznet
 #   make test-estate-loss  the estate's two hosts over a lossy link
 #   make check-mk   build the player from snurra.mk alone, and run the tests on it
-#   make install    the player and its desktop entry, under PREFIX (/usr/local)
-#                   and DESTDIR; make uninstall removes those two files
+#   make install    the player, its desktop entry and its icons, under PREFIX
+#                   (/usr/local) and DESTDIR; make uninstall removes them
 #   make android    the player for Android (a Qt kit, NDK, SDK, JDK); and
 #                   android-install, -run, -log, -uninstall, -check from
 #                   tool/android.mk
@@ -171,19 +171,39 @@ test: $(BIN) tests-build fuzznetd
 # audio and starts it with the files clicked (project.md sec 3b); several
 # at once become a train. PREFIX and DESTDIR as packaging expects them.
 PREFIX ?= /usr/local
-# The icon in hicolor, the theme every desktop falls back to, so the entry
-# and the player's windows find it by name.
-ICON = $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/snurra.svg
-INSTALLED = $(DESTDIR)$(PREFIX)/bin/snurra $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop $(ICON)
+# The id is reverse-DNS, se.vibes.snurra, as the freedesktop specification
+# recommends; the program keeps its name. The icon in hicolor, the theme
+# every desktop falls back to, as the SVG and as PNGs: TDE takes a PNG
+# before an SVG and draws SVG with an engine of its own.
+ID = se.vibes.snurra
+ICON_SIZES = 16 22 32 48 64 128
+APPS = $(DESTDIR)$(PREFIX)/share/applications
+HICOLOR = $(DESTDIR)$(PREFIX)/share/icons/hicolor
+INSTALLED = $(DESTDIR)$(PREFIX)/bin/snurra $(APPS)/$(ID).desktop $(HICOLOR)/scalable/apps/$(ID).svg \
+            $(foreach n,$(ICON_SIZES),$(HICOLOR)/$(n)x$(n)/apps/$(ID).png)
+# What an install before 2026-11-25 wrote, under the name the id replaced:
+# removed on install too, so a menu does not show snurra twice.
+INSTALLED_BEFORE = $(APPS)/snurra.desktop $(HICOLOR)/scalable/apps/snurra.svg
 
 install: $(BIN)
 	install -D -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/snurra
-	install -D -m 0644 snurra.desktop $(DESTDIR)$(PREFIX)/share/applications/snurra.desktop
-	install -D -m 0644 snurra.svg $(ICON)
+	install -D -m 0644 packaging/$(ID).desktop $(APPS)/$(ID).desktop
+	install -D -m 0644 packaging/$(ID).svg $(HICOLOR)/scalable/apps/$(ID).svg
+	for n in $(ICON_SIZES); do \
+		install -D -m 0644 packaging/icon/$$n.png $(HICOLOR)/$${n}x$${n}/apps/$(ID).png || exit 1; \
+	done
+	rm -f $(INSTALLED_BEFORE)
+	@# A packager's install refreshes nothing: the package's triggers do.
+	@# Otherwise what is present, and nothing that is not.
+	@if [ -z "$(DESTDIR)" ]; then \
+		! command -v update-desktop-database >/dev/null || update-desktop-database -q $(APPS) || true; \
+		! command -v gtk-update-icon-cache >/dev/null || gtk-update-icon-cache -q -t -f $(HICOLOR) || true; \
+		! command -v tdebuildsycoca >/dev/null || tdebuildsycoca >/dev/null 2>&1 || true; \
+	fi
 
-# The three files install wrote, by name.
+# The files install wrote, by name, and the ones it replaced.
 uninstall:
-	rm -f $(INSTALLED)
+	rm -f $(INSTALLED) $(INSTALLED_BEFORE)
 
 # --- Android -----------------------------------------------------------------
 # The player on Android, as BeerSSH's tile will first run (project.md sec
@@ -339,8 +359,14 @@ $(MK_BUILD_DIR)/qtkit/moc_%.cpp: $(QTKIT_DIR)/src/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
 
-$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS) $(MK_QTKIT_MOCS) VERSION
-	$(CXX) $(MK_FLAGS) -Iapp -I$(FUZZNET_DIR) -I$(QTKIT_DIR)/include -I$(QTKIT_DIR)/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
+# The window's icon, compiled in (packaging/icon.qrc), as snurra.pro has it.
+RCC ?= $(shell $(QMAKE) -query QT_HOST_LIBEXECS)/rcc
+$(MK_BUILD_DIR)/qrc_icon.cpp: packaging/icon.qrc $(wildcard packaging/icon/*.png)
+	@mkdir -p $(@D)
+	$(RCC) --name icon $< -o $@
+
+$(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS) $(MK_QTKIT_MOCS) $(MK_BUILD_DIR)/qrc_icon.cpp VERSION
+	$(CXX) $(MK_FLAGS) -Iapp -I$(FUZZNET_DIR) -I$(QTKIT_DIR)/include -I$(QTKIT_DIR)/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) $(MK_BUILD_DIR)/qrc_icon.cpp -Wl,--gc-sections -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build fuzznetd
 	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)

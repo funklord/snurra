@@ -208,10 +208,15 @@ int main(int argc, char *argv[]) {
 	                              QStringLiteral("Copyright (C) 2026 Nabeel Sowan <nabeel@vibes.se>").toHtmlEscaped()));
 	QCoreApplication::setApplicationName(QStringLiteral("snurra"));
 	/* Its own icon, the record make install puts in the icon theme, on
-	 * every window; the generic player's where it is not installed. And
-	 * the desktop entry named, which is where Wayland finds the icon. */
-	QGuiApplication::setDesktopFileName(QStringLiteral("snurra"));
-	QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("snurra"), QIcon::fromTheme(QStringLiteral("multimedia-audio-player"))));
+	 * every window; where it is not installed, the same PNGs compiled in
+	 * (packaging/icon.qrc) -- the generic player's icon it fell back to
+	 * is in neither hicolor nor TDE's crystalsvg, so an uninstalled snurra
+	 * had none. And the desktop entry named, reverse-DNS as the entry's
+	 * file is, which is where Wayland finds the icon. */
+	QGuiApplication::setDesktopFileName(QStringLiteral("se.vibes.snurra"));
+	QIcon compiled_in;
+	for (int size : {16, 22, 32, 48, 64, 128}) compiled_in.addFile(QStringLiteral(":/icon/%1.png").arg(size), QSize(size, size));
+	QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("se.vibes.snurra"), compiled_in));
 	quit_on_signals(app);
 	/* "fuzznet:ROOT" opened from the user's node, in this process and in
 	 * every tile process it starts, each running this same main. */
