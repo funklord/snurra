@@ -41,8 +41,9 @@
 /* 1: snurra_media, snurra_player. 2: snurra_media::subtitles. 3: snurra_dj.
  * 4: snurra_player's position_ms, length_ms, state_of and ended().
  * 5: four decks and the wire (the (5) parts of snurra_dj).
- * 6: snurra_dj::plug_track and plugged_track. */
-#define SNURRA_EMBED_VERSION 6
+ * 6: snurra_dj::plug_track and plugged_track.
+ * 7: snurra_dj::set_unfold_on_arrival. */
+#define SNURRA_EMBED_VERSION 7
 
 /* One thing to play. */
 struct snurra_media {
@@ -167,6 +168,11 @@ public:
 	 * them. False where the deck holds no player, or one needing more than
 	 * four decks at once. A tune loaded by hand ends it. */
 	bool unfold(int deck);
+	/* (7) Whether a player handed onto a deck unfolds across the decks by
+	 * itself once it has faded in -- the default, one player or its decks
+	 * with no nesting on screen (sec 3f, 2026-11-24). Off, it stays on its
+	 * deck until unfold() is called: a host driving the decks itself. */
+	void set_unfold_on_arrival(bool on);
 	/* (5) And back: the decks of an unfolded player gathered onto deck A
 	 * as one player again, as edited, where it stands. False where no
 	 * player is unfolded. */

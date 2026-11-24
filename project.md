@@ -1315,6 +1315,46 @@ plays; asked at the overview's 1024 instead, it fails). Next: the decks'
 own look (step 2) and a mixer between them (step 3), then the windows in
 step (4) and the layouts (5).
 
+**One player or its decks, for now** (the holder, 2026-11-24: "For now
+let's avoid the more complex features and stick to a single
+player/decks, at least in the UI, if two of them are running
+simultaneously they output separately and don't depend on each other";
+asked, one instance is **one set, shown as the player or as the decks,
+switched between**; and "the second one opens as a plain tile but can
+either be dragged into a player or be made into a player of its own.
+They can be dragged between other tiles or players too."). This narrows,
+in the UI only, what is above -- the machinery stays, and the switch runs
+on it:
+
+- **The switch:** the window's "decks" hands its player to the decks and
+  the window goes; the decks' "Into a window" hands it back. Not both at
+  once: the window that followed the decks (2026-11-23, "leave the window
+  open as a follower") and the decks' "In a window too" are off the
+  screen, which also sets aside "two linked windows" asked earlier today.
+- **No nesting on screen:** a player arriving on the decks unfolds across
+  them by itself, so the decks' Unfold and Fold buttons go, and the
+  listen button's menu of a nested player's tracks with them.
+- **Tiles still travel:** a second snurra opens as a plain tile; it is
+  dragged into a player or made a player of its own, and tiles go between
+  players by drag, as before.
+
+**Built the same day.** The window's "decks" hands its player over and the
+window ends (`a_window_opens_its_player_in_the_decks`; left open, it
+fails). A player arriving on a deck unfolds once faded in
+(`snurra_dj::set_unfold_on_arrival`, on by default, `SNURRA_EMBED_VERSION`
+7): a host -- or a test of the machinery, unfold, fold, a ride written
+back, a deck started by hand -- turns it off and calls `unfold()` itself.
+A player needing more than four decks at once cannot unfold and stays
+whole on its deck, the one case where a nested track's socket
+(`plug_track`) is still reached, which its test now uses. Unfold, Fold,
+"In a window too" and the listen button's menu are off the screen; the
+decks remember a deck is part of an unfolded player by a flag of their
+own, where "Into a window" had asked whether Fold was visible. Found on
+the way: closing the decks mid-handover crashed -- QWidget's destructor
+deleted the server after the private part had gone, and an aborted
+socket's "disconnected" ran the handover's fade-in on it; the sockets'
+connections are now cut first in `~snurra_dj`.
+
 **The player's EQ is the main EQ; a channel has its own** (the holder,
 2026-11-24: "When we bring out the eq in the player it is the main eq,
 for each channel on the mixer we also have gain, 3ch eq and possible FX

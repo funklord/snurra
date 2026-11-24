@@ -256,6 +256,9 @@ public:
 	QLabel *empty;
 	QPointer<snurra_tile> tile;
 	QString name;
+	/* A deck of an unfolded player: "Into a window" gathers the player
+	 * back and hands it over whole (the switch, sec 3f). */
+	bool unfolded = false;
 	/* Its scrolling waveform's peaks (snurra_deck_waves), read for the
 	 * track in `fine_of`. */
 	std::unique_ptr<snurra_peaks> fine;
@@ -434,7 +437,9 @@ public:
 #ifdef Q_OS_ANDROID
 		set_window->setVisible(false);
 #else
-		set_window->setVisible(shown && server != nullptr);
+		/* Not both views at once, for now (sec 3f, 2026-11-24). */
+		(void)shown;
+		set_window->setVisible(false);
 #endif
 	}
 
@@ -507,6 +512,7 @@ public:
 	QList<dj_deck *> decks;   /* A, B and, with four, C and D */
 	QGridLayout *grid = nullptr;
 	snurra_deck_waves *waves = nullptr;
+	bool unfold_on_arrival = true;
 	void fill_wave(int deck, snurra_deck_waves::deck &where);
 	QSlider *crossfader = nullptr;
 	QLabel *left_side = nullptr, *right_side = nullptr;   /* which decks each end sends */
@@ -857,10 +863,12 @@ void snurra_dj_private::fade_in(const QString &token, qint64 start_us, qint64 le
 	const auto it = taking.constFind(token);
 	if (it == taking.constEnd()) return;
 	if (it->tile) it->tile->deck()->fade(start_us, length_us, 0, 1);
-	/* A player asked for from a window: across the decks once the fade
-	 * is over, where the deck view is a view of it (sec 3f). */
-	if (token == adopted && it->tile && !it->tile->state().player.empty()) {
-		adopted.clear();
+	/* A player handed over -- asked for from a window, or dropped whole
+	 * on a deck: across the decks once the fade is over, the deck view
+	 * being a view of it (sec 3f; with no Unfold on screen since
+	 * 2026-11-24, it unfolds by itself). */
+	if (it->tile && !it->tile->state().player.empty() && (token == adopted || unfold_on_arrival)) {
+		if (token == adopted) adopted.clear();
 		const QPointer<snurra_tile> tile = it->tile;
 		const int wait_ms = int(std::max<qint64>(0, start_us + length_us - snurra_clock_us()) / 1000) + 50;
 		QTimer::singleShot(wait_ms, q, [this, tile] {
@@ -886,7 +894,7 @@ void snurra_dj_private::end_take(const QString &token) {
  * player whole -- its tracks as tiles -- not one of its tracks torn out.
  */
 void snurra_dj_private::to_window(int deck, const QPoint &at) {
-	if (deck >= 0 && deck < decks.size() && decks[deck]->fold->isVisible() && fold()) deck = 0;
+	if (deck >= 0 && deck < decks.size() && decks[deck]->unfolded && fold()) deck = 0;
 	release(deck, at);
 }
 
@@ -1079,7 +1087,7 @@ bool snurra_dj_private::fold() {
 }
 
 void snurra_dj_private::end_score() {
-	for (dj_deck *deck : decks) deck->fold->hide();
+	for (dj_deck *deck : decks) deck->unfolded = false;
 	if (set_view) show_set(false);
 	if (!score) return;
 	if (score->timer) score->timer->deleteLater();
@@ -1172,7 +1180,9 @@ void snurra_dj_private::load_track(int track, int64_t frame) {
 		tile = snurra_tile::embedded(*engine, state, nullptr, decks[deck]);
 		install(deck, tile, snurra_title_of(state.source));
 		score->on_deck[size_t(deck)] = track;
-		decks[deck]->fold->show();
+		/* One player or its decks (sec 3f, 2026-11-24): no Fold on
+		 * screen; "Into a window" is the way back. */
+		decks[deck]->unfolded = true;
 		/* The automation seen moving under the hand's fader. */
 		tile->set_show_heard(true);
 		/* Its play and seek are the player's, not its own. */
@@ -1495,6 +1505,10 @@ bool snurra_dj::unfold(int deck) {
 	return d->unfold(deck);
 }
 
+void snurra_dj::set_unfold_on_arrival(bool on) {
+	d->unfold_on_arrival = on;
+}
+
 void snurra_dj::arrange(const QString &arrangement) {
 	QSettings settings(QStringLiteral("snurra"), QStringLiteral("snurra"));
 	if (arrangement.trimmed().isEmpty()) settings.remove(QStringLiteral("decks/arrangement"));
@@ -1618,6 +1632,17 @@ snurra_dj::snurra_dj(QWidget *parent) : QWidget(parent), d(std::make_unique<snur
 }
 
 snurra_dj::~snurra_dj() {
+	/* The sockets first, while `d` is still here: QWidget's destructor
+	 * deletes the server after `d` has gone, a socket aborted then says
+	 * it disconnected, and its handler (a handover's fade_in) ran on the
+	 * freed `d` -- a crash on closing the decks mid-handover, found when
+	 * a test returned early (2026-11-24). */
+	for (QLocalSocket *socket : findChildren<QLocalSocket *>()) socket->disconnect();
+	if (d->server) {
+		d->server->disconnect();
+		delete d->server;
+		d->server = nullptr;
+	}
 	for (dj_deck *deck : d->decks) {
 		if (!deck || !deck->tile) continue;
 		snurra_tile *tile = deck->tile;
@@ -1663,9 +1688,11 @@ void snurra_dj_private::install(int deck, snurra_tile *tile, const QString &name
 	place->tile = tile;
 	place->name = name;
 	place->empty->hide();
-	place->unfold->setVisible(!tile->state().player.empty());
-	place->listen->setMenu(tile->state().player.empty() ? nullptr : place->listen_menu);
-	place->listen->setPopupMode(tile->state().player.empty() ? QToolButton::DelayedPopup : QToolButton::MenuButtonPopup);
+	/* One player or its decks (sec 3f, 2026-11-24): a player on a deck
+	 * unfolds by itself, so no Unfold, and no menu of its tracks to
+	 * listen to -- both kept underneath (snurra_dj::unfold, plug_track). */
+	place->unfold->hide();
+	place->listen->setMenu(nullptr);
 	/* Where another window can be started: on a phone the decks are
 	 * the app, one screen, and there is no process to start. */
 #ifdef Q_OS_ANDROID

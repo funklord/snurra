@@ -2118,11 +2118,13 @@ void embed_test::the_decks_waveforms_scroll_stacked_above_them() {
 
 /*
  * A socket on a nested player's track (project.md sec 3f: "a nested
- * player inside a deck" is a tap): a player of two tones -- 440 Hz for
- * 3 s, then 880 Hz coming in 0.5 s before its end -- handed onto deck A,
- * whose fader is down. Plugged into the first track from the listen
- * button's menu, the headphones hear 440 Hz; moved to the second before
- * it comes in, nothing; once it is in, 880 Hz, at full level.
+ * player inside a deck" is a tap), kept underneath since 2026-11-24 when
+ * the decks stopped nesting on screen -- a player handed over unfolds,
+ * unless it needs more than four decks at once. So this one does: four
+ * tones from the start and a fifth, 880 Hz, coming in at 2.5 s, five at
+ * once, handed onto deck A, whose fader is down. Plugged into the first
+ * track the headphones hear 220 Hz alone; moved to the fifth before it
+ * comes in, nothing; once it is in, 880 Hz, at full level.
  */
 void embed_test::a_listener_hears_one_track_of_a_decks_player() {
 	QTemporaryDir runtime, captures;
@@ -2138,12 +2140,14 @@ void embed_test::a_listener_hears_one_track_of_a_decks_player() {
 	offer.token = QStringLiteral("nested");
 	offer.deck = 0;
 	const qint64 now = snurra_clock_us();
-	for (int i = 0; i < 2; ++i) {
+	const int pitch[5] = { 220, 330, 550, 660, 880 };
+	for (int i = 0; i < 5; ++i) {
 		snurra_tile_state tone;
-		tone.source = QStringLiteral("tone:%1").arg(440 * (i + 1));
-		tone.duration_us = 3000000;
-		tone.column = i;
-		tone.overlap_us = i > 0 ? 500000 : -1;
+		tone.source = QStringLiteral("tone:%1").arg(pitch[i]);
+		tone.duration_us = 6000000;
+		tone.row = i;
+		tone.column = 0;
+		tone.lane_start_us = i == 4 ? 2500000 : 0;
 		tone.playing = i == 0;
 		tone.sampled_at_us = now;
 		offer.states << tone;
@@ -2156,22 +2160,17 @@ void embed_test::a_listener_hears_one_track_of_a_decks_player() {
 		giver.flush();
 		QTest::qWait(100);
 	}
-	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("2 tracks"), 3000);
+	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("5 tracks"), 3000);
 	QElapsedTimer since;
 	since.start();
 	snurra_tile *tile = dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChild<snurra_tile *>();
 	QVERIFY(tile);
-	QCOMPARE(tile->player_tracks(), 2);
+	QCOMPARE(tile->player_tracks(), 5);
 	tile->set_level(0);
 	QVERIFY(dj.add_listener(QStringLiteral("capture:") + captures.path()) == 0);
-	QToolButton *listen = nullptr;
-	for (QToolButton *button : dj.findChild<QWidget *>(QStringLiteral("snurra-deck-a"))->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly))
-		if (button->accessibleName() == QLatin1String("Listen here")) listen = button;
-	QVERIFY(listen && listen->menu());
-	emit listen->menu()->aboutToShow();
-	const QList<QAction *> sockets = listen->menu()->actions();
-	QCOMPARE(sockets.size(), 3);   /* the whole deck, then each track */
-	QCOMPARE(sockets.at(2)->text(), QStringLiteral("tone:880"));
+	/* Too many at once to unfold: still one player on deck A. */
+	QTest::qWait(300);
+	QCOMPARE(dj.loaded(0), QStringLiteral("5 tracks"));
 
 	const QString capture = QDir(captures.path()).filePath(QStringLiteral("%1.capture").arg(QCoreApplication::applicationPid()));
 	auto heard = [&capture](double &hz, double &rms) {
@@ -2201,15 +2200,15 @@ void embed_test::a_listener_hears_one_track_of_a_decks_player() {
 		return true;
 	};
 	double hz = 0, rms = 0;
-	sockets.at(1)->trigger();
+	dj.plug_track(0, 0, 0);
 	QCOMPARE(dj.plugged(0), 0);
 	QCOMPARE(dj.plugged_track(0), 0);
 	QTest::qWait(600);
 	QVERIFY(heard(hz, rms));
-	QVERIFY2(rms > 0.1 && qAbs(hz - 440) < 30, qPrintable(QStringLiteral("the first track: %1 Hz at %2").arg(hz).arg(rms)));
+	QVERIFY2(rms > 0.1 && qAbs(hz - 220) < 20, qPrintable(QStringLiteral("the first track: %1 Hz at %2").arg(hz).arg(rms)));
 	QVERIFY(since.elapsed() < 2000);
-	dj.plug_track(0, 0, 1);
-	QCOMPARE(dj.plugged_track(0), 1);
+	dj.plug_track(0, 0, 4);
+	QCOMPARE(dj.plugged_track(0), 4);
 	QTest::qWait(400);
 	QVERIFY(heard(hz, rms));
 	QVERIFY2(since.elapsed() < 2400, "too slow to hear the second track before it comes in");
@@ -2399,6 +2398,9 @@ void embed_test::a_deck_started_by_hand_is_where_its_track_comes_in() {
 	snurra_dj dj;
 	dj.show();
 	QVERIFY(dj.listen());
+	/* Handed players kept whole until unfolded here: the machinery
+	 * underneath, with no Unfold on screen (sec 3f, 2026-11-24). */
+	dj.set_unfold_on_arrival(false);
 	snurra_wire::message offer;
 	offer.type = snurra_wire::OFFER;
 	offer.token = QStringLiteral("by hand");
@@ -2466,6 +2468,9 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 	dj.show();
 	QVERIFY(QTest::qWaitForWindowExposed(&dj));
 	QVERIFY(dj.listen());
+	/* Handed players kept whole until unfolded here: the machinery
+	 * underneath, with no Unfold on screen (sec 3f, 2026-11-24). */
+	dj.set_unfold_on_arrival(false);
 	snurra_wire::message offer;
 	offer.type = snurra_wire::OFFER;
 	offer.token = QStringLiteral("ride");
@@ -2522,11 +2527,9 @@ void embed_test::a_fader_ridden_is_written_into_the_track() {
 	/* A move of the EQ by hand on the conducted deck is the track's too. */
 	tile->set_eq(-6, 0, SNURRA_EQ_KILL);
 	const qint64 before = tile->state().position_us;
-	QToolButton *fold = nullptr;
-	for (QToolButton *button : place->findChildren<QToolButton *>())
-		if (button->accessibleName() == QLatin1String("Fold back into one deck") && button->isVisible()) fold = button;
-	QVERIFY2(fold, "no Fold on a conducted deck");
-	fold->click();
+	/* No Fold on screen since 2026-11-24 ("Into a window" gathers it
+	 * back and hands it over); the call stays. */
+	QVERIFY(dj.fold());
 	QCOMPARE(dj.loaded(0), QStringLiteral("2 tracks"));
 	QVERIFY(dj.loaded(1).isEmpty());
 	QTest::qWait(300);
@@ -2565,6 +2568,9 @@ void embed_test::the_decks_show_the_player_they_play() {
 	dj.show();
 	QVERIFY(QTest::qWaitForWindowExposed(&dj));
 	QVERIFY(dj.listen());
+	/* Handed players kept whole until unfolded here: the machinery
+	 * underneath, with no Unfold on screen (sec 3f, 2026-11-24). */
+	dj.set_unfold_on_arrival(false);
 	QWidget *view = dj.findChild<QWidget *>(QStringLiteral("snurra-set-view"));
 	QVERIFY(view && !view->isVisible());
 	snurra_wire::message offer;
@@ -2628,6 +2634,9 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	dj.show();
 	QVERIFY(QTest::qWaitForWindowExposed(&dj));
 	QVERIFY(dj.listen());
+	/* Handed players kept whole until unfolded here: the machinery
+	 * underneath, with no Unfold on screen (sec 3f, 2026-11-24). */
+	dj.set_unfold_on_arrival(false);
 	snurra_wire::message offer;
 	offer.type = snurra_wire::OFFER;
 	offer.token = QStringLiteral("followed");
@@ -2654,8 +2663,11 @@ void embed_test::a_window_follows_the_player_on_the_decks() {
 	}
 	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("3 tracks"), 3000);
 	QVERIFY(dj.unfold(0));
+	/* "In a window too" off the screen: one player or its decks, not
+	 * both (sec 3f, 2026-11-24); following stays underneath. */
 	QWidget *also = dj.findChild<QWidget *>(QStringLiteral("snurra-set-window"));
-	QTRY_VERIFY_WITH_TIMEOUT(also && also->isVisible(), 2000);
+	QTest::qWait(300);
+	QVERIFY(also && !also->isVisible());
 
 	snurra_node node;
 	node.set_stays_open(true);
@@ -2767,6 +2779,9 @@ void embed_test::a_player_unfolds_across_the_decks() {
 	dj.show();
 	QVERIFY(QTest::qWaitForWindowExposed(&dj));
 	QVERIFY(dj.listen());
+	/* Handed players kept whole until unfolded here: the machinery
+	 * underneath, with no Unfold on screen (sec 3f, 2026-11-24). */
+	dj.set_unfold_on_arrival(false);
 
 	snurra_wire::message offer;
 	offer.type = snurra_wire::OFFER;
@@ -2793,13 +2808,13 @@ void embed_test::a_player_unfolds_across_the_decks() {
 		QTest::qWait(100);
 	}
 	QTRY_COMPARE_WITH_TIMEOUT(dj.loaded(0), QStringLiteral("3 tracks"), 3000);
-	QToolButton *unfold = nullptr;
+	/* No Unfold on screen (one player or its decks, sec 3f, 2026-11-24);
+	 * the call underneath does it. */
 	for (QToolButton *button : dj.findChildren<QToolButton *>())
-		if (button->accessibleName() == QLatin1String("Unfold across the decks") && button->isVisible()) unfold = button;
-	QVERIFY2(unfold, "no Unfold on a deck holding a player");
+		QVERIFY2(!(button->accessibleName() == QLatin1String("Unfold across the decks") && button->isVisible()), "an Unfold on screen");
 	QElapsedTimer since;
 	since.start();
-	unfold->click();
+	QVERIFY(dj.unfold(0));
 	QCOMPARE(dj.loaded(0), QStringLiteral("tone:220"));
 	QCOMPARE(dj.loaded(1), QStringLiteral("tone:330"));
 
@@ -3948,7 +3963,7 @@ void embed_test::a_lane_at_a_tempo_keeps_the_groups_time() {
  * what snurra would try.
  */
 void embed_test::a_player_plays_a_hosts_bytes_and_says_when_empty() {
-	QCOMPARE(SNURRA_EMBED_VERSION, 6);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire; 6: a nested track's socket */
+	QCOMPARE(SNURRA_EMBED_VERSION, 7);   /* 2: subtitles; 3: snurra_dj; 4: position, state, ended; 5: four decks, the wire; 6: a nested track's socket; 7: unfold on arrival */
 	QVERIFY(snurra_player::can_play(QStringLiteral("set.FLAC")));
 	QVERIFY(snurra_player::can_play(QStringLiteral("film.mkv")));
 	QVERIFY(!snurra_player::can_play(QStringLiteral("notes.txt")));

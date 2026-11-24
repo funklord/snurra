@@ -1594,14 +1594,11 @@ void snurra_node::complete_give(QLocalSocket *socket, const snurra_wire::message
 	commit.fade = CROSSFADE_US;
 	send(socket, commit);
 	if (socket) socket->flush();
-	/* The whole player given to the decks (open_decks): this window stays,
-	 * following it there (the holder, 2026-11-22: "leave the window open
-	 * as a follower"), so the switch to the decks loses no view. */
-	if (ready.token == m_decks_token && !ready.path.isEmpty()) {
-		m_decks_token.clear();
-		follow(ready.path);
-		return;
-	}
+	/* The whole player given to the decks (open_decks): the switch -- one
+	 * player or its decks, not both (the holder, 2026-11-24, setting aside
+	 * 2026-11-22's "leave the window open as a follower"), so this window
+	 * goes as any emptied one does. Following stays for --follow. */
+	if (ready.token == m_decks_token) m_decks_token.clear();
 	leave_if_empty();
 }
 

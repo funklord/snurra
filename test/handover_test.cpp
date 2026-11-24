@@ -1615,7 +1615,8 @@ void handover_test::a_socket_it_cannot_make_is_said() {
  * know how to switch to deck mode"): its menu's "Open in the decks", by
  * a real right-click and keys in Xvfb, starts the deck view, which takes
  * the player of two whole and unfolds it -- each track on its own deck --
- * and the window, empty, goes.
+ * and the window, empty, goes: the switch, one player or its decks, not
+ * both (the holder, 2026-11-24).
  */
 void handover_test::a_window_opens_its_player_in_the_decks() {
 	const QString name = start_x_server();
@@ -1653,13 +1654,12 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 		return true;
 	};
 	QTRY_VERIFY_WITH_TIMEOUT(unfolded(), 10000);
-	/* The window stays, following the player it gave (the holder,
-	 * 2026-11-22): its two tracks shown again. */
-	QVERIFY2(window->state() == QProcess::Running, "the window, having given its player, ended");
-	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(window), status_request(), 500).states.size(), 2, 5000);
+	/* The switch: the window, its player given, goes -- not left open
+	 * following the decks, as it was from 2026-11-22 to 2026-11-24. */
+	QVERIFY2(ended(window, 10000), "the window stayed beside the decks it switched to");
 
-	/* In a window too (sec 3f, what the decks' "In a window too" starts):
-	 * a window following the decks' player holds its two tracks. */
+	/* --follow, kept underneath though no button starts it now: a window
+	 * following the decks' player holds its two tracks. */
 	QProcess *follower = start({ QStringLiteral("--follow"), decks }, QStringLiteral("null"), x11);
 	QVERIFY(follower->waitForStarted() && wait_for_socket(socket_of(follower)));
 	QTRY_COMPARE_WITH_TIMEOUT(ask(socket_of(follower), status_request(), 500).states.size(), 2, 5000);
@@ -1676,14 +1676,14 @@ void handover_test::a_window_opens_its_player_in_the_decks() {
 	waited.restart();
 	while (back.isEmpty() && waited.elapsed() < 10000) {
 		for (const QString &path : sockets())
-			if (path != decks && path != socket_of(window) && path != socket_of(follower)
+			if (path != decks && path != socket_of(follower)
 			    && !path.endsWith(QLatin1String(snurra_wire::DECKS_SUFFIX)) && ask(path, status_request(), 500).states.size() == 2)
 				back = path;
 		QTest::qWait(100);
 	}
 	QVERIFY2(!back.isEmpty(), "the decks' player did not come back into a window whole");
 	QTRY_COMPARE_WITH_TIMEOUT(ask(decks, status_request()).states.size(), 0, 5000);
-	QVERIFY2(ended(window, 10000), "the window following the decks stayed after they folded");
+	QVERIFY2(ended(follower, 10000), "the window following the decks stayed after they folded");
 }
 
 /*
@@ -1777,7 +1777,9 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	         qPrintable(QStringLiteral("position %1 us, expected %2").arg(moved.position_us).arg(expected)));
 	QVERIFY2(ended(window, 5000), "the window, empty, stayed");
 
-	/* A whole player: a train of two onto deck A. */
+	/* A whole player: a train of two onto deck A, which unfolds by itself
+	 * across the decks -- one player or its decks, no nesting on screen
+	 * (sec 3f, 2026-11-24): its first on A, its second cued on B. */
 	QProcess *train = start({ QStringLiteral("a.flac"), QStringLiteral("b.flac") });
 	QVERIFY(train->waitForStarted());
 	QVERIFY(wait_for_socket(socket_of(train)));
@@ -1785,13 +1787,16 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	QCOMPARE(ask(socket_of(train), status_request()).states.size(), 2);
 	merge.deck = 0;
 	tell(socket_of(train), merge);
-	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 2, 5000);
-	snurra_tile_state player;
-	for (const snurra_tile_state &state : ask(deck_socket, status_request()).states)
-		if (state.column == 0) player = state;
-	QCOMPARE(int(player.player.size()), 2);
-	QVERIFY(player.playing);
-	QVERIFY(player.duration_us > 180000000);   /* two stand-ins' length, less their crossing */
+	auto on_deck = [this, &deck_socket](int column) {
+		for (const snurra_tile_state &state : ask(deck_socket, status_request()).states)
+			if (state.column == column) return state;
+		return snurra_tile_state{};
+	};
+	QTRY_COMPARE_WITH_TIMEOUT(on_deck(1).source, QStringLiteral("b.flac"), 5000);
+	QCOMPARE(on_deck(0).source, QStringLiteral("a.flac"));
+	QVERIFY(on_deck(0).player.empty());
+	QVERIFY(on_deck(0).playing);
+	QVERIFY(!on_deck(1).playing);
 	QVERIFY(ended(train, 5000));
 
 	/* Deck C out into a window of its own. */
@@ -1813,11 +1818,12 @@ void handover_test::tiles_go_onto_decks_and_back_out_in_step() {
 	}
 	QVERIFY2(!adopted.isEmpty(), "no window took deck C");
 	QVERIFY(ask(adopted, status_request()).states.first().playing);
-	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 1, 5000);
+	QTRY_COMPARE_WITH_TIMEOUT(ask(deck_socket, status_request()).states.size(), 2, 5000);
 
-	/* Deck A, the train as one player, out into a window: its two tracks
-	 * are tiles again, the first playing where the player stood. */
-	const snurra_tile_state holder = ask(deck_socket, status_request()).states.first();
+	/* Deck A, the train unfolded, out into a window: gathered back into
+	 * one player and handed over whole, its two tracks tiles again, the
+	 * first playing where deck A stood. */
+	const snurra_tile_state holder = on_deck(0);
 	release.index = 0;
 	tell(deck_socket, release);
 	QString unpacked;
