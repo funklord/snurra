@@ -6,3 +6,7 @@
 	path = qtkit
 	url = https://github.com/funklord/qtkit.git
 	shallow = true
+[submodule "monocypher"]
+	path = monocypher
+	url = https://github.com/LoupVaillant/Monocypher.git
+	shallow = true

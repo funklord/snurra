@@ -356,6 +356,28 @@ and everything above it knows nothing of SFTP or fuzznet.
   (`a_dark_tde_desktop_gets_a_dark_player`: a TDE session whose
   kdeglobals is dark gives a window over 60% dark, `SNURRA_THEME=light`
   one under 40%; without the call, 1%).
+- **One copy of each dependency, at the leaf** (the holder 2026-11-24,
+  claude-guidelines' harmonization.md; snurra step 2 of 8, after
+  fuzznet's 24071d77, inbox 20261124T0220Z). snurra keeps its
+  submodules -- `fuzznet/`, `qtkit/`, and since this step `monocypher/`
+  -- so it builds from its own clone, but **a consumer building snurra's
+  player or tests names its own copies instead**:
+
+      make FUZZNET_DIR=... QTKIT_DIR=... MONOCYPHER_DIR=...
+
+  each defaulting to this tree's submodule. A directory given is never
+  fetched into; absent, the build stops naming the variable. qmake
+  takes `FUZZNET_DIR` and `QTKIT_DIR` on its command line (the Makefile
+  passes them, written into the stamp that reruns qmake, so a changed
+  directory is picked up); `check-mk` and the tests' `fuzznetd` read
+  them too. **The tests' node no longer fetches fuzznet's nested
+  Monocypher**: snurra vendors Monocypher at its root, at fuzznet's own
+  pin (ab2b16d), and passes it in as `MONOCYPHER_DIR`, with `FLOG_DIR=`
+  empty (fuzznet's way of building without its log). The library
+  proper, `snurra.pri` and `snurra.mk`, names neither fuzznet nor qtkit,
+  so a host linking only the library is untouched. fuzznet's pin moved
+  to 6dc8c71 for its variables (184 commits; snurra's own sources from
+  it built and passed unchanged).
 
 - ~~Headphone pre-listen.~~ **Settled by the holder 2026-11-20**: a plug
   moved between taps, many listeners at once (sec 3f).

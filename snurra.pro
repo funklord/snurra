@@ -16,7 +16,9 @@ include(app/fuzznet.pri)
 # as a submodule, fetched by the Makefile.
 # After snurra.pri, which says QT += dbus where there is one, so qtkit
 # asks the portal there too.
-include(qtkit/qtkit.pri)
+# This tree's submodule, or a consumer's one copy (QTKIT_DIR=...).
+isEmpty(QTKIT_DIR): QTKIT_DIR = $$PWD/qtkit
+include($$QTKIT_DIR/qtkit.pri)
 SOURCES += src/main.cpp
 # The version, from VERSION, the one place it lives: what --version says.
 SNURRA_VERSION_TEXT = $$cat($$PWD/VERSION)

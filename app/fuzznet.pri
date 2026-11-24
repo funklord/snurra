@@ -8,7 +8,9 @@
 # fetched by the Makefile before qmake runs. The calls, the format beneath
 # them and its changes are fuzznet's; snurra speaks no verb itself.
 # Measured 2026-11-14: these sources, sections collected, are some 20 KB.
-FUZZNET_DIR = $$PWD/../fuzznet
+# This tree's submodule, or a consumer's one copy at its root, given on
+# qmake's command line (FUZZNET_DIR=...; the Makefile passes it).
+isEmpty(FUZZNET_DIR): FUZZNET_DIR = $$PWD/../fuzznet
 INCLUDEPATH += $$FUZZNET_DIR $$PWD
 # Paths written absolute. Written relative to the build directory, qmake
 # looked the headers up for the dependencies against the project's own

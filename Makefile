@@ -35,13 +35,30 @@ TEST_TIMEOUT ?= 600
 
 all: $(BIN)
 
+# Where the vendored siblings are: this tree's own submodules by default,
+# or a consumer's single copies at its own root, which it names here --
+# the leaf decides, one copy of each dependency (claude-guidelines'
+# harmonization.md, 2026-11-24). A directory given is never fetched into:
+# absent, the build stops and names it.
+#
+#     make FUZZNET_DIR=../fuzznet QTKIT_DIR=../qtkit MONOCYPHER_DIR=../monocypher
+FUZZNET_DIR ?= fuzznet
+QTKIT_DIR ?= qtkit
+MONOCYPHER_DIR ?= monocypher
+# Absolute, for qmake and the sub-make, which run elsewhere.
+FUZZNET_ABS = $(abspath $(FUZZNET_DIR))
+QTKIT_ABS = $(abspath $(QTKIT_DIR))
+MONOCYPHER_ABS = $(abspath $(MONOCYPHER_DIR))
+QMAKE_DIRS = FUZZNET_DIR=$(FUZZNET_ABS) QTKIT_DIR=$(QTKIT_ABS)
+
 # fuzznet, vendored for the player's estate (app/fuzznet.pri): fetched when
 # absent, at the commit the gitlink names and no other, shallow -- its
 # history is over a gigabyte and the player needs one tree. A build that
 # cannot fetch it stops and says so, rather than building a player that
 # quietly has no estate.
-FUZZNET_PROBE = fuzznet/local/rpc.c
+FUZZNET_PROBE = $(FUZZNET_DIR)/local/rpc.c
 $(FUZZNET_PROBE):
+	@[ "$(FUZZNET_DIR)" = fuzznet ] || { echo "snurra: FUZZNET_DIR=$(FUZZNET_DIR) has no local/rpc.c; a directory given is not fetched" >&2; exit 1; }
 	@command -v git >/dev/null 2>&1 || { echo "snurra: fuzznet/ is empty, and git is not installed to fetch it" >&2; exit 1; }
 	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: fuzznet/ is empty, and this is not a git checkout: put fuzznet at the commit snurra's gitlink names there" >&2; exit 1; }
 	@echo "snurra: fetching fuzznet, the pinned commit only"
@@ -50,8 +67,9 @@ $(FUZZNET_PROBE):
 
 # qtkit, the workspace's shared Qt pieces (the theme), a submodule at
 # qtkit/: fetched the same way, the pinned commit only.
-QTKIT_PROBE = qtkit/qtkit.pri
+QTKIT_PROBE = $(QTKIT_DIR)/qtkit.pri
 $(QTKIT_PROBE):
+	@[ "$(QTKIT_DIR)" = qtkit ] || { echo "snurra: QTKIT_DIR=$(QTKIT_DIR) has no qtkit.pri; a directory given is not fetched" >&2; exit 1; }
 	@command -v git >/dev/null 2>&1 || { echo "snurra: qtkit/ is empty, and git is not installed to fetch it" >&2; exit 1; }
 	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: qtkit/ is empty, and this is not a git checkout: put qtkit at the commit snurra's gitlink names there" >&2; exit 1; }
 	@echo "snurra: fetching qtkit, the pinned commit only"
@@ -60,7 +78,7 @@ $(QTKIT_PROBE):
 
 $(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE) $(QTKIT_PROBE)
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release
+	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release $(QMAKE_DIRS)
 	@# qmake's rules depend on sources alone, so a change to the flags,
 	@# defines or libraries -- snurra.pri's, say -- left objects and the
 	@# binary built the old way standing (measured 2026-11-12: Qt
@@ -83,12 +101,12 @@ $(BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE) 
 # local/rpc_binary.c left it uncompiled and the link short of its
 # symbols (2026-11-18).
 INCLUDE_SOURCES = $(sort $(wildcard src/*.cpp include/snurra/*.h test/*.cpp test/*.h))
-GLOBBED_SOURCES = $(sort $(wildcard fuzznet/local/*.c))
+GLOBBED_SOURCES = $(sort $(wildcard $(FUZZNET_DIR)/local/*.c))
 %/includes.list: FORCE
-	@mkdir -p $(@D); { grep -H '^#include "' $(INCLUDE_SOURCES); printf '%s\n' $(GLOBBED_SOURCES); } > $@.new || true
+	@mkdir -p $(@D); { grep -H '^#include "' $(INCLUDE_SOURCES); printf '%s\n' $(GLOBBED_SOURCES) $(QMAKE_DIRS); } > $@.new || true
 	@if cmp -s $@.new $@; then rm -f $@.new; else mv $@.new $@; fi
 $(BUILD_DIR)/qmake.stamp: $(BUILD_DIR)/includes.list $(BUILD_DIR)/Makefile
-	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release
+	cd $(BUILD_DIR) && $(QMAKE) $(CURDIR)/snurra.pro CONFIG+=release $(QMAKE_DIRS)
 	touch $@
 
 $(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
@@ -96,13 +114,13 @@ $(BIN): $(BUILD_DIR)/Makefile $(BUILD_DIR)/qmake.stamp FORCE
 
 $(TEST_BUILD_DIR)/Makefile: test/test.pro snurra.pri app/fuzznet.pri | $(FUZZNET_PROBE)
 	mkdir -p $(TEST_BUILD_DIR)
-	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN)) $(QMAKE_DIRS)
 	@# As the player's: a test built the old way passes against nothing.
 	$(MAKE) -C $(TEST_BUILD_DIR) clean
 	rm -f $(TEST_BIN)
 
 $(TEST_BUILD_DIR)/qmake.stamp: $(TEST_BUILD_DIR)/includes.list $(TEST_BUILD_DIR)/Makefile
-	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN))
+	cd $(TEST_BUILD_DIR) && $(QMAKE) $(CURDIR)/test/test.pro SNURRA_BIN=$(abspath $(BIN)) $(QMAKE_DIRS)
 	touch $@
 
 tests-build: $(TEST_BUILD_DIR)/Makefile $(TEST_BUILD_DIR)/qmake.stamp FORCE
@@ -116,19 +134,26 @@ tests-build: $(TEST_BUILD_DIR)/Makefile $(TEST_BUILD_DIR)/qmake.stamp FORCE
 # shallow, or the reason. The sub-make runs every time, since only it knows
 # whether fuzznet's sources moved, and writes nothing when they did not.
 FUZZNETD = $(abspath $(TEST_BUILD_DIR)/fuzznet/fuzznetd)
-MONOCYPHER_PROBE = fuzznet/monocypher/src/monocypher.h
-$(MONOCYPHER_PROBE): | $(FUZZNET_PROBE)
-	@echo "snurra: fetching fuzznet's Monocypher, for the tests' node, the pinned commit only"
-	git -C fuzznet submodule update --init --depth 1 monocypher
-	@test -f $@ || { echo "snurra: fuzznet's Monocypher could not be fetched" >&2; exit 1; }
-fuzznetd: $(MONOCYPHER_PROBE) FORCE
-	$(MAKE) -C fuzznet --no-print-directory BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet) $(FUZZNETD)
+# fuzznet's own dependencies, from this tree's copies -- never fuzznet's
+# nested submodules, which a recursive fetch would pull in a second time:
+# Monocypher, which the node needs, and no flog (its log, off when empty).
+FUZZNET_DEPS = MONOCYPHER_DIR=$(MONOCYPHER_ABS) FLOG_DIR=
+MONOCYPHER_PROBE = $(MONOCYPHER_DIR)/src/monocypher.h
+$(MONOCYPHER_PROBE):
+	@[ "$(MONOCYPHER_DIR)" = monocypher ] || { echo "snurra: MONOCYPHER_DIR=$(MONOCYPHER_DIR) has no src/monocypher.h; a directory given is not fetched" >&2; exit 1; }
+	@command -v git >/dev/null 2>&1 || { echo "snurra: monocypher/ is empty, and git is not installed to fetch it" >&2; exit 1; }
+	@git rev-parse --git-dir >/dev/null 2>&1 || { echo "snurra: monocypher/ is empty, and this is not a git checkout: put Monocypher at the commit snurra's gitlink names there" >&2; exit 1; }
+	@echo "snurra: fetching Monocypher, for the tests' node, the pinned commit only"
+	git submodule update --init --depth 1 monocypher
+	@test -f $@ || { echo "snurra: Monocypher could not be fetched" >&2; exit 1; }
+fuzznetd: $(MONOCYPHER_PROBE) FORCE | $(FUZZNET_PROBE)
+	$(MAKE) -C $(FUZZNET_DIR) --no-print-directory $(FUZZNET_DEPS) BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet) $(FUZZNETD)
 
 # The two hosts again over a link dropping a fifth of what is sent, against
 # fuzznet's faults build: 30 to 60 s and varying, so not part of `test`.
 FUZZNETD_FAULTS = $(abspath $(TEST_BUILD_DIR)/fuzznet-faults/fuzznetd)
-fuzznetd-faults: $(MONOCYPHER_PROBE) FORCE
-	$(MAKE) -C fuzznet --no-print-directory FAULTS=1 BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet-faults) $(FUZZNETD_FAULTS)
+fuzznetd-faults: $(MONOCYPHER_PROBE) FORCE | $(FUZZNET_PROBE)
+	$(MAKE) -C $(FUZZNET_DIR) --no-print-directory $(FUZZNET_DEPS) FAULTS=1 BUILD_DIR=$(abspath $(TEST_BUILD_DIR)/fuzznet-faults) $(FUZZNETD_FAULTS)
 test-estate-loss: tests-build fuzznetd-faults
 	timeout -k 10 1000 python3 test/estate_two_hosts.py $(FUZZNETD_FAULTS) ./$(TEST_BIN) --loss 20
 
@@ -230,7 +255,7 @@ $(ANDROID_BUILD_DIR)/Makefile: snurra.pro snurra.pri app/fuzznet.pri | $(FUZZNET
 $(ANDROID_BUILD_DIR)/Makefile: $(ANDROID_BUILD_DIR)/ffmpeg-include/.copied $(ANDROID_KIT_SOURCE) \
                               $(ANDROID_BUILD_DIR)/includes.list | android-check
 	mkdir -p $(ANDROID_BUILD_DIR)
-	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release \
+	cd $(ANDROID_BUILD_DIR) && $(QT_ANDROID_ROOT)/bin/qmake $(CURDIR)/snurra.pro CONFIG+=release $(QMAKE_DIRS) \
 	        SNURRA_FFMPEG_INCLUDE=$(abspath $(ANDROID_BUILD_DIR)/ffmpeg-include) \
 	        SNURRA_VERSION=$(VERSION) SNURRA_VERSION_CODE=$(ANDROID_VERSION_CODE) \
 	        SNURRA_TARGET_API=$(ANDROID_TARGET_API)
@@ -292,31 +317,30 @@ $(MK_BUILD_DIR)/moc_%.cpp: $(SNURRA_INCLUDE)/snurra/%.h
 # app/fuzznet.pri names. The wire code joined that list with the pin at
 # f1a6bbd (2026-11-18) and not this one, and nothing built from this list
 # linked until 2026-11-20: keep the two together.
-MK_FZN_SRCS := $(wildcard fuzznet/local/*.c) fuzznet/hex/hex.c fuzznet/constant_time/constant_time.c \
-               fuzznet/wire/status_message.c fuzznet/wire/generated/situ.c \
-               fuzznet/wire/generated/files_local.c fuzznet/wire/generated/status.c
-MK_FZN_OBJS := $(patsubst fuzznet/%.c,$(MK_BUILD_DIR)/fzn/%.o,$(MK_FZN_SRCS))
-$(MK_BUILD_DIR)/fzn/%.o: fuzznet/%.c | $(FUZZNET_PROBE)
+MK_FZN_SRCS := $(wildcard $(FUZZNET_DIR)/local/*.c) $(addprefix $(FUZZNET_DIR)/,hex/hex.c constant_time/constant_time.c \
+               wire/status_message.c wire/generated/situ.c wire/generated/files_local.c wire/generated/status.c)
+MK_FZN_OBJS := $(patsubst $(FUZZNET_DIR)/%.c,$(MK_BUILD_DIR)/fzn/%.o,$(MK_FZN_SRCS))
+$(MK_BUILD_DIR)/fzn/%.o: $(FUZZNET_DIR)/%.c | $(FUZZNET_PROBE)
 	@mkdir -p $(@D)
-	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -Ifuzznet -c $< -o $@
+	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -MMD -MP -I$(FUZZNET_DIR) -c $< -o $@
 -include $(MK_FZN_OBJS:.o=.d)
 
 # And qtkit, the submodule at qtkit/, as its qtkit.pri names it:
 # its sources and the three headers moc reads, with the portal (Qt DBus is
 # in SNURRA_PKGS).
-MK_QTKIT_SRCS := qtkit/src/theme.cpp qtkit/src/flow_layout.cpp
-MK_QTKIT_HDRS := qtkit/include/qtkit/theme.h qtkit/include/qtkit/flow_layout.h qtkit/src/portal_listener.h
+MK_QTKIT_SRCS := $(addprefix $(QTKIT_DIR)/,src/theme.cpp src/flow_layout.cpp)
+MK_QTKIT_HDRS := $(addprefix $(QTKIT_DIR)/,include/qtkit/theme.h include/qtkit/flow_layout.h src/portal_listener.h)
 MK_QTKIT_MOCS := $(patsubst %.h,$(MK_BUILD_DIR)/qtkit/moc_%.cpp,$(notdir $(MK_QTKIT_HDRS)))
 $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS): | $(QTKIT_PROBE)
-$(MK_BUILD_DIR)/qtkit/moc_%.cpp: qtkit/include/qtkit/%.h
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: $(QTKIT_DIR)/include/qtkit/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
-$(MK_BUILD_DIR)/qtkit/moc_%.cpp: qtkit/src/%.h
+$(MK_BUILD_DIR)/qtkit/moc_%.cpp: $(QTKIT_DIR)/src/%.h
 	@mkdir -p $(@D)
 	$(MOC) -DQTKIT_HAVE_DBUS $< -o $@
 
 $(MK_BUILD_DIR)/snurra: $(SNURRA_SRCS) src/main.cpp app/estate.cpp app/estate.h $(MK_MOCS) $(SNURRA_HDRS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_HDRS) $(MK_QTKIT_MOCS) VERSION
-	$(CXX) $(MK_FLAGS) -Iapp -Ifuzznet -Iqtkit/include -Iqtkit/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
+	$(CXX) $(MK_FLAGS) -Iapp -I$(FUZZNET_DIR) -I$(QTKIT_DIR)/include -I$(QTKIT_DIR)/src -DQTKIT_HAVE_DBUS -DSNURRA_VERSION_TEXT='"$(VERSION)"' $(SNURRA_SRCS) src/main.cpp app/estate.cpp $(MK_MOCS) $(MK_FZN_OBJS) $(MK_QTKIT_SRCS) $(MK_QTKIT_MOCS) -Wl,--gc-sections -o $@ $(MK_LIBS)
 
 check-mk: $(MK_BUILD_DIR)/snurra tests-build fuzznetd
 	SNURRA_BIN=$(abspath $(MK_BUILD_DIR)/snurra) SNURRA_FUZZNETD=$(FUZZNETD) timeout -k 10 $(TEST_TIMEOUT) ./$(TEST_BIN)
