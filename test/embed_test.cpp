@@ -2456,11 +2456,12 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 }
 
 /*
- * The master in the player (the holder, 2026-11-25: "In the player we
- * mess around mostly with the master section"): the window's bar has
- * "master", which opens a small window of its own with the master's
- * controls, and closes it; a level turned there reaches the engine, read
- * back when it opens again.
+ * The master in the player (the holder, 2026-11-25: "the player should
+ * extend its tiles with different stuff downwards. And/or have them
+ * separate into windows"): the window's bar has "master", which opens a
+ * drawer under the panel, and closes it; its own button puts it in a
+ * window of its own, which closed brings it back; a level turned there
+ * reaches the engine, read back when it opens again.
  */
 void embed_test::the_players_master_opens_from_its_bar() {
 	snurra_node node;
@@ -2470,25 +2471,37 @@ void embed_test::the_players_master_opens_from_its_bar() {
 	snurra_tile_state state;
 	state.source = QStringLiteral("tone:440");
 	state.duration_us = 4000000;
+	state.controls = true;
 	node.add_tile(state);
 	QToolButton *toggle = node.findChild<QToolButton *>(QStringLiteral("snurra-bar-master"));
 	QVERIFY(toggle);
 	toggle->click();
-	QWidget *window = node.findChild<QWidget *>(QStringLiteral("snurra-master-window"));
-	QVERIFY(window && window->isVisible());
+	/* A drawer, downward from the panel, inside the window. */
+	QWidget *drawer = node.findChild<QWidget *>(QStringLiteral("snurra-master-drawer"));
+	QVERIFY(drawer && drawer->isVisible());
+	QCOMPARE(drawer->window(), static_cast<QWidget *>(&node));
 	QDial *level = nullptr;
-	for (QDial *one : window->findChildren<QDial *>())
+	for (QDial *one : drawer->findChildren<QDial *>())
 		if (one->accessibleName() == QLatin1String("Master level")) level = one;
 	QVERIFY(level);
 	level->setValue(50);
+	/* Apart: a window of its own; closed, back as the drawer. */
+	QToolButton *apart = drawer->findChild<QToolButton *>(QStringLiteral("snurra-master-apart"));
+	QVERIFY(apart);
+	apart->click();
+	QWidget *window = node.findChild<QWidget *>(QStringLiteral("snurra-master-window"));
+	QVERIFY(window && window->isVisible());
+	QCOMPARE(drawer->window(), window);
+	window->close();
+	QTRY_COMPARE_WITH_TIMEOUT(drawer->window(), static_cast<QWidget *>(&node), 1000);
+	QVERIFY(drawer->isVisible());
 	toggle->click();
-	QVERIFY(!window->isVisible());
+	QVERIFY(!drawer->isVisible());
 	level->blockSignals(true);
 	level->setValue(100);
 	level->blockSignals(false);
 	toggle->click();
-	QVERIFY(window->isVisible());
-	QCOMPARE(level->value(), 50);
+	QCOMPARE(level->value(), 50);   /* read back from the engine */
 	level->setValue(100);
 }
 

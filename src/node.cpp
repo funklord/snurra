@@ -677,6 +677,16 @@ void snurra_node::close_all() {
 }
 
 bool snurra_node::eventFilter(QObject *watched, QEvent *event) {
+	/* The master's own window closed: back as the drawer it came from. */
+	if (watched == m_master_window && event->type() == QEvent::Close && m_master_apart) {
+		m_master_apart = false;
+		if (QToolButton *apart = m_master_drawer->findChild<QToolButton *>(QStringLiteral("snurra-master-apart"))) {
+			apart->blockSignals(true);
+			apart->setChecked(false);
+			apart->blockSignals(false);
+		}
+		QTimer::singleShot(0, this, [this] { place_master(); });
+	}
 	if (watched != m_bar_title) return QWidget::eventFilter(watched, event);
 	switch (event->type()) {
 	case QEvent::MouseButtonPress: {
@@ -791,6 +801,12 @@ void snurra_node::lay_out_timeline() {
 	}
 	const int lanes = int(rows().size());
 	if (panel) m_grid->addWidget(panel->drawer_below(), 3 * lanes, 0, 1, std::max(1, int(edges.size()) - 1));
+	/* The master's drawer, opened, under the panel and as wide. */
+	if (m_master_drawer) {
+		m_grid->removeWidget(m_master_drawer);
+		if (m_master_open && !m_master_apart && m_master_drawer->parentWidget() == this)
+			m_grid->addWidget(m_master_drawer, 3 * lanes + 1, 0, 1, std::max(1, int(edges.size()) - 1));
+	}
 	/*
 	 * One picture to a window (the holder, 2026-11-21: "maybe video still
 	 * goes on top of top bar or below it, only one video window"): the
@@ -935,6 +951,7 @@ void snurra_node::reshape() {
 			add(tile->drawer_above());
 			add(tile->drawer_below());
 		}
+		if (m_master_drawer && m_master_drawer->parentWidget() == this) add(m_master_drawer);
 		add(findChild<QSizeGrip *>());
 		add(m_drop_hint);
 		add(m_ghost);
@@ -1669,29 +1686,76 @@ void snurra_node::release(int index, const QPoint &at) {
  * until it says READY, so the switch is heard as nothing. The deck view
  * unfolds what it took across its decks.
  */
+/*
+ * The master in the player (the holder, 2026-11-25: "The master section
+ * is mainly for the decks ... But the player should extend its tiles with
+ * different stuff downwards. And/or have them separate into windows."):
+ * a drawer under the window's one control panel, its width, opened and
+ * closed from the bar -- and, by its own button, a window of its own
+ * instead, which closed puts it back as the drawer.
+ */
 void snurra_node::show_master(bool open) {
-	if (!open) {
-		if (m_master_window) m_master_window->hide();
-		return;
-	}
-	if (!m_master_window) {
-		m_master_window = new QWidget(this, Qt::Tool);
-		m_master_window->setObjectName(QStringLiteral("snurra-master-window"));
-		m_master_window->setWindowTitle(tr("Master"));
-		QVBoxLayout *column = new QVBoxLayout(m_master_window);
-		m_master_strip = snurra_master_strip(m_master_window, m_engine);
-		column->addWidget(m_master_strip.box);
-		QTimer *look = new QTimer(m_master_window);
+	m_master_open = open;
+	if (!m_master_drawer) {
+		m_master_drawer = new QWidget(this);
+		m_master_drawer->setObjectName(QStringLiteral("snurra-master-drawer"));
+		QHBoxLayout *row = new QHBoxLayout(m_master_drawer);
+		row->setContentsMargins(4, 2, 4, 2);
+		m_master_strip = snurra_master_strip(m_master_drawer, m_engine, true);
+		row->addWidget(m_master_strip.box, 1);
+		QToolButton *apart = new QToolButton(m_master_drawer);
+		apart->setObjectName(QStringLiteral("snurra-master-apart"));
+		apart->setText(tr("window"));
+		apart->setCheckable(true);
+		apart->setAutoRaise(true);
+		apart->setAccessibleName(tr("The master in a window of its own"));
+		apart->setToolTip(tr("The master in a window of its own; closed, it comes back here"));
+		connect(apart, &QToolButton::toggled, this, [this](bool on) {
+			m_master_apart = on;
+			place_master();
+		});
+		row->addWidget(apart, 0, Qt::AlignTop);
+		QTimer *look = new QTimer(m_master_drawer);
 		look->setInterval(100);
-		connect(look, &QTimer::timeout, m_master_window, [this] {
-			if (m_master_window->isVisible()) snurra_master_refresh(m_master_strip, m_engine);
+		connect(look, &QTimer::timeout, m_master_drawer, [this] {
+			if (m_master_drawer->isVisible()) snurra_master_refresh(m_master_strip, m_engine);
 		});
 		look->start();
-		m_master_window->move(mapToGlobal(QPoint(width(), 0)));
 	}
 	snurra_master_refresh(m_master_strip, m_engine);
-	m_master_window->show();
-	m_master_window->raise();
+	place_master();
+}
+
+void snurra_node::place_master() {
+	if (!m_master_drawer) return;
+	const bool apart = m_master_open && m_master_apart;
+	if (apart) {
+		if (!m_master_window) {
+			m_master_window = new QWidget(this, Qt::Tool);
+			m_master_window->setObjectName(QStringLiteral("snurra-master-window"));
+			m_master_window->setWindowTitle(tr("Master"));
+			new QVBoxLayout(m_master_window);
+			m_master_window->installEventFilter(this);
+			m_master_window->move(mapToGlobal(QPoint(0, height())));
+		}
+		if (m_master_drawer->parentWidget() != m_master_window) {
+			m_grid->removeWidget(m_master_drawer);
+			m_master_drawer->setParent(m_master_window);
+			m_master_window->layout()->addWidget(m_master_drawer);
+		}
+		m_master_drawer->show();
+		m_master_window->show();
+		m_master_window->raise();
+	} else {
+		if (m_master_window) m_master_window->hide();
+		if (m_master_drawer->parentWidget() != this) {
+			m_master_window->layout()->removeWidget(m_master_drawer);
+			m_master_drawer->setParent(this);
+		}
+		m_master_drawer->setVisible(m_master_open);
+	}
+	lay_out_timeline();
+	reshape();
 }
 
 void snurra_node::open_decks() {

@@ -144,14 +144,17 @@ void snurra_mixer::set_deck_count(int count) {
 	refresh();
 }
 
-snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *engine) {
+snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *engine, bool row) {
 	snurra_mixer::master_strip m_master;
 	m_master.box = new QWidget(parent);
 	m_master.box->setObjectName(QStringLiteral("snurra-master"));
 	m_master.box->setAccessibleName(QObject::tr("Master"));
-	QVBoxLayout *column = new QVBoxLayout(m_master.box);
+	/* A column on the decks' mixer; a row where it opens downward from a
+	 * player's panel (the holder, 2026-11-25: "the player should extend
+	 * its tiles with different stuff downwards"). */
+	QBoxLayout *column = row ? static_cast<QBoxLayout *>(new QHBoxLayout(m_master.box)) : new QVBoxLayout(m_master.box);
 	column->setContentsMargins(6, 0, 0, 0);
-	column->setSpacing(0);
+	column->setSpacing(row ? 6 : 0);
 	QLabel *name = new QLabel(QObject::tr("MASTER"), m_master.box);
 	QFont bold = name->font();
 	bold.setBold(true);
@@ -165,7 +168,13 @@ snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *e
 		small.setPointSizeF(small.pointSizeF() * 0.8);
 		text->setFont(small);
 		text->setAlignment(Qt::AlignHCenter);
-		column->addWidget(text);
+		QBoxLayout *pair = column;
+		if (row) {
+			pair = new QVBoxLayout;
+			pair->setSpacing(0);
+			column->addLayout(pair);
+		}
+		pair->addWidget(text);
 		snurra_knob *knob = new snurra_knob(m_master.box);
 		knob->setRange(from, to);
 		knob->set_home(home);
@@ -173,7 +182,7 @@ snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *e
 		knob->setFixedSize(size, size);
 		knob->setNotchesVisible(true);
 		knob->setAccessibleName(QObject::tr("Master %1").arg(accessible));
-		column->addWidget(knob, 0, Qt::AlignHCenter);
+		pair->addWidget(knob, 0, Qt::AlignHCenter);
 		return knob;
 	};
 	m_master.level = dial(QObject::tr("LEVEL"), QObject::tr("level"), 0, 100, 100);
@@ -189,13 +198,18 @@ snurra_mixer::master_strip snurra_master_strip(QWidget *parent, snurra_engine *e
 	column->addWidget(m_master.limit, 0, Qt::AlignHCenter);
 	/* What goes out, its peak in dB from -48 to 0. */
 	m_master.meter = new QProgressBar(m_master.box);
-	m_master.meter->setOrientation(Qt::Vertical);
+	m_master.meter->setOrientation(row ? Qt::Horizontal : Qt::Vertical);
 	m_master.meter->setRange(-48, 0);
 	m_master.meter->setValue(-48);
 	m_master.meter->setTextVisible(false);
 	m_master.meter->setAccessibleName(QObject::tr("Master peak"));
-	m_master.meter->setFixedWidth(parent->fontMetrics().height() / 2 + 2);
-	column->addWidget(m_master.meter, 1, Qt::AlignHCenter);
+	if (row) {
+		m_master.meter->setFixedHeight(parent->fontMetrics().height() / 2 + 2);
+		column->addWidget(m_master.meter, 1, Qt::AlignVCenter);
+	} else {
+		m_master.meter->setFixedWidth(parent->fontMetrics().height() / 2 + 2);
+		column->addWidget(m_master.meter, 1, Qt::AlignHCenter);
+	}
 	m_master.reduction = new QLabel(m_master.box);
 	m_master.reduction->setAccessibleName(QObject::tr("Limiter's reduction"));
 	m_master.reduction->setAlignment(Qt::AlignHCenter);

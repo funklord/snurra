@@ -1659,7 +1659,19 @@ window of its own beside the player with the same strip -- one builder,
 `snurra_master_strip`, and one refresh, `snurra_master_refresh`, for
 both views; a window rather than a row of the panel, so opening it moves
 none of the lanes (`the_players_master_opens_from_its_bar`; with its
-strip given no engine, it fails). Tested in `the_master_shapes_all_that_goes_out`
+strip given no engine, it fails). **Reshaped the same evening** (the
+holder: "The master section is mainly for the decks, it should come in
+somewhere on the decks window. When we play decks we are primarily
+concerned with fitting everything in one window. But the player should
+extend its tiles with different stuff downwards. And/or have them
+separate into windows."): on the decks it stays a strip of the mixer, in
+the one window; in the player "master" opens a **drawer under the panel,
+its width**, the same controls laid as a row, and the drawer's own
+"window" button puts it in a window of its own, which closed brings it
+back as the drawer -- the shape a player grows by, downward or apart.
+The window's see-through shape takes the drawer in. Tested in the same
+test (the drawer in the window, apart in its own, back on closing; with
+the closing not heard, it fails). Tested in `the_master_shapes_all_that_goes_out`
 (untouched exact; half the level, half; eight times over held at full by
 the limiter and not without it; the mid killed, silent; the meter's
 peak; with the stage not run, it fails) and

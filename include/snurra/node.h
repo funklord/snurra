@@ -306,9 +306,13 @@ private:
 	void mark(const QRect &landing, const QRect &shape);
 	snurra_engine *m_engine = nullptr;
 	/* The master section's window, opened from the bar (sec 3f, e). */
-	QWidget *m_master_window = nullptr;
+	QWidget *m_master_window = nullptr;   /* the master apart, a window of its own */
+	QWidget *m_master_drawer = nullptr;   /* under the panel, or in the window */
 	snurra_mixer::master_strip m_master_strip;
+	bool m_master_open = false;
+	bool m_master_apart = false;
 	void show_master(bool open);
+	void place_master();
 	/* A train's next tile, started for the tile before it: when, so a
 	 * stop before then can take it back. */
 	struct following {
