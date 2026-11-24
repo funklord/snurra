@@ -1315,6 +1315,32 @@ plays; asked at the overview's 1024 instead, it fails). Next: the decks'
 own look (step 2) and a mixer between them (step 3), then the windows in
 step (4) and the layouts (5).
 
+**The player's EQ is the main EQ; a channel has its own** (the holder,
+2026-11-24: "When we bring out the eq in the player it is the main eq,
+for each channel on the mixer we also have gain, 3ch eq and possible FX
+inserts etc."; asked, the player's EQ is **the player's master EQ**, one
+EQ for its whole output, not a track's). So two stages, kept apart:
+
+- **The main EQ**, the drawn line of up to twelve bands (`snurra_eq_line`)
+  in the player's one control panel, is the player's: it shapes the
+  player's whole mix after its tracks are summed, as a mixer's master
+  section does.
+- **A channel strip** -- a deck's on the mixer, and so a lane's, a
+  channel being a deck being a lane -- has its own gain, a three-band EQ
+  (knobs, as a DJ mixer's), FX inserts when there are effects, then its
+  fader, then the crossfader.
+
+**Where the code differs today:** the EQ is a track's own (`state.eq` on
+each tile, carried by a handover), applied on that track's deck, and the
+drawn line edits the tile whose panel is out. The move: the line edits
+the player's master EQ, applied once to the sum; the per-track EQ
+becomes the channel strip's three bands. Open in it, to settle when
+building: what a handover carries -- the strip's EQ goes with the
+channel, the master with the player -- and what a track's EQ kept from
+before (a saved state, a handover from an older snurra) becomes;
+the likeliest reading is its channel's strip, since it shaped that one
+track.
+
 **A layout that matches the hardware in front of you** (the holder,
 2026-11-20: "we must not forget the user who will want to configure
 snurra exactly according to the layout they see in front of them on a HW
