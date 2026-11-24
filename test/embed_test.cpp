@@ -2369,9 +2369,12 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 	std::vector<float> peaks(static_cast<size_t>(columns));
 	for (int i = 0; i < columns; ++i) peaks[size_t(i)] = float(0.5 + 0.5 * std::sin(i * 0.37));
 	for (int deck = 0; deck < 4; ++deck) waves.set_peaks(deck, 0, peaks);
-	waves.fill = [](int deck, snurra_deck_waves::deck &where) {
+	/* Playing: each frame drawn a sixtieth of a second later, as a
+	 * screen at 60 Hz shows it. */
+	int frame = 0;
+	waves.fill = [&frame](int deck, snurra_deck_waves::deck &where) {
 		where.loaded = true;
-		where.seconds = 3600 + deck * 7;
+		where.seconds = 3600 + deck * 7 + frame / 60.0;
 		where.beat = 0.5;
 		where.playing = true;
 	};
@@ -2384,11 +2387,35 @@ void embed_test::the_waveforms_draw_cheaply_and_zoom_out_to_the_set() {
 		QElapsedTimer took;
 		took.start();
 		constexpr int FRAMES = 20;
-		for (int i = 0; i < FRAMES; ++i) waves.render(&shot);
+		for (int i = 0; i < FRAMES; ++i) {
+			++frame;
+			waves.render(&shot);
+		}
 		const double each = double(took.nsecsElapsed()) / 1e6 / FRAMES;
 		qInfo("waveforms, 4 decks at 1900 x 400, %g s across: %.2f ms a frame", span, each);
 		QVERIFY2(each < 16, qPrintable(QStringLiteral("%1 ms a frame at %2 s").arg(each).arg(span)));
 	}
+	/* What was kept and shifted frame by frame is what a fresh drawing at
+	 * the same place shows: the same at all but a few pixels' edges. */
+	waves.set_span(8);
+	for (int i = 0; i < 90; ++i) {
+		++frame;
+		waves.render(&shot);
+	}
+	snurra_deck_waves fresh;
+	fresh.set_deck_count(4);
+	for (int deck = 0; deck < 4; ++deck) fresh.set_peaks(deck, 0, peaks);
+	fresh.fill = waves.fill;
+	fresh.resize(waves.size());
+	fresh.set_span(8);
+	QImage drawn(fresh.size(), QImage::Format_RGB32);
+	fresh.render(&drawn);
+	qint64 differ = 0;
+	for (int y = 0; y < shot.height(); ++y)
+		for (int x = 0; x < shot.width(); ++x)
+			if (shot.pixel(x, y) != drawn.pixel(x, y)) ++differ;
+	qInfo("kept against fresh: %lld pixels of %lld differ", differ, qint64(shot.width()) * shot.height());
+	QVERIFY2(differ < qint64(shot.width()) * shot.height() / 100, qPrintable(QStringLiteral("%1 pixels differ").arg(differ)));
 }
 
 /*

@@ -1608,7 +1608,20 @@ to the next instead of in steps. Measured on the way and ruled out: the
 picture scaled to a maximized window on the UI thread costs 2.9 ms a
 frame (640 x 360 to 1920 x 1080, smooth), so it is not the slowness.
 Tested in `the_players_waveform_is_fine_and_cheap_maximized` (kept at
-4096; under 4 ms a frame; at 1024 it fails). **(e) built the same day:
+4096; under 4 ms a frame; at 1024 it fails). **And the decks' lanes
+kept, the same day:** each lane is two images, the track drawn in the
+colour to come and the colour heard, column g of them the track's time
+from g to g + 1 pixels at the zoom; a frame shifts them by the whole
+pixels the track moved (in place, a row at a time), draws only the
+columns uncovered, and copies the left half from the one and the right
+from the other a fraction of a pixel offset; drawn whole again when the
+zoom, the lane or the ground change, a seek jumps past it, or new peaks
+come -- at most four times a second while they arrive. Measured moving
+a sixtieth of a second a frame, as a 60 Hz screen shows it: 2.9 to 3.3 ms
+a frame at 8 s across (5.4 drawn whole) and 1.1 to 1.3 at 600 s, at load
+20; what was kept and shifted for ninety frames is what a fresh drawing
+at the same place shows, 0 pixels of 760000 different (with the new
+columns drawn at the wrong edge, 53009, and it fails). **(e) built the same day:
 the master section.** In the engine, after every deck's sum
 (`snurra_engine::master`): an EQ of three parts, the decks' own
 isolator, run only when not flat; a level eased over some 10 ms; and a

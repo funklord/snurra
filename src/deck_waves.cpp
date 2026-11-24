@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 snurra_deck_waves::snurra_deck_waves(QWidget *parent) : QWidget(parent) {
 	setObjectName(QStringLiteral("snurra-deck-waves"));
@@ -65,12 +66,14 @@ void snurra_deck_waves::set_peaks(int deck, int first, const std::vector<float> 
 	std::copy(values.begin(), values.end(), peaks.begin() + first);
 	if (m_pyramid.size() < m_peaks.size()) m_pyramid.resize(m_peaks.size());
 	m_pyramid[size_t(deck)].clear();   /* built again when next drawn */
+	bump_generation(deck);
 	m_stale = true;
 }
 
 void snurra_deck_waves::clear_peaks(int deck) {
 	if (deck >= 0 && deck < int(m_peaks.size())) m_peaks[size_t(deck)].clear();
 	if (deck >= 0 && deck < int(m_pyramid.size())) m_pyramid[size_t(deck)].clear();
+	bump_generation(deck);
 	m_stale = true;
 }
 
@@ -215,58 +218,97 @@ void snurra_deck_waves::paint_lane(QPainter &painter, int i, const deck &where, 
 		const std::vector<float> &peaks = level_of(i, level);
 		const double scale = std::ldexp(1.0, level);
 		/* Past the playhead the track is heard; ahead of it to come: the
-		 * colour full ahead, dimmer behind. Each a batch of lines. */
-		/* Opaque, mixed with the ground beforehand: a colour drawn at 45 %
-		 * was blended at every pixel it covered. */
+		 * colour full ahead, dimmer behind -- opaque, mixed with the ground
+		 * beforehand: a colour drawn at 45 % was blended at every pixel. */
 		const QColor ahead = colour_of(i);
 		const QColor ground = palette().color(QPalette::Base);
 		const QColor behind = QColor::fromRgbF(0.45f * ahead.redF() + 0.55f * ground.redF(), 0.45f * ahead.greenF() + 0.55f * ground.greenF(),
 		                                       0.45f * ahead.blueF() + 0.55f * ground.blueF());
 		const double centre = across / 2.0;
 		const double half = (across - 4) / 2.0;
-		/* Each part an outline filled in one go -- the rasterizer's spans
-		 * -- rather than a line a pixel: the top edge left to right, then
-		 * the bottom back. */
-		std::vector<QPointF> heard, to_come;
-		heard.reserve(size_t(along) / 2 + 2);
-		to_come.reserve(size_t(along) / 2 + 2);
-		for (int x = 0; x < int(along); ++x) {
-			const double seconds = where.seconds + (x - middle) / pixels_a_second;
-			if (seconds < 0) continue;
-			const double from = seconds * COLUMNS_A_SECOND / scale;
+		/*
+		 * Kept, not drawn again each frame (the holder, 2026-11-25: "still
+		 * having poor performance"): each lane is two images, the track
+		 * drawn in each colour, column g of them being the track's time
+		 * from g to g + 1 pixels at this zoom. A frame shifts them by the
+		 * whole pixels the track moved, draws only the columns uncovered,
+		 * and copies the left half from the one and the right from the
+		 * other, a fraction of a pixel offset. Drawn whole again when the
+		 * zoom, the lane or the peaks change -- the peaks at most four
+		 * times a second while they arrive.
+		 */
+		if (m_cache.size() < m_peaks.size()) m_cache.resize(m_peaks.size());
+		lane_cache &cache = m_cache[size_t(i)];
+		const double exact = where.seconds * pixels_a_second;
+		const int span_px = int(std::ceil(along)) + 2;
+		const int64_t origin = int64_t(std::floor(exact - middle)) - 1;
+		const int thick = std::max(1, int(std::ceil(across)));
+		auto column_peak = [&](int64_t g) {
+			const double from = double(g) * per_pixel / scale;
+			if (from < 0 || int(from) >= int(peaks.size())) return -1.0;
 			const double to = from + per_pixel / scale;
-			if (int(from) >= int(peaks.size())) break;
 			float loudest = 0;
 			if (per_pixel / scale >= 1) {
-				for (int c = int(from); c <= int(to) && c < int(peaks.size()); ++c)
-					if (c >= 0) loudest = std::max(loudest, peaks[size_t(c)]);
+				for (int c = int(from); c <= int(to) && c < int(peaks.size()); ++c) loudest = std::max(loudest, peaks[size_t(c)]);
 			} else {
 				/* Zoomed in past a column a pixel: from one column's peak
-				 * to the next, not in steps (2026-11-25, "not granular"). */
-				const int c = std::max(0, int(std::floor(from)));
+				 * to the next, not in steps. */
+				const int c = int(std::floor(from));
 				const int d = std::min(int(peaks.size()) - 1, c + 1);
 				const float t = float(std::clamp(from - c, 0.0, 1.0));
 				loudest = peaks[size_t(c)] + (peaks[size_t(d)] - peaks[size_t(c)]) * t;
 			}
-			const double h = std::max(0.5, std::min(1.0f, loudest) * half);
-			(x < middle ? heard : to_come).push_back(QPointF(x, h));
-		}
-		auto outline = [&painter, centre](const std::vector<QPointF> &edge, const QColor &colour) {
-			if (edge.empty()) return;
-			QPolygonF shape;
-			shape.reserve(int(edge.size()) * 4);
-			for (const QPointF &at : edge) {
-				shape << QPointF(at.x(), centre - at.y()) << QPointF(at.x() + 1, centre - at.y());
-			}
-			for (auto at = edge.rbegin(); at != edge.rend(); ++at) {
-				shape << QPointF(at->x() + 1, centre + at->y()) << QPointF(at->x(), centre + at->y());
-			}
-			painter.setPen(Qt::NoPen);
-			painter.setBrush(colour);
-			painter.drawPolygon(shape);
+			return std::max(0.5, std::min(1.0, double(loudest)) * half);
 		};
-		outline(heard, behind);
-		outline(to_come, ahead);
+		/* Columns [first, last) of the images, from scratch. */
+		auto draw = [&](int first, int last) {
+			for (QImage *image : { &cache.ahead, &cache.behind }) {
+				QPainter on(image);
+				on.fillRect(QRect(first, 0, last - first, image->height()), ground);
+				QPolygonF shape;
+				std::vector<std::pair<int, double>> edge;
+				for (int x = first; x < last; ++x) {
+					const double h = column_peak(cache.origin + x);
+					if (h >= 0) edge.emplace_back(x, h);
+				}
+				if (edge.empty()) continue;
+				for (const auto &at : edge) shape << QPointF(at.first, centre - at.second) << QPointF(at.first + 1, centre - at.second);
+				for (auto at = edge.rbegin(); at != edge.rend(); ++at)
+					shape << QPointF(at->first + 1, centre + at->second) << QPointF(at->first, centre + at->second);
+				on.setPen(Qt::NoPen);
+				on.setBrush(image == &cache.ahead ? ahead : behind);
+				on.drawPolygon(shape);
+			}
+		};
+		const bool peaks_moved = cache.generation != m_generation_of(i);
+		const bool whole = cache.ahead.width() != span_px || cache.ahead.height() != thick || cache.pixels_a_second != pixels_a_second
+		                   || cache.ground != ground || std::llabs(origin - cache.origin) >= span_px
+		                   || (peaks_moved && (!cache.drawn.isValid() || cache.drawn.elapsed() > 250));
+		if (whole) {
+			cache.ahead = QImage(span_px, thick, QImage::Format_RGB32);
+			cache.behind = QImage(span_px, thick, QImage::Format_RGB32);
+			cache.origin = origin;
+			cache.pixels_a_second = pixels_a_second;
+			cache.ground = ground;
+			cache.generation = m_generation_of(i);
+			cache.drawn.start();
+			draw(0, span_px);
+		} else if (origin != cache.origin) {
+			const int64_t moved = origin - cache.origin;
+			for (QImage *image : { &cache.ahead, &cache.behind })
+				for (int y = 0; y < image->height(); ++y) {
+					uchar *row = image->scanLine(y);
+					if (moved > 0) std::memmove(row, row + 4 * moved, size_t(4 * (span_px - moved)));
+					else std::memmove(row - 4 * moved, row, size_t(4 * (span_px + moved)));
+				}
+			cache.origin = origin;
+			if (moved > 0) draw(int(span_px - moved), span_px);
+			else draw(0, int(-moved));
+		}
+		/* Column 0 of the images is on screen at origin - exact + middle. */
+		const double offset = double(cache.origin) - exact + middle;
+		painter.drawImage(QRectF(0, 0, middle, across), cache.behind, QRectF(-offset, 0, middle, across));
+		painter.drawImage(QRectF(middle, 0, along - middle, across), cache.ahead, QRectF(middle - offset, 0, along - middle, across));
 		/* Beats, and bars of four taller, as the grid places them. */
 		if (where.beat > 0 && where.beat * pixels_a_second >= 4) {
 			const double left = where.seconds - middle / pixels_a_second;

@@ -5,6 +5,8 @@
 #include <QString>
 #include <QWidget>
 #include <QElapsedTimer>
+#include <QImage>
+#include <QColor>
 
 #include <functional>
 #include <vector>
@@ -96,6 +98,22 @@ private:
 	QElapsedTimer m_built;
 	std::vector<double> m_last;   /* each deck's place at the last frame */
 	bool m_stale = true;
+	/* Each lane's images kept between frames (paint_lane). */
+	struct lane_cache {
+		QImage ahead, behind;
+		int64_t origin = 0;           /* the track's pixel column at image column 0 */
+		double pixels_a_second = 0;
+		QColor ground;
+		int generation = -1;          /* of the peaks drawn */
+		QElapsedTimer drawn;          /* when drawn whole */
+	};
+	std::vector<lane_cache> m_cache;
+	std::vector<int> m_generations;   /* each deck's peaks, counted as they change */
+	int m_generation_of(int deck) const { return deck < int(m_generations.size()) ? m_generations[size_t(deck)] : 0; }
+	void bump_generation(int deck) {
+		if (deck >= int(m_generations.size())) m_generations.resize(size_t(deck) + 1, 0);
+		++m_generations[size_t(deck)];
+	}
 	int m_held = -1;              /* the deck under the hand */
 	double m_held_from = 0;       /* where along its lane the hand went down */
 	double m_held_seconds = 0;    /* and where its record was then */
