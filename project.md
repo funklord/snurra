@@ -1487,6 +1487,45 @@ two tracks; closed instead, it fails) and
 `a_window_follows_the_player_on_the_decks` (minimized, the button brings
 it back; with the count ignored, it fails).
 
+**(c3) Scratching -- designed 2026-11-25, not built.** A scratch is the
+sound following the hand, both ways, at the hand's speed; the deck reads
+forward only, from a decoder, so a seek a mouse move -- the cheap way --
+only stutters, and is not what the holder asked for. The steps, each
+usable before the next: **(1)** a ring of the last few seconds the deck
+has decoded, kept beside its reader, so the audio thread can read
+backwards within it without the decoder; **(2)** a held state on the
+deck -- while a hand is on the platter, the position is driven by a
+target the UI thread moves, the audio thread reading at whatever rate,
+negative included, reaches it smoothly (a slew, as the level's 5 ms),
+by the cubic the stretcher already has, never through WSOLA, since a
+scratch is vinyl and its pitch moves; **(3)** the gesture: on the decks'
+waveform row, press and drag along the lane, the playhead fixed and the
+track dragged under it, the drag's pixels turned to seconds by the zoom;
+let go, the deck goes on as it was playing (or stays paused), as
+Traktor's and Serato's do; **(4)** the same on a controller's jog wheel,
+touch and turn. Each step has its test: the ring read backwards gives
+the frames forwards reversed; a target moved at -1x is heard as the
+track reversed; a drag of a beat's width moves the deck a beat.
+
+**(e) Where the master section goes -- the holder's, a proposal
+(2026-11-25).** The holder: "we need to decide where the master section
+goes ... likely to duplicate a lot of what each channel already has but
+better, maybe compressor/limiter, FX ... In the player we mess around
+mostly with the master section, in the decks mostly with the channels,
+but master section still needs to exist." With the player's drawn EQ as
+its master EQ (decided 2026-11-24, 3b, not built), a proposal to answer:
+**in the player window, the one control panel is the master section** --
+its drawn EQ the master EQ, its level the master level, a limiter and
+later FX beside them -- what is touched there most; **in the decks, a
+master strip at the right end of the mixer**, after the channel strips,
+as a DJ mixer's master section sits: the master level (a knob), the
+same master EQ as three knobs over its parts (the drawn line's shape
+kept, as the channel knobs keep a tile's), a limiter switch with its
+gain reduction shown, and the booth/headphone levels where a listener
+exists. One master, two views of it, as the window and the decks are
+two views of one set. Building it needs 3b first: the master EQ applied
+once to the player's sum.
+
 **One player or its decks, for now** (the holder, 2026-11-24: "For now
 let's avoid the more complex features and stick to a single
 player/decks, at least in the UI, if two of them are running
