@@ -107,6 +107,20 @@ and everything above it knows nothing of SFTP or fuzznet.
 
 ## 3. Open -- the holder's, or to settle with the first code
 
+- **`make deb` -- missing, to build next** (the holder, 2026-11-25:
+  "snurra has no make deb? aren't you following guidelines?"). snurra
+  installs with `make install` (PREFIX, DESTDIR, the desktop entry
+  `se.vibes.snurra` and its icons, 7764565) but builds no package. Do it
+  by the `debian-packaging` skill: which tool to drive, what DESTDIR must
+  carry, and the package landing in `DEB_DIR`, defaulting to
+  `$(BUILD_DIR)/deb` (harmonization.md's inventory). The package holds
+  `/usr/bin/snurra`, the `.desktop` and the SVG and six PNGs, and leaves
+  the icon cache and desktop database to dpkg's triggers (no postinst);
+  its dependencies are the FFmpeg, ALSA, xcb and Qt 6 Widgets, Network
+  and DBus libraries the player links. Missed until now because no run
+  checked the inventory's rows against this tree; noted at the weekly
+  stop (98 %).
+
 - ~~The decoding and output backend.~~ **Settled 2026-11-12 by building
   it:** FFmpeg's libraries decode into snurra's own engine (sec 3a, 4),
   since `QMediaPlayer` cannot be a deck in a mixer and libmpv is not
